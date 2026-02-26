@@ -1,0 +1,75 @@
+# Hajimi V3 - Node.js .gitignore
+# 基于 GitHub Node.js.gitignore 标准模板
+
+# 依赖目录
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# 环境变量文件（敏感信息）
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# 日志文件
+logs/
+*.log
+*.log.*
+
+# 运行时数据
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 构建输出
+dist/
+build/
+*.tsbuildinfo
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+
+# WASM构建产物（保留pkg目录供发布）
+# crates/hajimi-hnsw/target/
+# crates/hajimi-hnsw/pkg/*.wasm
+
+# 本地数据目录（用户数据）
+data/
+.hajimi/
+
+# 归档文件（已完成的任务）
+# archive/  # 保留归档作为项目历史
+
+# 其他
+*.bak
+*.orig
