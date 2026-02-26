@@ -15,6 +15,10 @@ const {
   jsonParser 
 } = require('./middleware/error-handler');
 const { requestIdMiddleware } = require('./middleware/request-id');
+const { createRateLimitMiddleware } = require('./middleware/rate-limit');
+const { createTimeoutMiddleware } = require('./middleware/timeout');
+const { securityHeaders } = require('../security/headers');
+const { logger } = require('../utils/logger');
 const { HealthRoutes } = require('./routes/health');
 const { VectorRoutes } = require('./routes/vector');
 
@@ -31,6 +35,8 @@ class HajimiServer {
     
     // 中间件配置
     this.maxBodySize = options.maxBodySize || '1mb';
+    this.rateLimitOptions = options.rateLimit || { enabled: true };
+    this.timeoutMs = options.timeout || 30000; // 默认30秒超时
     
     // CORS配置
     this.corsOrigin = options.corsOrigin || 'http://localhost:3000';
@@ -96,13 +102,8 @@ class HajimiServer {
       throw new Error('Server is already running');
     }
 
-    // 验证 port 和 host 的合法性
-    if (!Number.isInteger(this.port) || this.port < 1 || this.port > 65535) {
-      throw new Error(`Invalid port: ${this.port}. Must be an integer between 1 and 65535.`);
-    }
-    if (!this.host || typeof this.host !== 'string') {
-      throw new Error(`Invalid host: ${this.host}. Must be a non-empty string.`);
-    }
+    // 统一调用配置校验
+    this._validateConfig();
 
     this._initRoutes();
 
@@ -118,8 +119,12 @@ class HajimiServer {
         this.isRunning = true;
         this.stats.startTime = Date.now();
         
-        console.log(`🚀 Hajimi Server v${this.version} running at http://${this.host}:${this.port}`);
-        console.log(`📊 Health check: http://${this.host}:${this.port}/health`);
+        logger.info('Server started', {
+          version: this.version,
+          host: this.host,
+          port: this.port,
+          healthCheck: `http://${this.host}:${this.port}/health`
+        });
         
         resolve({
           host: this.host,
@@ -141,7 +146,7 @@ class HajimiServer {
     return new Promise((resolve) => {
       this.server.close(() => {
         this.isRunning = false;
-        console.log('👋 Server stopped');
+        logger.info('Server stopped');
         resolve();
       });
     });
@@ -196,15 +201,18 @@ class HajimiServer {
     
     // 记录请求耗时
     const duration = Date.now() - startTime;
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+    logger.request(req, res, duration);
   }
 
   /**
    * 应用中间件链
    */
   async _applyMiddlewares(req, res) {
-    // 内置中间件
+    // 内置中间件（按顺序执行）
     await this._runMiddleware(requestIdMiddleware, req, res);
+    await this._runMiddleware(securityHeaders, req, res);
+    await this._runMiddleware(createTimeoutMiddleware({ timeout: this.timeoutMs }), req, res);
+    await this._runMiddleware(createRateLimitMiddleware(this.rateLimitOptions), req, res);
     await this._runMiddleware(bodySizeLimit(this.maxBodySize), req, res);
     await this._runMiddleware(jsonParser, req, res);
   }
