@@ -181,8 +181,20 @@ class LuxurySQLiteRateLimiter {
 
   /**
    * 获取bucket（使用缓存语句）
+   * 修复：优先检查writeQueue队列（倒序查找最新数据）
    */
   getBucket(ip) {
+    // 新增：优先检查队列中最新数据（倒序查找）
+    for (let i = this.writeQueue.length - 1; i >= 0; i--) {
+      if (this.writeQueue[i].ip === ip) {
+        return {
+          tokens: this.writeQueue[i].tokens,
+          lastRefill: this.writeQueue[i].lastRefill
+        };
+      }
+    }
+    
+    // 队列中没有，从数据库读取（原有逻辑不变）
     const stmt = this.stmtCache.get('getBucket');
     stmt.bind([ip]);
     
