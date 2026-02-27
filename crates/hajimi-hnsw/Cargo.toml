@@ -1,0 +1,28 @@
+[package]
+name = "hajimi-hnsw"
+version = "0.1.0"
+edition = "2021"
+authors = ["Hajimi Team"]
+description = "HNSW vector index for Hajimi V3 - WASM optimized"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+
+# 性能优化
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0

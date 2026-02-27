@@ -1,0 +1,25 @@
+# 文档资料
+
+A.Hajimi 算法研究院核心文档归档
+
+## 快速入口
+
+- [索引文档 (index.md)](./index.md) - 从这里开始阅读
+- [P4 检查表-填写版](./P4-检查表-填写版.md) - 质量门禁 10/10 ✅
+
+## 核心文档
+
+| 文档 | 用途 |
+|:---|:---|
+| index.md | 文档索引与导航 |
+| FIX-REPORT-001.md | FIX-001 修复报告摘要 |
+| HAJIMI-MATH-001-CASCADE-技术根治方案-摘要.md | 级联哈希核心方案 |
+| RISK-HIDDEN-001-执行清单.md | 7项风险与本周落地清单 |
+| UPGRADE-ROADMAP-001-速查.md | MD5→SHA256→BLAKE3 升级路线 |
+| P4-检查表-填写版.md | 质量门禁完成证据 |
+| DEBT-汇总.md | 技术债务跟踪 |
+
+## 原始文档位置
+
+完整版文档位于:
+`~/storage/downloads/A.Hajimi 算法研究院/`
