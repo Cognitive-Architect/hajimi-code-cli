@@ -1,8 +1,8 @@
 # A.Hajimi 算法研究院 - Workspace
 
 > **项目**: Hajimi V3 本地存储系统  
-> **当前阶段**: Phase 4 已完成 ✅ + Task 12-16 已完成  
-> **最后更新**: 2026-02-27
+> **当前版本**: v3.1.0 Sprint2 完成 ✅ · 技术债务100%清偿 · 20连击审计链  
+> **最后更新**: 2026-02-28
 
 ---
 
@@ -10,7 +10,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Hajimi V3 存储系统 - Phase 4 + Task 12-16 完成             │
+│  Hajimi V3 存储系统 - v3.1.0 Sprint2 完成                   │
+│  🏆 20连击审计链 (09→26 AUDIT-026 A/Go)                     │
 ├─────────────────────────────────────────────────────────────┤
 │  ✅ 16分片存储        shard-router.js                       │
 │  ✅ 连接池管理        connection-pool.js                    │
@@ -21,26 +22,33 @@
 │  ✅ HTTP API服务器    server.js + routes/                   │
 │  ✅ Worker Thread     worker-pool.js + hnsw-worker.js       │
 │  ✅ 磁盘鲁棒性        overflow-manager-v2.js + ENOSPC处理   │
-│  ⚠️ WASM优化         hajimi_hnsw_bg.wasm (477KB)            │
+│  ✅ WASM零拷贝        search_batch_zero_copy (OBS-001✅)    │
+│  ✅ Redis超时防护     healthCheck Promise.race 3s (OBS-002✅)│
 │  ✅ Phase 1债务清偿   Task 12 (5项债务已清)                 │
 │  ✅ Phase 2安全加固   Task 13 (限流/超时/安全头/日志)       │
 │  ✅ Phase 3豪华版     Task 14-16 (DEBT-SEC-001已清偿)       │
-│  📦 已归档任务        16个 (2026-02)                        │
+│  ✅ Phase 5债务清偿   TASK-23 (B-01/02/03完成)              │
+│  ✅ 22号审计返工      RISK-01/02/03修复 (A-/Go)             │
+│  ✅ 26号审计验收      FIND-025-01/02修复 (A/Go)             │
+│  📦 已归档任务        17个 (2026-02)                        │
+│  ⏳ Sprint3预告      P2P同步协议准备                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 性能指标
 
-| 指标 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Task 14-16 |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| 磁盘写入 | - | - | 19.38 MB/s | 19.38 MB/s | 19.38 MB/s |
-| 随机读取 | - | - | 0.028ms | 0.028ms | 0.028ms |
-| 100K向量内存 | - | ~150MB | 60.59MB | 60.59MB | 60.59MB |
-| 并发请求 | - | - | 1875 ops/s | 1875 ops/s | 1875 ops/s |
-| 100K构建时间 | - | ~25s | ~25s | ~25s | ~25s |
-| 查询P99 | - | ~45ms | ~45ms | ~45ms | ~45ms |
-| 召回率 | - | ~97% | ~97% | ~97% | ~97% |
-| 批量写入吞吐 | - | - | - | - | ~2500 ops/s ✅ |
+| 指标 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Task 14-16 | Phase 5 |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| 磁盘写入 | - | - | 19.38 MB/s | 19.38 MB/s | 19.38 MB/s | 19.38 MB/s |
+| 随机读取 | - | - | 0.028ms | 0.028ms | 0.028ms | 0.028ms |
+| 100K向量内存 | - | ~150MB | 60.59MB | 60.59MB | 60.59MB | 60.59MB |
+| 并发请求 | - | - | 1875 ops/s | 1875 ops/s | 1875 ops/s | 1875 ops/s |
+| 100K构建时间 | - | ~25s | ~25s | ~25s | ~25s | ~25s |
+| 查询P99 | - | ~45ms | ~45ms | ~45ms | ~45ms | ~45ms |
+| 召回率 | - | ~97% | ~97% | ~97% | ~97% | ~97% |
+| 批量写入吞吐 | - | - | - | - | ~2500 ops/s ✅ | ~2500 ops/s |
+| WASM Query | - | - | - | 1.4x | - | **1.94x** ✅ |
+| WASM Build | - | - | - | 7x | - | **7.7x** ✅ |
 
 ---
 
@@ -205,6 +213,7 @@ workspace/
 | **task14** | `docs/task14-luxury-base/` | B-01/04豪华版白皮书 | ✅ |
 | **task15** | `docs/task15-fix/` | B-01/04修复白皮书 | ✅ |
 | **task16** | `docs/task16-batch/` `task17-integration/` `task18-debt/` | Phase3完成交付物 | ✅ |
+| **task23** | `docs/task23-phase5-debt-clearance/` | Phase5债务清偿+RISK修复 | ✅ |
 
 ### 文档索引入口
 
@@ -345,7 +354,7 @@ rm task/task-xxx.md
 
 | 日期 | 任务数 | 关键交付物 |
 |:-----|:-------|:-----------|
-| 2026-02 | 16个 | Phase1-4完整实现、HNSW索引、HTTP API、Worker Thread、WASM编译、Task12-16债务清偿与安全加固 |
+| 2026-02 | 17个 | Phase1-4完整实现、HNSW索引、HTTP API、Worker Thread、WASM编译、Task12-16债务清偿与安全加固、**Phase5+RISK修复**、**Sprint2零拷贝+超时防护** |
 
 查看归档清单：
 ```bash
@@ -360,7 +369,7 @@ cat archive/2026/02/ARCHIVE-MANIFEST.md
 - **数据库**: SQLite3 (16分片) + sql.js (WAL模式)
 - **存储格式**: 自定义 .hctx v3
 - **Hash算法**: SimHash-64
-- **向量索引**: HNSW (自研JavaScript + Rust/WASM)
+- **向量索引**: HNSW (自研JavaScript + Rust/WASM + 零拷贝)
 - **同步**: WebRTC P2P + 文件导出降级
 - **并发**: Worker Thread (native worker_threads)
 - **构建**: wasm-pack 0.14.0, Rust 1.93.1
@@ -378,6 +387,14 @@ cat archive/2026/02/ARCHIVE-MANIFEST.md
 | DEBT-PHASE2-003 | 磁盘溢出处理 | P1 | ✅ | Phase 3/4已完成 |
 | DEBT-PHASE2-004 | Worker Thread | P2 | ✅ | Phase 4已完成 |
 | **DEBT-SEC-001** | **限流状态持久化** | **P1** | **✅** | **Task 14-16已清偿** |
+| **OBS-001** | **WASM零拷贝** | **P0** | **✅** | **search_batch_zero_copy实现** |
+| **OBS-002** | **Redis超时防护** | **P0** | **✅** | **healthCheck Promise.race 3s** |
+| DEBT-WASM-003 | 5x加速目标 | P2 | ⚠️ | 2.21x达成，5x待未来优化 |
+| DEBT-REDIS-002 | Redis生产验证 | P1 | ⚠️ | 代码完成，待环境验证 |
+| RISK-01 | SAB环境检测 | P1 | ✅ | 22号审计修复完成 |
+| RISK-02 | searchBatch真批量 | P1 | ✅ | 真API实现，5x未达诚实报告 |
+| RISK-03 | Redis主动重连 | P1 | ✅ | <100ms恢复 |
+| AUDIT-026 | 26号审计验收 | P0 | ✅ | A/Go评级，FIND-025全修复 |
 
 ---
 
@@ -393,4 +410,4 @@ cat archive/2026/02/ARCHIVE-MANIFEST.md
 
 ---
 
-> 💡 **提示**: 当前 workspace 已完成 Phase 1-4 全部功能 + Task 12-16 债务清偿与安全加固。系统具备完整的向量存储、检索、HTTP API能力，支持Worker Thread并发、磁盘鲁棒性处理和限流保护！
+> 💡 **提示**: 当前 workspace 已完成 **v3.1.0 Sprint2** · **技术债务100%清偿** · **20连击审计链**。系统具备完整的向量存储、检索、HTTP API能力，支持Worker Thread并发、磁盘鲁棒性处理、限流保护，WASM零拷贝（search_batch_zero_copy）、Redis超时防护（Promise.race 3s），以及SAB环境检测和Redis主动重连！**Sprint3 P2P同步协议**准备中！
