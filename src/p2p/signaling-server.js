@@ -77,6 +77,7 @@ class SignalingServer {
         case 'offer': this.forward(clientId, msg.targetId, { type: 'offer', sdp: msg.sdp, from: clientId }); break;
         case 'answer': this.forward(clientId, msg.targetId, { type: 'answer', sdp: msg.sdp, from: clientId }); break;
         case 'icecandidate': this.forward(clientId, msg.targetId, { type: 'icecandidate', candidate: msg.candidate, from: clientId }); break;
+        case 'datachannel': this.forward(clientId, msg.targetId, { type: 'datachannel', data: msg.data, from: clientId }); break;
         default: this.send(client.ws, { type: 'error', code: E_SIGNALING.INVALID_MESSAGE });
       }
     } catch (err) { console.error('Message parse error:', err); }

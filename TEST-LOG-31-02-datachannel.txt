@@ -1,0 +1,43 @@
+﻿[E2E] Sprint4 DataChannel Transfer Tests
+[E2E] Using REAL @koush/wrtc - NO MOCK
+
+[TEST] real @koush/wrtc API availability
+  鉁?RTCPeerConnection exported
+  鉁?RTCSessionDescription exported
+  鉁?createDataChannel works
+  鉁?channel.send is function
+  鉁?channel.close is function
+
+[TEST] file transfer (64KB chunks + progress + SHA256)
+  鉁?transferId returned (UUID)
+  鉁?64KB chunk size constant
+  鉁?progress callback invoked (3 times)
+  鉁?3 chunks received (got 3)
+  鉁?transfer-complete event fired
+  鉁?SHA256 checksum verified
+
+[TEST] text message (AES-256-GCM encryption)
+  鉁?sequence number assigned (1)
+  鉁?message received
+  鉁?AES-256-GCM decrypted correctly
+  鉁?seq preserved
+  鉁?timestamp is number
+
+[TEST] resume transfer (range request + SHA256)
+  鉁?resumed flag is true
+  鉁?range.start is first missing
+  鉁?window size in valid range
+  鉁?completed=true when all chunks received
+
+[TEST] congestion control (RTT + sliding window)
+  鉁?RTT measured (50ms)
+  鉁?window size 4 in range 1-32
+
+[TEST] memory cleanup (channel.close)
+  鉁?channel initially open
+  鉁?channel removed from map
+  鉁?channel.close() called
+total: 931.648ms
+
+[E2E] Results: 25 passed, 0 failed
+[E2E] ALL PASSED - Exit 0
