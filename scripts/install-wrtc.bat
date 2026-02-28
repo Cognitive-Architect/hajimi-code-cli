@@ -1,14 +1,14 @@
 @echo off
 chcp 65001 >nul
 REM =============================================================================
-REM wrtc Installation Script for Windows
+REM @koush/wrtc Installation Script for Windows
 REM =============================================================================
-REM 安装真实wrtc模块，包含平台检测和编译工具安装
+REM 安装真实@koush/wrtc模块，包含平台检测和编译工具安装
 REM 失败时直接退出，不提供Mock fallback
 REM =============================================================================
 
 echo [install-wrtc] ============================================
-echo [install-wrtc] wrtc Installation Script (Windows)
+echo [install-wrtc] @koush/wrtc Installation Script (Windows)
 echo [install-wrtc] ============================================
 
 REM 检测平台
@@ -59,30 +59,29 @@ if defined PYTHON_CMD (
 )
 call npm config set msvs_version 2022 2>nul || call npm config set msvs_version 2019 2>nul || echo [install-wrtc] Using default msvs_version
 
-REM 安装wrtc
-echo [install-wrtc] Step 4/4: Installing wrtc package...
+REM 安装@koush/wrtc
+echo [install-wrtc] Step 4/4: Installing @koush/wrtc package...
 echo [install-wrtc] This may take several minutes (native compilation)...
 echo.
 
-call npm install wrtc@^0.4.7
+call npm install @koush/wrtc
 if %errorlevel% equ 0 (
   echo.
   echo [install-wrtc] ============================================
-  echo [install-wrtc] SUCCESS: wrtc installed successfully!
+  echo [install-wrtc] SUCCESS: @koush/wrtc installed successfully!
   echo [install-wrtc] ============================================
-  node -e "const w = require('wrtc'); console.log('[install-wrtc] wrtc loaded:', w.RTCPeerConnection ? 'OK' : 'FAILED');"
+  node -e "const w = require('@koush/wrtc'); console.log('[install-wrtc] @koush/wrtc loaded:', w.RTCPeerConnection ? 'OK' : 'FAILED');"
   exit /b 0
 ) else (
   echo.
   echo [install-wrtc] ============================================
-  echo [install-wrtc] ERROR: wrtc installation failed!
+  echo [install-wrtc] ERROR: @koush/wrtc installation failed!
   echo [install-wrtc].
   echo [install-wrtc] Fallback strategies:
-  echo [install-wrtc]   1. Try alternative: npm install @koush/wrtc
-  echo [install-wrtc]   2. Install Visual Studio Build Tools manually
-  echo [install-wrtc]   3. Use prebuilt binary: npm install wrtc --build-from-source=false
+  echo [install-wrtc]   1. Install Visual Studio Build Tools manually
+  echo [install-wrtc]   2. Use prebuilt binary: npm install @koush/wrtc --build-from-source=false
   echo [install-wrtc].
-  echo [install-wrtc] Reference: https://github.com/node-webrtc/node-webrtc
+  echo [install-wrtc] Reference: https://github.com/koush/node-webrtc
   echo [install-wrtc] ============================================
   exit /b 1
 )

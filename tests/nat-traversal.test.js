@@ -1,30 +1,16 @@
 /**
  * NAT Traversal Test (60-80 lines)
  * Host/STUN/TURN scenarios
+ * 强制使用真实@koush/wrtc，无Mock fallback
  */
-
 const CONFIG = require('../src/p2p/config.js');
 
-// Mock RTC for test
-class MockRTC {
-  constructor(cfg) {
-    this.cfg = cfg; this._cands = [];
-    setTimeout(() => { if (this.onicecandidate) this.onicecandidate({candidate:null}); }, 100);
-  }
-  createOffer() { return Promise.resolve({}); }
-  setLocalDescription() {
-    const hasStun = this.cfg.iceServers.some(s => s.urls.includes('stun'));
-    if (hasStun) {
-      const c = { candidate: 'candidate:1 1 udp 1 1.2.3.4 12345 typ srflx raddr 0.0.0.0' };
-      setTimeout(() => { if (this.onicecandidate) this.onicecandidate({candidate:c}); }, 50);
-    }
-    return Promise.resolve();
-  }
-  close() {}
+// 强制require @koush/wrtc，失败直接throw，无Mock fallback
+const wrtc = require('@koush/wrtc');
+if (!wrtc || !wrtc.RTCPeerConnection) {
+  throw new Error('[NAT] @koush/wrtc模块加载失败，无法初始化RTCPeerConnection');
 }
-
-let wrtc; try { wrtc = require('wrtc'); } catch (e) { wrtc = null; }
-const RTCPeerConnection = wrtc ? wrtc.RTCPeerConnection : MockRTC;
+const RTCPeerConnection = wrtc.RTCPeerConnection;
 
 async function runTests() {
   console.log('[NAT] Starting NAT traversal tests...');
@@ -37,7 +23,8 @@ async function runTests() {
   const peerH2 = new RTCPeerConnection(hostCfg);
   const hostCands = [];
   peerH1.onicecandidate = (e) => { if (e.candidate) hostCands.push(e.candidate); };
-  await peerH1.createOffer(); await peerH1.setLocalDescription({});
+  const offerH = await peerH1.createOffer(); 
+  await peerH1.setLocalDescription(offerH);
   await new Promise(r => setTimeout(r, 200));
   console.log(`  ✓ Host candidates: ${hostCands.length}`);
   peerH1.close(); peerH2.close();
@@ -48,7 +35,8 @@ async function runTests() {
   const peerStun = new RTCPeerConnection(stunCfg);
   const stunCands = [];
   peerStun.onicecandidate = (e) => { if (e.candidate) stunCands.push(e.candidate); };
-  await peerStun.createOffer(); await peerStun.setLocalDescription({});
+  const offerStun = await peerStun.createOffer(); 
+  await peerStun.setLocalDescription(offerStun);
   await new Promise(r => setTimeout(r, 300));
   const srflx = stunCands.filter(c => c.candidate && c.candidate.includes('srflx'));
   console.log(`  ✓ STUN candidates: ${stunCands.length}, srflx: ${srflx.length}`);
