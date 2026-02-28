@@ -4,6 +4,7 @@
 const WebSocket = require('ws'), http = require('http'), CONFIG = require('./config');
 const E_SIGNALING = {
   INVALID_MESSAGE: 'E_SIGNALING_INVALID_MESSAGE',
+  INVALID_JSONRPC: 'E_SIGNALING_INVALID_JSONRPC',
   PEER_NOT_FOUND: 'E_SIGNALING_PEER_NOT_FOUND',
   TIMEOUT: 'E_SIGNALING_TIMEOUT',
   CONNECTION_ERROR: 'E_SIGNALING_CONNECTION_ERROR'
@@ -27,6 +28,20 @@ class SignalingServer {
   }
   handleConnection(ws, req) {
     const clientId = Math.random().toString(36).substring(2, 10);
+    ws.isAlive = true;
+    ws.heartbeatInterval = setInterval(() => {
+      if (!ws.isAlive) {
+        console.log(`Heartbeat timeout for client ${clientId}, terminating connection`);
+        ws.terminate();
+        return;
+      }
+      ws.isAlive = false;
+      ws.ping();
+    }, CONFIG.HEARTBEAT.INTERVAL);
+    ws.on('pong', () => {
+      ws.isAlive = true;
+      console.log(`Received pong from client ${clientId}`);
+    });
     this.clients.set(clientId, { ws, peerId: null });
     this.setTimeout(clientId);
     ws.on('message', (data) => this.handleMessage(clientId, data));
@@ -49,6 +64,12 @@ class SignalingServer {
     try {
       const msg = JSON.parse(data), client = this.clients.get(clientId);
       if (!client) return;
+      // JSON-RPC 2.0 version check
+      if (msg.jsonrpc !== '2.0') {
+        this.send(client.ws, { type: 'error', code: E_SIGNALING.INVALID_JSONRPC });
+        console.error(`Invalid jsonrpc version from client ${clientId}: ${msg.jsonrpc}`);
+        return;
+      }
       switch (msg.type) {
         case 'register':
           client.peerId = msg.peerId; clearTimeout(this.timeouts.get(clientId));
@@ -76,6 +97,9 @@ class SignalingServer {
   send(ws, msg) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
   handleDisconnect(clientId) {
     const client = this.clients.get(clientId);
+    if (client?.ws?.heartbeatInterval) {
+      clearInterval(client.ws.heartbeatInterval);
+    }
     if (this.timeouts.has(clientId)) clearTimeout(this.timeouts.get(clientId));
     this.clients.delete(clientId); this.timeouts.delete(clientId);
     if (client?.peerId) this.broadcast(clientId, { type: 'peer-left', peerId: client.peerId });
@@ -83,7 +107,10 @@ class SignalingServer {
   }
   stop() {
     this.timeouts.forEach(t => clearTimeout(t));
-    this.clients.forEach(c => c.ws.close());
+    this.clients.forEach(c => {
+      if (c.ws.heartbeatInterval) clearInterval(c.ws.heartbeatInterval);
+      c.ws.close();
+    });
     this.wss?.close(); this.server?.close();
     console.log('Signaling server stopped');
   }

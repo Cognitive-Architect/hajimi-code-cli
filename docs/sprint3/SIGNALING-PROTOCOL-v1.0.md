@@ -92,3 +92,33 @@ pc.oniceconnectionstatechange = () => {
 ```json
 {"type":"object","required":["jsonrpc","id","method"],"properties":{"jsonrpc":{"enum":["2.0"]},"id":{"type":"string"},"method":{"enum":["offer","answer","ice"]}}}
 ```
+
+## 12. Heartbeat Mechanism
+
+To maintain long-lived WebSocket connections, the server implements a heartbeat (keepalive) mechanism:
+
+- **Ping Interval**: Server sends `ping` frame every **30 seconds** (30,000ms)
+- **Pong Response**: Client must respond with `pong` frame within **60 seconds** (60,000ms)
+- **Timeout Action**: If no pong received within timeout, server terminates the connection via `ws.terminate()`
+- **Connection State**: Each WebSocket tracks `isAlive` flag to monitor responsiveness
+
+This ensures stale connections are detected and cleaned up promptly, preventing resource leaks.
+
+## 13. Version Check
+
+All messages MUST conform to **JSON-RPC 2.0** specification. The server enforces strict version checking:
+
+- **Required Field**: Every message must include `"jsonrpc": "2.0"`
+- **Validation**: Server rejects messages with missing or invalid `jsonrpc` field
+- **Error Response**: Invalid version returns `E_SIGNALING_INVALID_JSONRPC` error
+- **Purpose**: Ensures protocol compatibility and prevents malformed message processing
+
+Example valid message:
+```json
+{"jsonrpc":"2.0","id":"123","method":"offer","params":{"sdp":"..."}}
+```
+
+Example invalid message (rejected):
+```json
+{"jsonrpc":"1.0","id":"123","method":"offer","params":{"sdp":"..."}}
+```

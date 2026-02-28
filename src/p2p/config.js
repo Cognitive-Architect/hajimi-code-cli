@@ -23,6 +23,10 @@ const CONFIG = {
   RECONNECT: {
     MAX_RETRIES: 5,
     DELAY: 3000
+  },
+  HEARTBEAT: {
+    INTERVAL: 30000,
+    TIMEOUT: 60000
   }
 };
 
