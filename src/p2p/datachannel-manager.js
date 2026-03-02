@@ -14,12 +14,21 @@ const RTT_ALPHA = 0.125;
 const TIMEOUT_BASE = 1000;
 
 class DataChannelManager extends EventEmitter {
-  constructor() {
+  constructor(peerId, sharedSecret) {
     super();
     this.channels = new Map(); // peerId -> {channel, pc, stats}
     this.transfers = new Map(); // transferId -> {chunks, sent, ack, progress}
-    this.cryptoKey = crypto.randomBytes(32);
+    this.cryptoKey = this.deriveKey(sharedSecret);
     this.seqCounter = 0;
+    this.peerId = peerId;
+  }
+
+  deriveKey(sharedSecret) {
+    if (!sharedSecret) {
+      throw new Error('sharedSecret is required for key derivation');
+    }
+    // 使用scryptSync从共享密钥派生256位密钥
+    return crypto.scryptSync(sharedSecret, 'hajimi-salt-v1', 32, { N: 16384, r: 8, p: 1 });
   }
 
   createDataChannel(peerId, pc, options = { ordered: true, maxRetransmits: 3 }) {
