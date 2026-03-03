@@ -1,0 +1,48 @@
+# Docker Compose for Redis Test Environment
+# Usage: docker-compose -f docker-compose.redis.yml up -d
+
+version: '3.8'
+
+services:
+  redis-master:
+    image: redis:7-alpine
+    container_name: hajimi-redis-master
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-master-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-slave:
+    image: redis:7-alpine
+    container_name: hajimi-redis-slave
+    ports:
+      - "6380:6379"
+    command: redis-server --slaveof redis-master 6379
+    depends_on:
+      - redis-master
+    volumes:
+      - redis-slave-data:/data
+
+  # Network partition simulation container
+  network-tool:
+    image: nicolaka/netshoot
+    container_name: hajimi-network-tool
+    command: sleep 3600
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - redis-master
+
+volumes:
+  redis-master-data:
+  redis-slave-data:
+
+networks:
+  default:
+    name: hajimi-redis-network

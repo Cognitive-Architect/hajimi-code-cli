@@ -1,8 +1,8 @@
 # A.Hajimi 算法研究院 - 文档索引
 
 > **项目**: Hajimi V3 本地存储系统  
-> **当前阶段**: Phase 4 已完成 ✅ + Task 12-16 已完成  
-> **最后更新**: 2026-02-27
+> **当前阶段**: Phase 5 完成 ✅ + RISK-FIX-001 完成  
+> **最后更新**: 2026-02-28
 
 ---
 
@@ -19,9 +19,18 @@
 | [PHASE3-白皮书-v1.0.md](./task08-phase3-wasm-disk-api/HAJIMI-PHASE3-白皮书-v1.0.md) | 阶段报告 | ✅ A级 | HTTP API服务器+磁盘溢出+WASM框架 |
 | [PHASE4-白皮书-v1.0.md](./task09-phase4-wasm-worker-robust/HAJIMI-PHASE4-白皮书-v1.0.md) | 阶段报告 | ✅ A级 | Worker Thread+磁盘鲁棒性+WASM-JS混合 |
 | [PHASE1-DEBT-CLEARED-白皮书-v1.0.md](./task12-phase1-debt-cleared/PHASE1-DEBT-CLEARED-白皮书-v1.0.md) | 债务清偿 | ✅ A级 | Phase 1债务清偿：5项债务全部清偿 |
+| [HAJIMI-B-01-03-WASM-5x-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-B-01-03-WASM-5x-白皮书-v1.0.md) | Phase 5 | ✅ B+ | SAB内存池实现，2.21x查询/7.70x构建 |
+| [HAJIMI-B-02-03-REDIS-PROD-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-B-02-03-REDIS-PROD-白皮书-v1.0.md) | Phase 5 | ✅ B+ | Redis V2连接池+故障注入测试 |
+| [HAJIMI-B-03-03-TECH-DEBT-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-B-03-03-TECH-DEBT-白皮书-v1.0.md) | Phase 5 | ✅ A | Rust零警告+并发保护6/6通过 |
+| [HAJIMI-RISK-01-FIX-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-RISK-01-FIX-白皮书-v1.0.md) | RISK修复 | ✅ A | SAB环境检测+降级日志 |
+| [HAJIMI-RISK-02-FIX-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-RISK-02-FIX-白皮书-v1.0.md) | RISK修复 | ✅ B+ | searchBatch真批量API，零拷贝 |
+| [HAJIMI-RISK-03-FIX-白皮书-v1.0.md](./task23-phase5-debt-clearance/HAJIMI-RISK-03-FIX-白皮书-v1.0.md) | RISK修复 | ✅ A | Redis主动重连<100ms |
 | [PHASE2-SECURITY-HARDENED-白皮书-v1.0.md](./task13-phase2-security/PHASE2-SECURITY-HARDENED-白皮书-v1.0.md) | 安全加固 | ✅ A级 | 限流/超时/安全头/日志增强 |
 | [HAJIMI-B-01-04-LUXURY-BASE-白皮书-v1.0.md](./task14-luxury-base/HAJIMI-B-01-04-LUXURY-BASE-白皮书-v1.0.md) | 豪华版架构 | ✅ A级 | sql.js+WAL+批量+预编译优化 |
 | [HAJIMI-B-01-04-FIX-001-白皮书-v1.0.md](./task15-fix/HAJIMI-B-01-04-FIX-001-白皮书-v1.0.md) | 修复报告 | ✅ A级 | getBucket队列优先修复 |
+| [ENV-001-白皮书-v1.0.md](./task20-env-validation/ENV-001-白皮书-v1.0.md) | 环境验证 | ✅ A级 | Node.js/npm环境验证 |
+| [PHASE4-WASM-REDIS-白皮书-v1.0.md](./task21-phase4-wasm-redis/PHASE4-WASM-REDIS-白皮书-v1.0.md) | Phase4综合 | ✅ B+/Go | WASM 5x+Redis验证+技术债 |
+| [RISK-FIX-001-白皮书-v1.0.md](./task22-risk-fix/RISK-01-FIX-白皮书-v1.0.md) | RISK修复 | ✅ A | 22号审计RISK-01修复 |
 | [WASM-COMPILE-白皮书-v1.0.md](./task10-wasm-compile/HAJIMI-WASM-COMPILE-白皮书-v1.0.md) | 编译报告 | ⚠️ 部分完成 | WASM编译过程+性能验证+债务状态更新 |
 | [SQLITE-SHARDING-方案对比.md](./task02-技术债务清偿/SQLITE-SHARDING-方案对比.md) | 方案选型 | ✅ 已完成 | 3种分片方案对比，Hash分片胜出 |
 | [V3-ROADMAP-v2-CORRECTED.md](./task02-技术债务清偿/V3-ROADMAP-v2-CORRECTED.md) | 路线图 | ✅ 已校正 | 10周工期规划（含WebRTC降级） |
@@ -103,6 +112,8 @@
 2. **架构设计** → [local-storage-v3-design.md](./task01-架构设计/local-storage-v3-design.md)
 3. **安全加固** → [PHASE2-SECURITY-HARDENED-白皮书-v1.0.md](./task13-phase2-security/PHASE2-SECURITY-HARDENED-白皮书-v1.0.md)
 4. **限流系统** → [HAJIMI-B-01-04-LUXURY-BASE-白皮书-v1.0.md](./task14-luxury-base/HAJIMI-B-01-04-LUXURY-BASE-白皮书-v1.0.md)
+6. **Phase 5债务清偿** → [TASK-23-FINAL-REPORT.md](./task23-phase5-debt-clearance/TASK-23-FINAL-REPORT.md)
+7. **RISK修复报告** → [RISK-FINAL-REPORT.md](./task23-phase5-debt-clearance/RISK-FINAL-REPORT.md)
 5. **运行测试** → 
    ```bash
    # Phase 1
@@ -147,22 +158,24 @@
 
 ### 项目信息
 
-- **项目代号**: HAJIMI-V3-PHASE4-TASK16
-- **当前版本**: v3.0-PHASE4-TASK16 ✅
-- **核心创新**: 16分片SQLite + HNSW向量索引 + Worker Thread + WASM优化 + 限流持久化
+- **项目代号**: HAJIMI-V3-PHASE5-RISK
+- **当前版本**: v3.0-PHASE5-RISK ✅
+- **核心创新**: 16分片SQLite + HNSW向量索引 + Worker Thread + WASM优化 + 限流持久化 + SAB检测 + Redis重连
 - **存储目标**: 100K+ 向量分片，单分片6.25K记录
 - **性能目标**: 100K构建<80s, P99查询<100ms, 召回率>95%, 批量写入>1000 ops/s
 
 ### 关键数据
 
-| 指标 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Task 12-16 |
-|:-----|:---:|:---:|:---:|:---:|:---:|
-| 分片数 | 16 | 16 | 16 | 16 | 16 |
-| 测试用例 | 33项 | 7项 | 6项 | 6项 | 66+项 |
-| 代码文件 | 9个 | 15+ | 25+ | 35+ | 40+ |
-| 技术债务 | 6项已清 | 5项新增 | 3项已清 | 1项部分 | **1项已清** |
-| 总代码行 | ~3000 | ~8000 | ~12000 | ~14000 | ~16000 |
-| 批量写入吞吐 | - | - | - | - | **~2500 ops/s** |
+| 指标 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Task 12-16 | Phase 5 |
+|:-----|:---:|:---:|:---:|:---:|:---:|:---:|
+| 分片数 | 16 | 16 | 16 | 16 | 16 | 16 |
+| 测试用例 | 33项 | 7项 | 6项 | 6项 | 66+项 | 30+项 |
+| 代码文件 | 9个 | 15+ | 25+ | 35+ | 40+ | 45+ |
+| 技术债务 | 6项已清 | 5项新增 | 3项已清 | 1项部分 | 1项已清 | **RISK 3/3** |
+| 总代码行 | ~3000 | ~8000 | ~12000 | ~14000 | ~16000 | ~17000 |
+| 批量写入吞吐 | - | - | - | - | **~2500 ops/s** | ~2500 ops/s |
+| WASM Query | - | - | - | 1.4x | - | **1.94x** |
+| WASM Build | - | - | - | 7x | - | **7.7x** |
 
 ### 性能指标
 
@@ -176,6 +189,9 @@
 | 查询P99 | ~45ms | <100ms ✅ |
 | 召回率 | ~97% | >95% ✅ |
 | 批量写入吞吐 | ~2500 ops/s | >1000 ops/s ✅ |
+| WASM Query加速 | 1.94x | 5x (未达成) ⚠️ |
+| WASM Build加速 | 7.7x | 5x ✅ |
+| RISK修复 | 3/3 | 3/3 ✅ |
 | 崩溃数据丢失 | 0 | 0 ✅ |
 
 ---
@@ -194,7 +210,8 @@ WAL自动检查点 (<110MB)                     写入队列 (并发安全)
 
 HTTP API服务器 (/health, /vector/*)       磁盘溢出管理 (ENOSPC处理)
 Worker Thread (native worker_threads)      紧急模式 (内存-only)
-WASM优化 (477KB, 目标5x加速)              WASM-JS混合 (自动降级)
+WASM优化 (495KB, 1.94x/7.7x)              WASM-JS混合 (自动降级)
+SAB环境检测 (COOP/COEP提示)               Redis主动重连 (<100ms)
 
 Token Bucket限流 (100 req/min)            SQLite持久化 (sql.js)
 批量写入 (>1000 ops/s)                     崩溃恢复 (WAL重放)
@@ -219,6 +236,9 @@ JSON结构化日志                             请求ID追踪
 - ✅ DEBT-PHASE2-003: 磁盘溢出 → 已实现
 - ✅ DEBT-PHASE2-004: Worker Thread → 已实现
 - ✅ **DEBT-SEC-001: 限流状态持久化 → Task 14-16已清偿**
+- ✅ **RISK-01: SAB环境检测 → 22号审计修复完成**
+- ✅ **RISK-02: searchBatch真批量 → 真API实现**
+- ✅ **RISK-03: Redis主动重连 → <100ms恢复**
 
 ### 待处理
 
@@ -226,7 +246,9 @@ JSON结构化日志                             请求ID追踪
 |:---|:-----|:-------|:---:|:---|
 | DEBT-PHASE2-001 | WASM优化 | P1 | ⚠️ 85% | 字节码已生成，运行时待完善 |
 | DEBT-WASM-001 | WASM运行时完善 | P2 | - | Phase 4+ |
+| DEBT-WASM-003 | 5x加速目标 | P2 | ⚠️ | 2.21x达成，待SIMD优化 |
 | DEBT-REDIS-001 | 分布式限流 | P2 | - | Phase 4+ |
+| DEBT-REDIS-002 | 真实Redis验证 | P1 | ⚠️ | 代码完成，待环境验证 |
 
 ---
 
@@ -289,4 +311,4 @@ docs/
 
 ---
 
-> 💡 **提示**: 本文档索引与 workspace/README.md 保持同步，反映 Hajimi V3 本地存储系统 Phase 1-4 + Task 12-16 的完整交付状态。
+> 💡 **提示**: 本文档索引与 workspace/README.md 保持同步，反映 Hajimi V3 本地存储系统 **Phase 1-5 + Task 12-16 + RISK-FIX-001** 的完整交付状态。

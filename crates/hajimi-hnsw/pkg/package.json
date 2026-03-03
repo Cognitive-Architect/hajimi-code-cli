@@ -1,21 +1,16 @@
 {
   "name": "hajimi-hnsw",
-  "version": "0.1.0",
+  "collaborators": [
+    "Hajimi Team"
+  ],
   "description": "HNSW vector index for Hajimi V3 - WASM optimized",
-  "main": "hajimi_hnsw.js",
-  "types": "hajimi_hnsw.d.ts",
+  "version": "0.1.0",
+  "license": "MIT",
   "files": [
-    "hajimi_hnsw.js",
     "hajimi_hnsw_bg.wasm",
+    "hajimi_hnsw.js",
     "hajimi_hnsw.d.ts"
   ],
-  "scripts": {
-    "test": "echo 'Tests in parent project'"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hajimi/storage"
-  },
-  "author": "Hajimi Team",
-  "license": "MIT"
+  "main": "hajimi_hnsw.js",
+  "types": "hajimi_hnsw.d.ts"
 }

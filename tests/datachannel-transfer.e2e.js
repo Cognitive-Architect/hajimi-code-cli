@@ -22,10 +22,10 @@ class MockChannel {
 }
 
 function setupPair() {
-  const dcmA = new DataChannelManager();
-  const dcmB = new DataChannelManager();
-  // 共享密钥以支持端到端加密测试
-  dcmB.cryptoKey = dcmA.cryptoKey;
+  const sharedSecret = 'e2e-test-shared-secret';
+  const dcmA = new DataChannelManager('peerA', sharedSecret);
+  const dcmB = new DataChannelManager('peerB', sharedSecret);
+  // 使用相同sharedSecret确保密钥相同
   dcmA.on('error', () => {});
   dcmB.on('error', () => {});
   

@@ -1,0 +1,9 @@
+F:\Hajimi Code Ultra\Hajimi CLI\workspace\hajimi-code-cli\crates\hajimi-hnsw\target\debug\deps\bumpalo-9610c5b250f21677.d: C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\lib.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\alloc.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\../README.md
+
+F:\Hajimi Code Ultra\Hajimi CLI\workspace\hajimi-code-cli\crates\hajimi-hnsw\target\debug\deps\libbumpalo-9610c5b250f21677.rlib: C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\lib.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\alloc.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\../README.md
+
+F:\Hajimi Code Ultra\Hajimi CLI\workspace\hajimi-code-cli\crates\hajimi-hnsw\target\debug\deps\libbumpalo-9610c5b250f21677.rmeta: C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\lib.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\alloc.rs C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\../README.md
+
+C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\lib.rs:
+C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\alloc.rs:
+C:\Users\22129\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bumpalo-3.20.2\src\../README.md:

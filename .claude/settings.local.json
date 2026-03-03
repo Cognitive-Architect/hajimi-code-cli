@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls Code:*)",
+      "Bash(ls:*)",
+      "Bash(cargo check:*)"
+    ]
+  }
+}
