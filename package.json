@@ -8,7 +8,13 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:unit": "node --max-old-space-size=512 tests/crypto-key-derivation.unit.js",
+    "test:rc": "node --max-old-space-size=512 tests/rc/stability-4h.test.js",
+    "test:rc:serial": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js",
+    "test:rc:real": "node --max-old-space-size=512 tests/datachannel-real-network.e2e.js",
+    "start:rc": "node --max-old-space-size=512 src/p2p/signaling-server.js",
+    "bench": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js"
   },
   "keywords": [],
   "author": "",

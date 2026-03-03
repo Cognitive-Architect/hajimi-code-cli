@@ -10,6 +10,18 @@ const path = require('path');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
+// V8堆限制自检（37号工程实施）
+const v8 = require('v8');
+const heapStats = v8.getHeapStatistics();
+const heapLimitMB = heapStats.heap_size_limit / 1024 / 1024;
+
+if (heapLimitMB > 600) {
+  console.warn(`⚠️  当前V8堆限制: ${heapLimitMB.toFixed(0)}MB（建议<600MB）`);
+  console.warn('💡 使用优化参数重新运行: npm run test:rc');
+  console.warn('   或手动: node --max-old-space-size=512 tests/rc/stability-4h.test.js');
+  console.warn('');
+}
+
 // Constants: 4h duration, 30s interval
 const DURATION = 4 * 60 * 60 * 1000; // 14,400,000 ms (4h)
 const SAMPLE_INTERVAL = 30000; // 30,000 ms (30s)

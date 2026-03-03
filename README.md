@@ -50,6 +50,33 @@
 | WASM Query | - | - | - | 1.4x | - | **1.94x** ✅ |
 | WASM Build | - | - | - | 7x | - | **7.7x** ✅ |
 
+### RC性能测试（消费级笔记本优化）
+
+本项目针对消费级笔记本内存约束进行优化，运行性能测试时请使用：
+
+```bash
+# 4小时长时稳定性测试（已配置--max-old-space-size=512）
+npm run test:rc
+
+# 100次串行传输测试（已配置优化参数）
+npm run test:rc:serial
+
+# 真实网络E2E测试
+npm run test:rc:real
+
+# 启动信令服务器（带内存限制）
+npm run start:rc
+```
+
+手动运行（如需自定义参数）：
+
+```bash
+node --max-old-space-size=512 tests/rc/stability-4h.test.js
+node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js
+```
+
+> 💡 **提示**: 如果看到V8堆限制警告（>600MB），请使用`npm run test:rc`自动应用优化参数。
+
 ---
 
 ## 🗂️ 目录结构
