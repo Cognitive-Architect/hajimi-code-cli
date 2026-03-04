@@ -13,6 +13,8 @@
     "test:rc": "node --max-old-space-size=512 tests/rc/stability-4h.test.js",
     "test:rc:serial": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js",
     "test:rc:real": "node --max-old-space-size=512 tests/datachannel-real-network.e2e.js",
+    "test:real-e2e": "node --max-old-space-size=512 tests/p2p/real-yjs-level.e2e.js",
+    "test:real-e2e:docker": "bash scripts/run-real-e2e.sh",
     "start:rc": "node --max-old-space-size=512 src/p2p/signaling-server.js",
     "bench": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js"
   },
@@ -20,23 +22,12 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "test:unit": "node --max-old-space-size=512 tests/crypto-key-derivation.unit.js",
-    "test:rc": "node --max-old-space-size=512 tests/rc/stability-4h.test.js",
-    "test:rc:serial": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js",
-    "test:rc:real": "node --max-old-space-size=512 tests/datachannel-real-network.e2e.js",
-    "test:real-e2e": "node --max-old-space-size=512 tests/p2p/real-yjs-level.e2e.js",
-    "test:real-e2e:docker": "bash scripts/run-real-e2e.sh",
-    "start:rc": "node --max-old-space-size=512 src/p2p/signaling-server.js",
-    "bench": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js"
-  },
   "dependencies": {
     "@koush/wrtc": "^0.5.3",
     "ioredis": "^5.9.3",
     "level": "^8.0.1",
     "sql.js": "^1.14.0",
     "ws": "^8.19.0",
-    "yjs": "^13.6.0"
+    "yjs": "^13.6.29"
   }
 }
