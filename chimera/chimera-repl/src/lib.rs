@@ -12,11 +12,13 @@ use tracing::{debug, info};
 pub mod engine;
 pub mod event;
 pub mod session;
+pub mod state;
 pub mod traits;
 
 pub use engine::{EngineController, EngineState};
 pub use event::{ReplEvent, ReplEventSender};
 pub use session::SessionState;
+pub use state::{ReplState, Role, SessionMeta, TurnItem};
 pub use traits::{ReplConfig, ReplEngineCore, ReplError, ReplResult};
 
 /// Core REPL engine state and event handling.
