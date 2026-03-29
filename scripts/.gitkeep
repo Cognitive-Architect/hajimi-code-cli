@@ -1,0 +1,4 @@
+# 常用脚本
+
+建议添加到 PATH:
+export PATH="/path/to/workspace/scripts:$PATH"
