@@ -1,0 +1,12 @@
+{
+  "server": {
+    "name": "mcp-server",
+    "version": "1.0.0",
+    "transport": "stdio"
+  },
+  "capabilities": {
+    "tools": true,
+    "resources": true,
+    "prompts": true
+  }
+}
