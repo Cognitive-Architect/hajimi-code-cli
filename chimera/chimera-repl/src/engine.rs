@@ -5,10 +5,13 @@
 
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info};
 
-use crate::{ReplConfig, ReplError, ReplResult, SessionState};
+use crate::{
+    ReplConfig, ReplEngineCore, ReplError, ReplEvent, ReplEventSender, ReplResult,
+    SessionState,
+};
 
 /// Engine state machine for REPL lifecycle management.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
