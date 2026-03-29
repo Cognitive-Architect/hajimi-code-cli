@@ -1,0 +1,23 @@
+[package]
+name = "evm-bench-adapter"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "EVMbench adapter for Hajimi - Rust types and bindings"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+ethers = { version = "2.0", features = ["rustls", "ws"] }
+thiserror = "1.0"
+
+[lib]
+name = "evm_bench_adapter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "runner"
+path = "src/main.rs"

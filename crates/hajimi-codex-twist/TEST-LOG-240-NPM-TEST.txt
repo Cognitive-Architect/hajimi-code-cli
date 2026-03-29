@@ -1,0 +1,342 @@
+
+> codex-twist-ffi-tests@1.0.0 test
+> jest
+
+PASS ./real-ffi.test.ts (5.549 s)
+  ● Console
+
+    console.log
+      FFI Test Setup:
+
+      at Object.<anonymous> (setup.js:11:9)
+
+    console.log
+        Addon path: /mnt/f/Hajimi Code Ultra/Hajimi CLI/workspace/hajimi-code-cli/crates/codex-twist/index.node
+
+      at Object.<anonymous> (setup.js:12:9)
+
+    console.log
+        Status: .node file found ✓
+
+      at Object.<anonymous> (setup.js:16:11)
+
+    console.log
+      
+      === Real FFI Tests Summary ===
+
+      at Object.<anonymous> (real-ffi.test.ts:273:9)
+
+    console.log
+      Test Coverage:
+
+      at Object.<anonymous> (real-ffi.test.ts:274:9)
+
+    console.log
+        ✓ create_thread returns valid handle (测试1)
+
+      at Object.<anonymous> (real-ffi.test.ts:275:9)
+
+    console.log
+        ✓ create_turn in thread works (测试2)
+
+      at Object.<anonymous> (real-ffi.test.ts:276:9)
+
+    console.log
+        ✓ thread save/load roundtrip (测试3)
+
+      at Object.<anonymous> (real-ffi.test.ts:277:9)
+
+    console.log
+        ✓ list_turns returns correct count (测试4)
+
+      at Object.<anonymous> (real-ffi.test.ts:278:9)
+
+    console.log
+        ✓ thread config update persists (测试5)
+
+      at Object.<anonymous> (real-ffi.test.ts:279:9)
+
+    console.log
+        ✓ error handling for invalid operations (测试6)
+
+      at Object.<anonymous> (real-ffi.test.ts:280:9)
+
+    console.log
+      
+      DEBT-TS-BINDING-001: 彻底清零
+
+      at Object.<anonymous> (real-ffi.test.ts:281:9)
+
+    console.log
+      FFI loaded successfully from: /mnt/f/Hajimi Code Ultra/Hajimi CLI/workspace/hajimi-code-cli/crates/codex-twist/index.node
+
+      at Object.<anonymous> (real-ffi.test.ts:35:13)
+
+    console.log
+      ✓ create_thread returns valid handle
+
+      at Object.<anonymous> (real-ffi.test.ts:64:13)
+
+    console.log
+      ✓ create_thread with config works
+
+      at Object.<anonymous> (real-ffi.test.ts:79:13)
+
+    console.log
+      ✓ create_turn in thread works
+
+      at Object.<anonymous> (real-ffi.test.ts:92:13)
+
+    console.log
+      ✓ list_turns returns correct count
+
+      at Object.<anonymous> (real-ffi.test.ts:106:13)
+
+    console.log
+      ✓ complete_turn updates turn status
+
+      at Object.<anonymous> (real-ffi.test.ts:120:13)
+
+    console.log
+      ✓ thread save and load roundtrip works
+
+      at Object.<anonymous> (real-ffi.test.ts:151:13)
+
+    console.log
+      ✓ thread config update persists
+
+      at Object.<anonymous> (real-ffi.test.ts:182:13)
+
+    console.log
+      ✓ error handling for empty thread works
+
+      at Object.<anonymous> (real-ffi.test.ts:195:13)
+
+    console.log
+      ✓ error handling for invalid path works
+
+      at Object.<anonymous> (real-ffi.test.ts:204:13)
+
+    console.log
+      ✓ cancel turn error handling works
+
+      at Object.<anonymous> (real-ffi.test.ts:215:13)
+
+    console.log
+      FFI Version: 0.1.0
+
+      at Object.<anonymous> (real-ffi.test.ts:224:13)
+
+    console.log
+      ✓ parse_approval_policy works
+
+      at Object.<anonymous> (real-ffi.test.ts:239:13)
+
+    console.log
+      ✓ needs_approval works
+
+      at Object.<anonymous> (real-ffi.test.ts:252:13)
+
+    console.log
+      ✓ multiple threads have unique handles
+
+      at Object.<anonymous> (real-ffi.test.ts:269:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ get_turns 返回结构验证通过".
+
+      141 |     assert.strictEqual(typeof mockTurns[0].turn_id, 'string');
+      142 |     assert.strictEqual(typeof mockTurns[0].status, 'string');
+    > 143 |     console.log('✓ get_turns 返回结构验证通过');
+          |             ^
+      144 |   });
+      145 |
+      146 |   // 测试6: 完整工作流程（模拟）
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:143:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ 完整工作流程模拟验证通过".
+
+      159 |       assert.ok(Array.isArray(args));
+      160 |     });
+    > 161 |     console.log('✓ 完整工作流程模拟验证通过');
+          |             ^
+      162 |   });
+      163 |
+      164 |   // 测试7: 配置选项
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:161:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ ThreadConfig 选项验证通过".
+
+      175 |       assert.ok(cfg, '配置应有效');
+      176 |     });
+    > 177 |     console.log('✓ ThreadConfig 选项验证通过');
+          |             ^
+      178 |   });
+      179 |
+      180 |   // 测试8: 版本检查
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:177:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ version API验证通过".
+
+      183 |     assert.strictEqual(typeof mockVersion, 'string');
+      184 |     assert.ok(mockVersion.match(/^\d+\.\d+\.\d+$/), '版本应符合语义化版本格式');
+    > 185 |     console.log('✓ version API验证通过');
+          |             ^
+      186 |   });
+      187 |
+      188 |   // 测试9: Turn状态值
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:185:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ Turn状态值验证通过".
+
+      192 |       assert.ok(['pending', 'streaming', 'completed', 'cancelled', 'error'].includes(status));
+      193 |     });
+    > 194 |     console.log('✓ Turn状态值验证通过');
+          |             ^
+      195 |   });
+      196 |
+      197 |   // 测试10: 审批策略解析
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:194:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ 审批策略解析验证通过".
+
+      208 |       assert.ok(typeof input === 'string');
+      209 |     });
+    > 210 |     console.log('✓ 审批策略解析验证通过');
+          |             ^
+      211 |   });
+      212 |
+      213 |   // 清理测试目录
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:210:13)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "✓ 测试目录清理完成".
+
+      215 |     try {
+      216 |       fs.rmdirSync(testDir);
+    > 217 |       console.log('✓ 测试目录清理完成');
+          |               ^
+      218 |     } catch {
+      219 |       // 忽略清理错误
+      220 |     }
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at TestContext.<anonymous> (poc.test.ts:217:15)
+
+FAIL ./poc.test.ts
+  ● Test suite failed to run
+
+    Your test suite must contain at least one test.
+
+      at onResult (node_modules/@jest/core/build/TestScheduler.js:133:18)
+      at node_modules/@jest/core/build/TestScheduler.js:254:19
+      at node_modules/emittery/index.js:363:13
+          at Array.map (<anonymous>)
+      at Emittery.emit (node_modules/emittery/index.js:361:23)
+
+TAP version 13
+# Subtest: Codex-Twist FFI PoC Tests
+    # Subtest: setup test directory
+    ok 1 - setup test directory
+      ---
+      duration_ms: 2.278346
+      ...
+    # Subtest: create_thread API signature
+    ok 2 - create_thread API signature
+      ---
+      duration_ms: 2.54451
+      ...
+    # Subtest: create_turn API signature
+    ok 3 - create_turn API signature
+      ---
+      duration_ms: 1.221506
+      ...
+    # Subtest: complete_turn API signature
+    ok 4 - complete_turn API signature
+      ---
+      duration_ms: 1.40138
+      ...
+    # Subtest: get_thread_info return structure
+    ok 5 - get_thread_info return structure
+      ---
+      duration_ms: 2.717816
+      ...
+    # Subtest: get_turns return structure
+    ok 6 - get_turns return structure
+      ---
+      duration_ms: 577.047076
+      ...
+    # Subtest: complete workflow simulation
+    ok 7 - complete workflow simulation
+      ---
+      duration_ms: 12.588557
+      ...
+    # Subtest: ThreadConfig options
+    ok 8 - ThreadConfig options
+      ---
+      duration_ms: 5.257984
+      ...
+    # Subtest: version API
+    ok 9 - version API
+      ---
+      duration_ms: 5.54754
+      ...
+    # Subtest: Turn status values
+    ok 10 - Turn status values
+      ---
+      duration_ms: 5.518209
+      ...
+    # Subtest: approval policy parsing
+    ok 11 - approval policy parsing
+      ---
+      duration_ms: 4.908633
+      ...
+    # Subtest: cleanup
+    ok 12 - cleanup
+      ---
+      duration_ms: 5.887229
+      ...
+    1..12
+ok 1 - Codex-Twist FFI PoC Tests
+  ---
+  duration_ms: 633.438198
+  type: 'suite'
+  ...
+1..1
+# tests 12
+# suites 1
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 753.93879
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        11.786 s
+Ran all test suites.
