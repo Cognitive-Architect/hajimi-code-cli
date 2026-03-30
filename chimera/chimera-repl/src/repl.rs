@@ -1,84 +1,61 @@
 //! Chimera REPL - Pure business event loop, ZeroTUI architecture.
 use std::pin::Pin;
 
-use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::clock::Clock;
 use crate::event::{EventHandler, ReplEvent};
-use crate::state::{ReplState, Role};
+use crate::io::InputSource;
+use crate::state::ReplState;
 use crate::{ReplConfig, ReplError, ReplResult};
 
-/// ZeroTUI REPL implementation with I/O injection.
-pub struct ChimeraRepl<C: Clock, R: AsyncWrite + Unpin> {
+/// ZeroTUI REPL with I/O injection (Clock + InputSource + AsyncWrite).
+pub struct ChimeraRepl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> {
     state: ReplState<C>,
-    config: ReplConfig,
+    input: I,
     output: Pin<Box<R>>,
     event_rx: mpsc::Receiver<ReplEvent>,
+    config: ReplConfig,
     running: bool,
 }
 
-impl<C: Clock, R: AsyncWrite + Unpin> ChimeraRepl<C, R> {
-    /// Create new REPL instance with injected I/O.
+impl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> ChimeraRepl<C, I, R> {
+    /// Create new REPL with injected I/O.
     pub fn new(
         state: ReplState<C>,
-        config: ReplConfig,
+        input: I,
         output: R,
         event_rx: mpsc::Receiver<ReplEvent>,
+        config: ReplConfig,
     ) -> Self {
-        Self {
-            state,
-            config,
-            output: Box::pin(output),
-            event_rx,
-            running: false,
-        }
+        Self { state, input, output: Box::pin(output), event_rx, config, running: false }
     }
 
-    /// Main event loop - pure business logic, zero TUI.
+    /// Main event loop - pure business logic.
     pub async fn run<H: EventHandler>(&mut self, handler: &mut H) -> ReplResult<()> {
         self.running = true;
         info!("ChimeraRepl ZeroTUI loop started");
-
         while self.running {
-            match self.event_rx.recv().await {
-                Some(event) => {
-                    debug!(?event, "Processing REPL event");
-                    if let Err(e) = handler.handle(event).await {
-                        error!(?e, "Event handler error");
-                    }
-                }
-                None => {
-                    info!("Event channel closed, shutting down");
-                    self.running = false;
-                }
+            tokio::select! {
+                event = self.event_rx.recv() => match event {
+                    Some(e) => { if let Err(err) = handler.handle(e).await { error!(?err, "Handler error"); } }
+                    None => { info!("Channel closed"); self.running = false; }
+                },
+                line = self.input.read_line() => match line {
+                    Some(input) => { debug!(len = input.len(), "Input received"); }
+                    None => { info!("Input EOF"); self.running = false; }
+                },
             }
         }
-
-        self.output.flush().await.map_err(|e| ReplError::Channel(e.to_string()))?;
-        info!("ChimeraRepl graceful shutdown complete");
+        info!("ChimeraRepl shutdown");
         Ok(())
     }
 
-    /// Graceful shutdown signal.
-    pub fn shutdown(&mut self) {
-        self.running = false;
-        info!("Shutdown signal received");
-    }
+    /// Graceful shutdown.
+    pub fn shutdown(&mut self) { self.running = false; info!("Shutdown signal"); }
 
-    /// Get mutable state reference.
-    pub fn state_mut(&mut self) -> &mut ReplState<C> {
-        &mut self.state
-    }
-}
-
-/// Build REPL with stdin/stdout (convenience constructor).
-pub fn build_stdio_repl<C: Clock>(
-    state: ReplState<C>,
-    config: ReplConfig,
-) -> (ChimeraRepl<C, tokio::io::Stdout>, mpsc::Sender<ReplEvent>) {
-    let (event_tx, event_rx) = mpsc::channel(1024);
-    let repl = ChimeraRepl::new(state, config, tokio::io::stdout(), event_rx);
-    (repl, event_tx)
+    /// Get mutable state.
+    pub fn state_mut(&mut self) -> &mut ReplState<C> { &mut self.state }
 }
