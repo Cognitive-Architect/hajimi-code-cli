@@ -1,7 +1,6 @@
 //! Chimera REPL Engine - TUI-free command interaction layer
 //!
-//! Provides a headless REPL interface for Codex protocol interactions,
-//! decoupled from terminal UI concerns for programmatic use and testing.
+//! ZeroTUI architecture: pure business logic with I/O injection.
 
 use std::sync::Arc;
 
@@ -9,29 +8,31 @@ use codex_protocol::ThreadId;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info};
 
+pub mod clock;
 pub mod engine;
 pub mod event;
+pub mod repl;
 pub mod session;
 pub mod state;
 pub mod traits;
 
+pub use clock::{Clock, MockClock, SystemTimeClock};
 pub use engine::{EngineController, EngineState};
 pub use event::{ReplEvent, ReplEventSender};
+pub use repl::ChimeraRepl;
 pub use session::SessionState;
 pub use state::{ReplState, Role, SessionMeta, TurnItem};
 pub use traits::{ReplConfig, ReplEngineCore, ReplError, ReplResult};
 
+/// Default ReplState type alias (SystemTimeClock).
+pub type DefaultReplState = ReplState<SystemTimeClock>;
+
 /// Core REPL engine state and event handling.
 pub struct ReplEngine {
-    /// Unique thread identifier for this REPL session.
     pub thread_id: ThreadId,
-    /// Event transmission channel.
     pub event_tx: ReplEventSender,
-    /// Session state management.
     pub session: Arc<RwLock<SessionState>>,
-    /// Engine configuration.
     pub config: ReplConfig,
-    /// Running state flag.
     pub running: Arc<RwLock<bool>>,
 }
 

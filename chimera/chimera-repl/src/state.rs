@@ -1,17 +1,41 @@
 //! REPL state machine - Pure data structures, zero TUI dependencies
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
-/// Core conversation state (replaces Codex ThreadEventStore).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ReplState {
-    /// Historical turn items.
+use crate::clock::Clock;
+
+/// Core conversation state with clock abstraction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplState<C: Clock> {
     pub turn_items: Vec<TurnItem>,
-    /// Current active turn ID.
     pub current_turn_id: Option<String>,
-    /// Loading indicator (pure data).
     pub is_loading: bool,
-    /// Session metadata.
     pub session_meta: SessionMeta,
+    #[serde(skip)]
+    _clock: PhantomData<C>,
+}
+
+impl<C: Clock> Default for ReplState<C> {
+    fn default() -> Self {
+        Self {
+            turn_items: Vec::new(),
+            current_turn_id: None,
+            is_loading: false,
+            session_meta: SessionMeta::default(),
+            _clock: PhantomData,
+        }
+    }
+}
+
+impl<C: Clock> ReplState<C> {
+    /// Append a new turn using injected clock.
+    pub fn add_turn(&mut self, clock: &C, role: Role, content: String) {
+        let timestamp = clock.now_ms();
+        let id = format!("turn_{}", self.session_meta.turn_count);
+        self.turn_items.push(TurnItem { id, role, content, timestamp });
+        self.session_meta.turn_count += 1;
+        self.session_meta.updated_at = timestamp;
+    }
 }
 
 /// Single conversation turn.
@@ -38,19 +62,4 @@ pub struct SessionMeta {
     pub created_at: u64,
     pub updated_at: u64,
     pub turn_count: usize,
-}
-
-impl ReplState {
-    /// Append a new turn.
-    pub fn add_turn(&mut self, role: Role, content: String) {
-        let timestamp = now_ms();
-        let id = format!("turn_{}", self.session_meta.turn_count);
-        self.turn_items.push(TurnItem { id, role, content, timestamp });
-        self.session_meta.turn_count += 1;
-        self.session_meta.updated_at = timestamp;
-    }
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
