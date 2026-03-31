@@ -21,3 +21,6 @@ async-trait = "0.1"
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[patch.crates-io]
+unicode-segmentation = { version = "1.12.0" }
