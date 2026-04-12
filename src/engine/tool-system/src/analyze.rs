@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::path::Path;
 use syn::{visit::Visit, ExprBinary, ExprIf, ExprWhile, ExprForLoop, ExprMatch, ExprLoop, BinOp, ItemFn, File};
 use tokio::fs::read_to_string;
-use crate::tool::{Config, PermissionLevel, Tool, ToolArgs, ToolError, ToolOutput, ToolPermissions};
+use crate::{Config, PermissionLevel, Tool, ToolArgs, ToolError, ToolOutput, ToolPermissions};
 
 pub struct AnalyzeTool;
 impl AnalyzeTool { pub fn new() -> Self { Self } }

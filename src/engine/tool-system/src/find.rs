@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use crate::tool::{Config, PermissionLevel, Tool, ToolArgs, ToolError, ToolOutput, ToolPermissions};
+use crate::{Config, PermissionLevel, Tool, ToolArgs, ToolError, ToolOutput, ToolPermissions};
 
 pub struct FindTool;
 impl FindTool { pub fn new() -> Self { Self } }

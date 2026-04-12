@@ -1,6 +1,6 @@
 //! Ollama Local LLM Client
-use crate::error::EngineError;
-use crate::llm::{LlmClient, LlmProvider};
+use crate::EngineError;
+use crate::{LlmClient, LlmProvider};
 use crate::streaming::{ChannelStream, StreamChunk};
 use async_trait::async_trait;
 use futures::StreamExt;

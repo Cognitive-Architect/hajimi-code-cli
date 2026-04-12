@@ -6,8 +6,8 @@ use reqwest::{Client, header};
 use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
-use crate::error::EngineError;
-use crate::llm::{LlmClient, LlmProvider};
+use crate::EngineError;
+use crate::{LlmClient, LlmProvider};
 use crate::streaming::{ChannelStream, StreamChunk};
 
 pub struct AnthropicClient {

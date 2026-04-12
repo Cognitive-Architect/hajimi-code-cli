@@ -7,8 +7,10 @@
 //!
 //! DEBT-W03-001: [CLEARED 2026-04-03] Manual Debug impl to redact api_key
 
-use crate::error::EngineError;
-use crate::streaming::channel_stream::ChannelStream;
+mod error;
+mod streaming;
+pub use error::EngineError;
+pub use streaming::channel_stream::ChannelStream;
 use async_trait::async_trait;
 use std::env;
 
