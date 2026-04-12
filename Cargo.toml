@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/evm-bench-adapter",
-    "src/crates/hajimi-core",
     "src/engine/llm-core",
     "src/engine/p2p-sync",
     "src/engine/tool-system",
