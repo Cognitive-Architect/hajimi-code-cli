@@ -1,0 +1,38 @@
+[package]
+name = "memory"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Memory layer with Session/Auto/Dream/Graph modules"
+
+[lib]
+name = "memory"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+chrono = { workspace = true, features = ["serde"] }
+dirs = "5.0"
+tempfile = "3.0"
+tokio = { workspace = true, features = ["time", "sync", "fs", "rt", "macros"] }
+
+# Week 32: Dream层ONNX + SQLite依赖
+# DEBT-ONNX-API-W28-W32: P1-活动中（接口迁移完成，模型优化Week 33-34）
+rusqlite = { version = "0.30", features = ["bundled", "chrono"] }
+rand = "0.8"
+
+# ONNX Runtime依赖（可选feature）
+ort = { version = "2.0.0-rc.12", optional = true, default-features = false }
+ndarray = { version = "0.15", optional = true }
+cfg-if = "1.0"
+
+[features]
+default = []
+onnx = ["dep:ort", "dep:ndarray"]
+
+[dev-dependencies]
+tokio = { workspace = true }

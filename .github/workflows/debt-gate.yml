@@ -1,0 +1,61 @@
+name: Debt Gate
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  debt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Install clippy with debt checks
+        run: rustup component add clippy
+      
+      - name: Check unwrap in production code
+        run: |
+          COUNT=$(grep -r "unwrap(" src --include="*.rs" | grep -v test | wc -l)
+          echo "Production unwrap count: $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "❌ FAIL: Production code contains $COUNT unwrap() calls"
+            echo "Debt gate blocked - see docs/debt/DEBT-POLICY.md"
+            exit 1
+          fi
+          echo "✅ PASS: Production code unwrap-free"
+      
+      - name: Check expect in production code
+        run: |
+          COUNT=$(grep -r "expect(" src --include="*.rs" | grep -v test | wc -l)
+          echo "Production expect count: $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "❌ FAIL: Production code contains $COUNT expect() calls"
+            exit 1
+          fi
+          echo "✅ PASS: Production code expect-free"
+      
+      - name: Check unsafe SAFETY comments
+        run: |
+          UNSAFE_COUNT=$(grep -r "unsafe {" src --include="*.rs" | wc -l)
+          SAFETY_COUNT=$(grep -r "SAFETY:" src --include="*.rs" | wc -l)
+          echo "Unsafe blocks: $UNSAFE_COUNT, SAFETY comments: $SAFETY_COUNT"
+          if [ "$UNSAFE_COUNT" -gt "$SAFETY_COUNT" ]; then
+            echo "⚠️ WARNING: Some unsafe blocks lack SAFETY comments"
+          fi
+          echo "✅ PASS: Unsafe audit complete"
+      
+      - name: Run debt scanner
+        run: |
+          chmod +x scripts/debt-scan.sh
+          ./scripts/debt-scan.sh
+      
+      - name: Upload debt report
+        uses: actions/upload-artifact@v4
+        with:
+          name: debt-report
+          path: target/debt-report.json

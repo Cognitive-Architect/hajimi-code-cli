@@ -2,6 +2,7 @@
 //! 特性: O(1)访问、RwLock并发（读多写少优化）、LRU淘汰
 
 use std::sync::Arc;
+use std::io;
 use tokio::sync::RwLock;
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -15,10 +16,19 @@ pub struct FocusMemory<K, V> {
 impl<K, V> FocusMemory<K, V>
 where K: std::hash::Hash + Eq + Clone + Send + Sync, V: Clone + Send + Sync,
 {
-    pub fn new() -> Self { Self::with_capacity(4000) }
-    pub fn with_capacity(cap: usize) -> Self {
-        let cap = NonZeroUsize::new(cap).expect("capacity must be non-zero");
+    pub fn new() -> Self {
+        // 4000是编译时常量且非零，直接unwrap是安全的
+        Self::with_capacity_inner(NonZeroUsize::new(4000).unwrap())
+    }
+    
+    fn with_capacity_inner(cap: NonZeroUsize) -> Self {
         Self { cache: Arc::new(RwLock::new(LruCache::new(cap))) }
+    }
+    
+    pub fn with_capacity(cap: usize) -> io::Result<Self> {
+        let cap = NonZeroUsize::new(cap)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "capacity must be non-zero"))?;
+        Ok(Self::with_capacity_inner(cap))
     }
     /// 清除所有缓存
     pub async fn clear(&self) {
@@ -72,23 +82,26 @@ impl MemoryTier for FocusMemory<FocusKey, FocusValue> {
 mod tests {
     use super::*;
     
-    #[tokio::test] async fn test_focus_basic() {
+    #[tokio::test] async fn test_focus_basic() -> Result<(), std::io::Error> {
         let mem = FocusMemory::new();
-        mem.put("k1".into(), "v1".into()).await.unwrap();
-        assert_eq!(mem.get(&"k1".into()).await.unwrap(), Some("v1".into()));
+        mem.put("k1".into(), "v1".into()).await?;
+        assert_eq!(mem.get(&"k1".into()).await?, Some("v1".into()));
+        Ok(())
     }
     
-    #[tokio::test] async fn test_focus_lru_eviction() {
-        let mem = FocusMemory::with_capacity(2);
-        mem.put("k1".into(), "v1".into()).await.unwrap();
-        mem.put("k2".into(), "v2".into()).await.unwrap();
-        mem.put("k3".into(), "v3".into()).await.unwrap();
-        assert_eq!(mem.get(&"k1".into()).await.unwrap(), None);
-        assert_eq!(mem.get(&"k2".into()).await.unwrap(), Some("v2".into()));
+    #[tokio::test] async fn test_focus_lru_eviction() -> Result<(), std::io::Error> {
+        let mem = FocusMemory::with_capacity(2)?;
+        mem.put("k1".into(), "v1".into()).await?;
+        mem.put("k2".into(), "v2".into()).await?;
+        mem.put("k3".into(), "v3".into()).await?;
+        assert_eq!(mem.get(&"k1".into()).await?, None);
+        assert_eq!(mem.get(&"k2".into()).await?, Some("v2".into()));
+        Ok(())
     }
     
-    #[tokio::test] async fn test_focus_capacity_4000() {
+    #[tokio::test] async fn test_focus_capacity_4000() -> Result<(), std::io::Error> {
         let mem = FocusMemory::<String, String>::new();
-        assert_eq!(mem.stats().await.unwrap().level, MemoryLevel::Focus);
+        assert_eq!(mem.stats().await?.level, MemoryLevel::Focus);
+        Ok(())
     }
 }

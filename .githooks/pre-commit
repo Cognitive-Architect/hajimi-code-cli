@@ -1,0 +1,16 @@
+#!/bin/bash
+# 预提交债务检查
+
+echo "Running debt gate check..."
+
+UNWRAP_COUNT=$(grep -r "unwrap(" src --include="*.rs" | grep -v test | wc -l)
+EXPECT_COUNT=$(grep -r "expect(" src --include="*.rs" | grep -v test | wc -l)
+
+if [ "$UNWRAP_COUNT" -gt 0 ] || [ "$EXPECT_COUNT" -gt 0 ]; then
+  echo "❌ Commit blocked: Production code has $UNWRAP_COUNT unwrap and $EXPECT_COUNT expect calls"
+  echo "Run ./scripts/debt-scan.sh for details"
+  exit 1
+fi
+
+echo "✅ Debt gate passed"
+exit 0

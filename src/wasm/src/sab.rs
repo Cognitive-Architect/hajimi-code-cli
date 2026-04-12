@@ -19,6 +19,10 @@ impl<T> AlignedData<T> {
 }
 
 /// 从SAB读取f32切片 - 安全检查对齐
+/// 
+/// # Safety
+/// - ptr必须有效且16字节对齐
+/// - 内存生命周期由JS管理，此函数不释放
 pub unsafe fn read_sab_f32_slice(
     ptr: *const f32,
     len: usize,

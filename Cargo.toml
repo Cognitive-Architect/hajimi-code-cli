@@ -1,5 +1,13 @@
 [workspace]
-members = ["crates/evm-bench-adapter", "crates/hajimi-codex-twist"]
+members = [
+    "crates/evm-bench-adapter",
+    "crates/hajimi-codex-twist", 
+    "crates/hajimi-pgvector",
+    "src/crates/hajimi-core",
+    "src/ws_server",
+    "src/memory",
+    "src/tools"
+]
 resolver = "2"
 
 [workspace.package]
@@ -13,3 +21,13 @@ repository = "https://github.com/hajimi/evm-bench-adapter"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# pgvector 集成（Week 40 Buy 策略）
+prax-pgvector = { version = "0.5.2", features = ["sqlx"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres"] }
+# 注意：显式 napi 依赖已移除，使用 prax-pgvector 内嵌版本
+
+[profile.release]
+opt-level = 3
+lto = true

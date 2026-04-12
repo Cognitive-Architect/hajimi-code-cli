@@ -1,0 +1,33 @@
+name = "light"
+description = "Light theme with clean aesthetics"
+version = "1.0.0"
+
+[colors]
+# Core UI colors
+background = "#f5f5f5"
+foreground = "#333333"
+primary = "#007acc"
+
+# Status colors
+success = "#28a745"
+error = "#dc3545"
+warning = "#ffc107"
+
+# Secondary colors
+muted = "#6c757d"
+border = "#dddddd"
+selection = "#add6ff"
+hover = "#e5e5e5"
+
+# Syntax highlighting
+keyword = "#0000ff"
+string = "#a31515"
+number = "#098658"
+comment = "#008000"
+function = "#795e26"
+variable = "#001080"
+
+# Diagnostic colors (Week 19)
+editorError = "#dc3545"
+editorWarning = "#ffc107"
+editorInfo = "#007acc"

@@ -1,0 +1,28 @@
+[package]
+name = "ws_server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebSocket server with JSON-RPC 2.0 protocol, heartbeat and reconnection"
+keywords = ["websocket", "jsonrpc", "server", "async", "tokio"]
+categories = ["network-programming", "web-programming::websocket"]
+rust-version = "1.75"
+
+[features]
+default = []
+full = []
+
+[dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = "0.21"
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = "0.3"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"

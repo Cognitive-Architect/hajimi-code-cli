@@ -1,0 +1,33 @@
+name = "dark"
+description = "Dark theme with high contrast"
+version = "1.0.0"
+
+[colors]
+# Core UI colors
+background = "#1a1a2e"
+foreground = "#eeeeee"
+primary = "#4fc1ff"
+
+# Status colors
+success = "#4ec9b0"
+error = "#f44747"
+warning = "#ffcc00"
+
+# Secondary colors
+muted = "#6e7681"
+border = "#2d2d44"
+selection = "#264f78"
+hover = "#3c3c5c"
+
+# Syntax highlighting
+keyword = "#c586c0"
+string = "#ce9178"
+number = "#b5cea8"
+comment = "#6a9955"
+function = "#dcdcaa"
+variable = "#9cdcfe"
+
+# Diagnostic colors (Week 19)
+editorError = "#f44747"
+editorWarning = "#ffcc00"
+editorInfo = "#4fc1ff"

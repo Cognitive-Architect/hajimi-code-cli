@@ -1,0 +1,2 @@
+   Compiling codex-twist v0.1.0 (/mnt/f/Hajimi Code Ultra/Hajimi CLI/workspace/hajimi-code-cli/crates/codex-twist)
+    Finished release [optimized] target(s) in 15.45s

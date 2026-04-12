@@ -106,18 +106,20 @@ impl MemoryTier for WorkingMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[tokio::test] async fn test_working_basic() {
+    #[tokio::test] async fn test_working_basic() -> Result<(), std::io::Error> {
         let mem = WorkingMemory::new();
-        mem.put("k1".into(), "v1".into()).await.unwrap();
-        assert_eq!(mem.get(&"k1".into()).await.unwrap(), Some("v1".into()));
+        mem.put("k1".into(), "v1".into()).await?;
+        assert_eq!(mem.get(&"k1".into()).await?, Some("v1".into()));
+        Ok(())
     }
-    #[tokio::test] async fn test_working_sliding_window() {
+    #[tokio::test] async fn test_working_sliding_window() -> Result<(), std::io::Error> {
         let mem = WorkingMemory::with_limit(8); // 5+5+5=15>8 triggers eviction
-        mem.put("k1".into(), "x".repeat(16)).await.unwrap(); // 5 tokens
-        mem.put("k2".into(), "y".repeat(16)).await.unwrap(); // 5 tokens
-        mem.put("k3".into(), "z".repeat(16)).await.unwrap(); // 触发淘汰
-        assert_eq!(mem.get(&"k1".into()).await.unwrap(), None); // ✅ 验证k1被淘汰
-        assert_eq!(mem.get(&"k3".into()).await.unwrap(), Some("z".repeat(16)));
+        mem.put("k1".into(), "x".repeat(16)).await?; // 5 tokens
+        mem.put("k2".into(), "y".repeat(16)).await?; // 5 tokens
+        mem.put("k3".into(), "z".repeat(16)).await?; // 触发淘汰
+        assert_eq!(mem.get(&"k1".into()).await?, None); // ✅ 验证k1被淘汰
+        assert_eq!(mem.get(&"k3".into()).await?, Some("z".repeat(16)));
+        Ok(())
     }
     #[tokio::test] async fn test_working_capacity_16000() {
         let mem = WorkingMemory::new();
