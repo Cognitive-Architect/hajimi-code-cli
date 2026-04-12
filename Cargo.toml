@@ -4,7 +4,7 @@ members = [
     "crates/hajimi-codex-twist", 
     "crates/hajimi-pgvector",
     "src/crates/hajimi-core",
-    "src/ws_server",
+    "src/foundation/network",
     "src/memory",
     "src/tools"
 ]
