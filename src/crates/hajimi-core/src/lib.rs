@@ -21,29 +21,25 @@
 //! - NEXT-AUDIT: Week 13矫正后
 //! - LAST-CLEARED: 2026-04-04
 
+pub mod commands;
 pub mod config;
 pub mod core;
 pub mod error;
-pub mod executor;
-pub mod knowledge;
-pub mod llm;
 pub mod query;
 pub mod retry;
 pub mod streaming;
-pub mod tool;
 pub mod ui;
 
+// Re-export engine crates
+pub use engine_llm_core as llm;
+pub use engine_tool_system as tool;
+pub use engine_worker as worker;
+
 pub use error::EngineError;
-pub use executor::{Executor, ParallelExecutor, SerialExecutor};
-pub use llm::{AnthropicClient, LlmClient, LlmProvider, OllamaClient, OpenAiClient};
 pub use query::{Query, QueryResult};
 pub use retry::with_retry;
 pub use streaming::{
     BatchConfig, BatchedStream, ChannelStream, StreamChunk, StreamingExecutor, StreamConfig,
-};
-pub use tool::{
-    BashTool, EditFileTool, FindTool, GlobTool, GrepTool, ListDirectoryTool, LsTool, ReadFileTool, Tool, ToolRegistry, WriteFileTool,
-    WebSearchTool, FetchUrlTool, ApiRequestTool,
 };
 
 // Config exports - B-W05-03: ConfigManager::new, enable_hot_reload
@@ -52,16 +48,3 @@ pub use config::{CliArgs, ConfigError, FeaturePreset};
 
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_RETRY_ATTEMPTS: u32 = 3;
-
-/// Create default tool registry with all 5 tools registered
-pub fn create_default_registry() -> ToolRegistry {
-    use std::sync::Arc;
-
-    let mut registry = ToolRegistry::new();
-    registry.register(Arc::new(ReadFileTool::new()));
-    registry.register(Arc::new(WriteFileTool::new()));
-    registry.register(Arc::new(BashTool::new()));
-    registry.register(Arc::new(GrepTool::new()));
-    registry.register(Arc::new(LsTool::new()));
-    registry
-}

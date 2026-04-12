@@ -8,6 +8,9 @@ description = "Core query engine for HAJIMI CLI"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+engine-llm-core = { path = "../../engine/llm-core" }
+engine-tool-system = { path = "../../engine/tool-system" }
+engine-worker = { path = "../../engine/worker" }
 tokio = { version = "1.37", features = ["full"] }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
