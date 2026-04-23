@@ -2,8 +2,12 @@
   "name": "hajimi-web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "start": "npx serve . -p 3456",
     "dev": "npx serve . -p 3456 -s"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
   }
 }

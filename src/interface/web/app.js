@@ -1,7 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
+
 const chatArea = document.getElementById('chatArea');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
 const newSessionBtn = document.getElementById('newSessionBtn');
+const sessionTitle = document.getElementById('sessionTitle');
 
 let isProcessing = false;
 
@@ -39,7 +42,7 @@ newSessionBtn.addEventListener('click', () => {
     <p class="welcome-text">Local-first AI agent. Ask me to read files, run tests, or edit code.</p>
   `;
   chatArea.appendChild(welcome);
-  document.getElementById('sessionTitle').textContent = 'Untitled';
+  sessionTitle.textContent = 'Untitled';
 });
 
 async function sendMessage() {
@@ -58,17 +61,82 @@ async function sendMessage() {
   const thinkingId = addThinking();
 
   try {
-    const response = await callBackend(text);
+    const response = await handleCommand(text);
     removeThinking(thinkingId);
     addMessage('ai', response);
   } catch (err) {
     removeThinking(thinkingId);
-    addMessage('ai', 'Error: ' + err.message);
+    addMessage('ai', '**Error:** ' + err.message);
   } finally {
     isProcessing = false;
     sendBtn.disabled = false;
     messageInput.focus();
   }
+}
+
+async function handleCommand(text) {
+  const lower = text.toLowerCase();
+
+  if (lower.startsWith('read ') || lower.startsWith('cat ') || lower.startsWith('show ')) {
+    const path = text.replace(/^\w+\s+/, '').trim();
+    try {
+      const content = await invoke('read_file', { path });
+      return '**' + path + '**\n```\n' + content + '\n```';
+    } catch (e) {
+      return 'Cannot read `' + path + '`: ' + e;
+    }
+  }
+
+  if (lower.startsWith('ls ') || lower.startsWith('dir ') || lower.startsWith('list ')) {
+    const path = text.replace(/^\w+\s+/, '').trim() || '.';
+    try {
+      const entries = await invoke('list_dir', { path });
+      return '**' + path + '**\n```\n' + entries.join('\n') + '\n```';
+    } catch (e) {
+      return 'Cannot list `' + path + '`: ' + e;
+    }
+  }
+
+  if (lower.startsWith('write ') || lower.startsWith('save ')) {
+    const parts = text.replace(/^\w+\s+/, '').split(' ');
+    const path = parts[0];
+    const content = parts.slice(1).join(' ');
+    if (!path || !content) return 'Usage: write &lt;path&gt; &lt;content&gt;';
+    try {
+      await invoke('write_file', { path, content });
+      return 'Saved to `' + path + '`';
+    } catch (e) {
+      return 'Cannot write `' + path + '`: ' + e;
+    }
+  }
+
+  if (lower.startsWith('run ') || lower.startsWith('exec ') || lower.startsWith('git ')) {
+    const words = text.split(' ');
+    const cmd = words[0];
+    const args = words.slice(1);
+    try {
+      const output = await invoke('run_command', { cmd, args });
+      return '```\n$ ' + text + '\n' + output + '\n```';
+    } catch (e) {
+      return '```\n$ ' + text + '\n' + e + '\n```';
+    }
+  }
+
+  if (lower === 'help' || lower === '?') {
+    return [
+      '**Available commands:**',
+      '',
+      '- `read &lt;path&gt;` — read file contents',
+      '- `write &lt;path&gt; &lt;content&gt;` — write to file',
+      '- `ls &lt;path&gt;` — list directory',
+      '- `run &lt;command&gt;` — run shell command',
+      '- `help` — show this message',
+      '',
+      'LLM integration is not yet connected. To add AI responses, wire up an LLM provider.'
+    ].join('\n');
+  }
+
+  return 'I am Hajimi running in **tool mode** without a connected LLM.\n\nTry:\n- `read README.md`\n- `ls src`\n- `run git status`\n- `help` for more';
 }
 
 function addMessage(role, text) {
@@ -94,22 +162,6 @@ function addThinking() {
 function removeThinking(id) {
   const el = document.getElementById(id);
   if (el) el.remove();
-}
-
-async function callBackend(text) {
-  try {
-    const res = await fetch('http://localhost:3000/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.response || JSON.stringify(data);
-    }
-  } catch {}
-
-  return "I am Hajimi running in standalone mode. To enable full features, start the API server with:\n\nnode src/foundation/api/server.js";
 }
 
 function formatText(text) {
