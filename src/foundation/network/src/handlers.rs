@@ -74,6 +74,10 @@ pub struct BuiltinHandlers;
 
 impl BuiltinHandlers {
     pub async fn create_registry() -> HandlerRegistry {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+        let feedback_store: Arc<RwLock<Vec<serde_json::Value>>> = Arc::new(RwLock::new(Vec::new()));
+
         let registry = HandlerRegistry::new();
         registry
             .register("health", |_req| async move { Ok(json!({"status": "healthy"})) })
@@ -90,6 +94,25 @@ impl BuiltinHandlers {
                 }))
             })
             .await;
+
+        // Week 4: hajimi/feedback endpoint — stores feedback in memory for now.
+        // DEBT-RUST-FEEDBACK-001: Route to MemoryGateway + Governance in Week 5–6.
+        let store = feedback_store.clone();
+        registry
+            .register("hajimi/feedback", move |req| {
+                let store = store.clone();
+                async move {
+                    let params = req.params.unwrap_or(json!({}));
+                    let items = params.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let mut guard = store.write().await;
+                    for item in items { guard.push(item); }
+                    let count = guard.len();
+                    drop(guard);
+                    Ok(json!({ "success": true, "storedCount": count }))
+                }
+            })
+            .await;
+
         registry
     }
 }

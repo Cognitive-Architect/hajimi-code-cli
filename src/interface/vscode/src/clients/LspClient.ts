@@ -148,6 +148,12 @@ export class LspClient implements vscode.Disposable {
     return this.rpcClient.send<TResult>(message);
   }
 
+  /** Send custom JSON-RPC request (for MCP tool calls and extensions) */
+  async sendCustomRequest<TResult>(method: string, params: unknown): Promise<TResult> {
+    const id = this.messageId.increment();
+    return this.sendRequest<TResult>(method, params, id);
+  }
+
   /** Send JSON-RPC notification (no response expected) */
   private async sendNotification(method: string, params: unknown): Promise<void> {
     this.rpcClient.notify({ jsonrpc: '2.0', method, params });

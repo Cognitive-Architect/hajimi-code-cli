@@ -1,6 +1,6 @@
 //! 图注意力机制（缩放点积）
 
-use crate::knowledge::graph::Result;
+use crate::graph::Result;
 
 pub const EMBEDDING_DIM: usize = 384;
 

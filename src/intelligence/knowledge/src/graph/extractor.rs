@@ -1,7 +1,7 @@
 //! 实体抽取逻辑（ADR/Rust AST→Node）
 
-use crate::knowledge::adr::AdrEntry;
-use crate::knowledge::graph::{Node, Result};
+use crate::core_adr::AdrEntry;
+use crate::graph::{Node, Result};
 
 /// 实体抽取器
 pub struct EntityExtractor;
@@ -15,14 +15,14 @@ impl EntityExtractor {
 
     /// 批量抽取（事务优化）
     pub fn extract_batch(adrs: &[AdrEntry]) -> Result<Vec<Node>> {
-        adrs.iter().map(|adr| Self::extract_from_adr(adr)).collect()
+        adrs.iter().map(Self::extract_from_adr).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::knowledge::adr::AdrStatus;
+    use crate::core_adr::AdrStatus;
     use chrono::Utc;
 
     fn create_test_adr() -> AdrEntry {

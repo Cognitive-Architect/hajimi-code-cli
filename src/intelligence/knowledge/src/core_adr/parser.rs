@@ -1,6 +1,6 @@
 //! ADR Frontmatter解析器
 
-use crate::knowledge::adr::{AdrEntry, AdrError, AdrStatus, Result};
+use crate::core_adr::{AdrEntry, AdrError, AdrStatus, Result};
 use chrono::Utc;
 use regex::Regex;
 

@@ -115,6 +115,11 @@ class LspClient {
         const message = { jsonrpc: '2.0', method, params, id };
         return this.rpcClient.send(message);
     }
+    /** Send custom JSON-RPC request (for MCP tool calls and extensions) */
+    async sendCustomRequest(method, params) {
+        const id = this.messageId.increment();
+        return this.sendRequest(method, params, id);
+    }
     /** Send JSON-RPC notification (no response expected) */
     async sendNotification(method, params) {
         this.rpcClient.notify({ jsonrpc: '2.0', method, params });

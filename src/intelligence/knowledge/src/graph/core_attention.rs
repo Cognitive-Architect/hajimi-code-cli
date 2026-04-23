@@ -1,7 +1,7 @@
 //! 注意力聚合模块（GNN消息传递）
 //! B-36/01: attention_pooling + attention_weights
 
-use crate::knowledge::graph::Result;
+use crate::graph::Result;
 
 pub const EMBEDDING_DIM: usize = 384;
 

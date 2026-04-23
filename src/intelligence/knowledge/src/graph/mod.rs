@@ -3,18 +3,20 @@
 
 use thiserror::Error;
 
-pub mod adapters;
+pub mod core_adapters;
 pub mod attention;
 pub mod db;
+#[cfg(feature = "onnx")]
 pub mod embedder;
 pub mod extractor;
 pub mod gnn;
-pub mod models;
+pub mod core_models;
 
 pub use db::GraphDb;
+#[cfg(feature = "onnx")]
 pub use embedder::Embedder;
 pub use extractor::EntityExtractor;
-pub use models::{Edge, EntityType, Node};
+pub use core_models::{Edge, EntityType, Node};
 
 /// 知识图谱错误类型
 #[derive(Debug, Error)]

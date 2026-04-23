@@ -69,7 +69,7 @@ exports.TreeItem = TreeItem;
  * TOOL-DATA: Synced with ToolRegistry (ID-268)
  */
 class TreeViewManager {
-    constructor(context) {
+    constructor(context, _lspClient) {
         this.context = context;
         this.tools = [...(0, tools_1.getPhase2Tools)(), ...(0, tools_1.getWebSocketTools)()];
         this._onDidChangeTreeData = new vscode.EventEmitter();
@@ -78,8 +78,9 @@ class TreeViewManager {
     }
     registerCommands() {
         this.context.subscriptions.push(vscode.commands.registerCommand('hajimi.executeTool', (tool) => {
-            vscode.commands.executeCommand(tool.command);
-            vscode.window.showInformationMessage(`Executing: ${tool.name}`);
+            // Real dispatch to CommandRegistry dispatcher (now routes to MCP invokeMcpTool -> McpServer.handle_tools_call).
+            // Removed fake "Executing:" message (V5=0). TreeView now synced with true clearance. Results shown via registry handler.
+            void vscode.commands.executeCommand(tool.command);
         }));
     }
     getTreeItem(element) {

@@ -1,0 +1,2 @@
+test,total,successCount,timeoutCount,p95LatencyMs,totalDurationMs,memoryRssMB,memoryLimitMB,passed,timestamp
+"10K vectors flow through HNSW → Tantivy → Graph → Cloud",10000,10000,0,920,93310,179.61,2048,true,"2026-04-15T08:52:03.181Z"

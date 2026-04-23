@@ -10,7 +10,7 @@ pub const EMBEDDING_DIMENSION: usize = 384;
 /// Dream: 长期记忆 - 压缩存储
 /// Graph: 知识图谱 - 结构化关系网络
 /// Cloud: 云端备份 - 持久化存储
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MemoryLayerId {
     Session,
     Auto,
@@ -72,13 +72,57 @@ pub enum LayerFlowResult {
 
 /// Dream层记忆条目 - 支持向量嵌入的长期记忆
 /// 用于语义检索和长期知识保留
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct DreamEntry {
     pub id: String,
     pub content: String,
     pub embedding: [f32; EMBEDDING_DIMENSION],
     pub timestamp: DateTime<Utc>,
     pub layer: MemoryLayerId,
+}
+
+impl Serialize for DreamEntry {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("DreamEntry", 5)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("content", &self.content)?;
+        state.serialize_field("embedding", &self.embedding.to_vec())?;
+        state.serialize_field("timestamp", &self.timestamp)?;
+        state.serialize_field("layer", &self.layer)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for DreamEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct DreamEntryHelper {
+            id: String,
+            content: String,
+            embedding: Vec<f32>,
+            timestamp: DateTime<Utc>,
+            layer: MemoryLayerId,
+        }
+        let helper = DreamEntryHelper::deserialize(deserializer)?;
+        let mut embedding = [0.0f32; EMBEDDING_DIMENSION];
+        if helper.embedding.len() == EMBEDDING_DIMENSION {
+            embedding.copy_from_slice(&helper.embedding);
+        }
+        Ok(DreamEntry {
+            id: helper.id,
+            content: helper.content,
+            embedding,
+            timestamp: helper.timestamp,
+            layer: helper.layer,
+        })
+    }
 }
 
 /// 跨层统一接口 - 定义层间交互契约

@@ -1,0 +1,24 @@
+[package]
+name = "typeracing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LSP驱动的类型预测引擎"
+
+[lib]
+name = "typeracing"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+engine-tool-system = { path = "../../engine/tool-system" }
+crossterm = { version = "0.27", optional = true }
+thiserror = { workspace = true }
+
+[features]
+default = ["terminal"]
+terminal = ["crossterm"]

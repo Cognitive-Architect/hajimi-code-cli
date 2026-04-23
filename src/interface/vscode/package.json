@@ -27,158 +27,13 @@
         "category": "Hajimi"
       },
       {
-        "command": "hajimi.quickCommand",
-        "title": "Quick Command",
-        "category": "Hajimi"
-      },
-      {
         "command": "hajimi.toggleTerminal",
         "title": "Toggle Terminal",
         "category": "Hajimi"
       },
       {
-        "command": "hajimi.evm.compile",
-        "title": "EVM: Compile",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.deploy",
-        "title": "EVM: Deploy",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.verify",
-        "title": "EVM: Verify",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.test",
-        "title": "EVM: Test",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.debug",
-        "title": "EVM: Debug",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.analyze",
-        "title": "EVM: Analyze",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.patch",
-        "title": "EVM: Patch",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.evm.exploit",
-        "title": "EVM: Exploit",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.start",
-        "title": "MCP: Start",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.stop",
-        "title": "MCP: Stop",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.restart",
-        "title": "MCP: Restart",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.status",
-        "title": "MCP: Status",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.connect",
-        "title": "MCP: Connect",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.mcp.disconnect",
-        "title": "MCP: Disconnect",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.p2p.init",
-        "title": "P2P: Init",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.p2p.sync",
-        "title": "P2P: Sync",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.p2p.share",
-        "title": "P2P: Share",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.p2p.join",
-        "title": "P2P: Join",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.p2p.leave",
-        "title": "P2P: Leave",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.db.connect",
-        "title": "DB: Connect",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.db.query",
-        "title": "DB: Query",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.db.migrate",
-        "title": "DB: Migrate",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.db.backup",
-        "title": "DB: Backup",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.db.restore",
-        "title": "DB: Restore",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.wasm.build",
-        "title": "WASM: Build",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.wasm.run",
-        "title": "WASM: Run",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.wasm.test",
-        "title": "WASM: Test",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.format",
-        "title": "Format",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.lint",
-        "title": "Lint",
+        "command": "hajimi.test.run",
+        "title": "Run Tests",
         "category": "Hajimi"
       },
       {
@@ -187,133 +42,13 @@
         "category": "Hajimi"
       },
       {
-        "command": "hajimi.clean",
-        "title": "Clean",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.install",
-        "title": "Install",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.update",
-        "title": "Update",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.publish",
-        "title": "Publish",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.package",
-        "title": "Package",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.docker.build",
-        "title": "Docker: Build",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.docker.run",
-        "title": "Docker: Run",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.docker.stop",
-        "title": "Docker: Stop",
-        "category": "Hajimi"
-      },
-      {
         "command": "hajimi.git.commit",
         "title": "Git: Commit",
         "category": "Hajimi"
       },
       {
-        "command": "hajimi.git.push",
-        "title": "Git: Push",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.git.pull",
-        "title": "Git: Pull",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.git.branch",
-        "title": "Git: Branch",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.git.merge",
-        "title": "Git: Merge",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.git.rebase",
-        "title": "Git: Rebase",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.test.run",
-        "title": "Test: Run",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.test.debug",
-        "title": "Test: Debug",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.test.coverage",
-        "title": "Test: Coverage",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.benchmark",
-        "title": "Benchmark",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.profile",
-        "title": "Profile",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.audit",
-        "title": "Audit",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.scan",
-        "title": "Scan",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.generate",
-        "title": "Generate",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.template",
-        "title": "Template",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.configure",
-        "title": "Configure",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.validate",
-        "title": "Validate",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.export",
-        "title": "Export",
+        "command": "hajimi.adr.open",
+        "title": "Open ADR",
         "category": "Hajimi"
       }
     ],
@@ -329,11 +64,6 @@
         "mac": "cmd+shift+f"
       },
       {
-        "command": "hajimi.quickCommand",
-        "key": "ctrl+shift+p",
-        "mac": "cmd+shift+p"
-      },
-      {
         "command": "hajimi.toggleTerminal",
         "key": "ctrl+shift+`",
         "mac": "cmd+shift+`"
@@ -341,12 +71,24 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run build:webview",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "build:webview": "node build.mjs",
+    "watch": "tsc -watch -p ./",
+    "watch:webview": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "diff2html": "^3.4.56",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.80.0",
+    "esbuild": "^0.21.0",
     "typescript": "^5.0.0"
   }
 }

@@ -56,10 +56,17 @@ impl ArchiveMemory {
         // 预留接口供未来实现压缩合并
     }
     fn file_path(&self, key: &str) -> PathBuf { self.base_path.join(format!("{key}.zst")) }
+    /// # Safety
+    ///
+    /// The file at `path` must exist and be readable. `Mmap::map` requires the file descriptor
+    /// to remain valid for the duration of the mapping. We have exclusive read access and the
+    /// file is not modified while mapped. The file is read-only for this operation.
     fn mmap_read(path: PathBuf) -> std::io::Result<Option<Vec<u8>>> {
         let file = match File::open(&path) {
             Ok(f) => f, Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None), Err(e) => return Err(e),
         };
+        // SAFETY: Mmap::map is safe here because we have exclusive read access to the file
+        // and the file is not modified while mapped. The file is read-only for this operation.
         Ok(Some(unsafe { Mmap::map(&file)? }.to_vec()))
     }
 }

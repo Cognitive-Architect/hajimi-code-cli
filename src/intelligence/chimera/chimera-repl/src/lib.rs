@@ -2,11 +2,11 @@
 //!
 //! ZeroTUI architecture: pure business logic with I/O injection.
 
-use std::sync::Arc;
-
 use codex_twist::thread::ThreadId;
-use tokio::sync::{mpsc, RwLock};
+use eventloop_adapter::{channel, rwlock, write, read, ArcRwLock};
 use tracing::{debug, info};
+
+pub mod eventloop_adapter;
 
 pub mod clock;
 pub mod engine;
@@ -33,37 +33,37 @@ pub type DefaultReplState = ReplState<SystemTimeClock>;
 pub struct ReplEngine {
     pub thread_id: ThreadId,
     pub event_tx: ReplEventSender,
-    pub session: Arc<RwLock<SessionState>>,
+    pub session: ArcRwLock<SessionState>,
     pub config: ReplConfig,
-    pub running: Arc<RwLock<bool>>,
+    pub running: ArcRwLock<bool>,
 }
 
 #[async_trait::async_trait]
 impl ReplEngineCore for ReplEngine {
     async fn new(config: ReplConfig) -> ReplResult<Self> {
         let thread_id = config.thread_id.clone().unwrap_or_else(ThreadId::new);
-        let (event_tx, _event_rx) = mpsc::channel(1024);
+        let (event_tx, _event_rx) = channel(1024);
         info!(?thread_id, "Initializing Chimera REPL engine");
         Ok(Self {
             thread_id,
             event_tx: ReplEventSender::new(event_tx),
-            session: Arc::new(RwLock::new(SessionState::default())),
+            session: rwlock(SessionState::default()),
             config,
-            running: Arc::new(RwLock::new(false)),
+            running: rwlock(false),
         })
     }
 
     async fn run(&self) -> ReplResult<()> {
-        *self.running.write().await = true;
+        *write(&self.running).await = true;
         info!("REPL engine started");
-        while *self.running.read().await {
+        while *read(&self.running).await {
             debug!("Processing REPL events");
         }
         Ok(())
     }
 
     async fn shutdown(&self) -> ReplResult<()> {
-        *self.running.write().await = false;
+        *write(&self.running).await = false;
         info!("REPL engine shutdown complete");
         Ok(())
     }

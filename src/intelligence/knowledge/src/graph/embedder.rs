@@ -1,6 +1,6 @@
 //! ONNX真实推理（384维，零unwrap）
 
-use crate::knowledge::graph::{GraphError, Result};
+use crate::graph::{GraphError, Result};
 use ndarray::Array2;
 use ort::session::Session;
 use std::collections::HashMap;

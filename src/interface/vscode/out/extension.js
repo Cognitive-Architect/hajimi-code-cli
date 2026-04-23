@@ -45,24 +45,22 @@ const LspClient_1 = require("./clients/LspClient");
 // Extension activation entry point
 function activate(context) {
     // Initialize core components
+    const lspClient = new LspClient_1.LspClient('ws://localhost:8080');
+    const commandRegistry = new CommandRegistry_1.CommandRegistry(context, lspClient);
+    const treeViewManager = new TreeViewManager_1.TreeViewManager(context, lspClient);
     const sidebarProvider = new SidebarProvider_1.SidebarProvider(context.extensionUri);
-    const treeViewManager = new TreeViewManager_1.TreeViewManager(context);
-    const commandRegistry = new CommandRegistry_1.CommandRegistry(context);
     commandRegistry.registerAllCommands();
     // Register sidebar webview
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('hajimi.sidebar', sidebarProvider));
-    // Register tree view for 56 tools
+    // Register tree view for tools
     vscode.window.createTreeView('hajimi.tools', {
         treeDataProvider: treeViewManager,
         showCollapseAll: true
     });
-    // Initialize LSP client connection
-    const lspClient = new LspClient_1.LspClient('ws://localhost:8080');
-    // Week 23 components will be initialized here
-    // - ToolPicker: QuickPick tool selector
-    // - OutputLogger: Structured logging panel
-    // - TerminalManager: Integrated terminal
-    // - StatusBar: Connection status display
+    // LSP client connection initiated by CommandRegistry constructor
+    // Week 5 MCP Expansion: All MCP tools (15 mapped to engine/tool-system 38 impls)
+    // registered via mcp.rs bridge. Full coverage in registry + .mcp.json. Deps pinned.
+    // See src/engine/tool-system/src/mcp.rs and registry.rs for details.
     // Store in extension context for global access
     context.subscriptions.push(lspClient);
 }

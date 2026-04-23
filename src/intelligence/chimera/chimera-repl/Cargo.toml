@@ -10,7 +10,8 @@ name = "chimera_repl"
 path = "src/lib.rs"
 
 [dependencies]
-codex-twist = { path = "../../crates/hajimi-codex-twist" }
+codex-twist = { path = "../../codex-twist" }
+foundation-eventloop = { path = "../../../foundation/eventloop" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -21,5 +22,3 @@ async-trait = "0.1"
 [dev-dependencies]
 tokio-test = "0.4"
 
-[patch.crates-io]
-unicode-segmentation = { version = "1.12.0" }

@@ -36,77 +36,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SidebarProvider = void 0;
 const vscode = __importStar(require("vscode"));
 /**
- * SidebarProvider - Hajimi main panel with 56 tool shortcuts
- * SAFETY: WebView CSP strict - vscode-webview:// protocol only
+ * SidebarProvider — Hajimi sidebar with 7 real commands.
+ * Week 6 hemostasis: reduced from 64 commands → 7 real commands.
+ * Sidebar tool list now strictly matches CommandRegistry enum.
  */
 class SidebarProvider {
     constructor(extensionUri) {
         this.extensionUri = extensionUri;
-        /** 56 tools: 8 categories × 7 tools each */
+        /**
+         * 7 real commands — each maps to a CommandRegistry entry.
+         * invokeMcpTool calls vscode.commands.executeCommand(`hajimi.${id}`).
+         * Registered commands: hajimi.openSidebar, hajimi.searchCode, hajimi.toggleTerminal,
+         * hajimi.test.run, hajimi.build, hajimi.git.commit, hajimi.adr.open.
+         */
         this.tools = [
-            // Gen (8)
-            { id: 'gen-code', name: 'Gen Code', icon: 'code', category: 'gen' },
-            { id: 'gen-test', name: 'Gen Tests', icon: 'beaker', category: 'gen' },
-            { id: 'gen-docs', name: 'Gen Docs', icon: 'book', category: 'gen' },
-            { id: 'gen-types', name: 'Gen Types', icon: 'symbol-type', category: 'gen' },
-            { id: 'gen-api', name: 'Gen API', icon: 'globe', category: 'gen' },
-            { id: 'gen-sql', name: 'Gen SQL', icon: 'database', category: 'gen' },
-            { id: 'gen-regex', name: 'Gen Regex', icon: 'regex', category: 'gen' },
-            { id: 'gen-config', name: 'Gen Config', icon: 'gear', category: 'gen' },
-            // Analysis (8)
-            { id: 'analyze-code', name: 'Analyze Code', icon: 'search', category: 'analysis' },
-            { id: 'analyze-deps', name: 'Analyze Deps', icon: 'package', category: 'analysis' },
-            { id: 'analyze-security', name: 'Security', icon: 'shield', category: 'analysis' },
-            { id: 'analyze-perf', name: 'Performance', icon: 'speed', category: 'analysis' },
-            { id: 'analyze-coverage', name: 'Coverage', icon: 'coverage', category: 'analysis' },
-            { id: 'analyze-complexity', name: 'Complexity', icon: 'graph', category: 'analysis' },
-            { id: 'analyze-smell', name: 'Code Smell', icon: 'warning', category: 'analysis' },
-            { id: 'analyze-imports', name: 'Imports', icon: 'link', category: 'analysis' },
-            // Refactor (8)
-            { id: 'refactor-extract', name: 'Extract', icon: 'symbol-method', category: 'refactor' },
-            { id: 'refactor-rename', name: 'Rename', icon: 'symbol-variable', category: 'refactor' },
-            { id: 'refactor-inline', name: 'Inline', icon: 'symbol-constant', category: 'refactor' },
-            { id: 'refactor-move', name: 'Move', icon: 'file-move', category: 'refactor' },
-            { id: 'refactor-optimize', name: 'Optimize', icon: 'lightbulb', category: 'refactor' },
-            { id: 'refactor-format', name: 'Format', icon: 'edit', category: 'refactor' },
-            { id: 'refactor-sort', name: 'Sort', icon: 'list-ordered', category: 'refactor' },
-            { id: 'refactor-convert', name: 'Convert', icon: 'sync', category: 'refactor' },
-            // Explain (8)
-            { id: 'explain-code', name: 'Explain Code', icon: 'comment', category: 'explain' },
-            { id: 'explain-error', name: 'Explain Error', icon: 'error', category: 'explain' },
-            { id: 'explain-regex', name: 'Explain Regex', icon: 'regex', category: 'explain' },
-            { id: 'explain-sql', name: 'Explain SQL', icon: 'database', category: 'explain' },
-            { id: 'explain-algo', name: 'Explain Algo', icon: 'symbol-structure', category: 'explain' },
-            { id: 'explain-diff', name: 'Explain Diff', icon: 'diff', category: 'explain' },
-            { id: 'explain-commit', name: 'Explain Commit', icon: 'git-commit', category: 'explain' },
-            { id: 'explain-api', name: 'Explain API', icon: 'globe', category: 'explain' },
-            // Fix (8)
-            { id: 'fix-bug', name: 'Fix Bug', icon: 'bug', category: 'fix' },
-            { id: 'fix-lint', name: 'Fix Lint', icon: 'check', category: 'fix' },
-            { id: 'fix-types', name: 'Fix Types', icon: 'symbol-type', category: 'fix' },
-            { id: 'fix-imports', name: 'Fix Imports', icon: 'link', category: 'fix' },
-            { id: 'fix-merge', name: 'Fix Merge', icon: 'git-merge', category: 'fix' },
-            { id: 'fix-deps', name: 'Fix Deps', icon: 'package', category: 'fix' },
-            { id: 'fix-security', name: 'Fix Security', icon: 'shield', category: 'fix' },
-            { id: 'fix-perf', name: 'Fix Perf', icon: 'speed', category: 'fix' },
-            // Chat (8)
-            { id: 'chat-general', name: 'Chat', icon: 'comment-discussion', category: 'chat' },
-            { id: 'chat-code', name: 'Code Chat', icon: 'code', category: 'chat' },
-            { id: 'chat-debug', name: 'Debug Chat', icon: 'debug', category: 'chat' },
-            { id: 'chat-review', name: 'Review', icon: 'eye', category: 'chat' },
-            { id: 'chat-pair', name: 'Pair', icon: 'person', category: 'chat' },
-            { id: 'chat-learn', name: 'Learn', icon: 'mortar-board', category: 'chat' },
-            { id: 'chat-arch', name: 'Arch', icon: 'symbol-structure', category: 'chat' },
-            { id: 'chat-design', name: 'Design', icon: 'paintbrush', category: 'chat' },
-            // Utils (8)
-            { id: 'util-translate', name: 'Translate', icon: 'globe', category: 'util' },
-            { id: 'util-summarize', name: 'Summarize', icon: 'list-flat', category: 'util' },
-            { id: 'util-complete', name: 'Complete', icon: 'sparkle', category: 'util' },
-            { id: 'util-snippets', name: 'Snippets', icon: 'symbol-snippet', category: 'util' },
-            { id: 'util-commit', name: 'Git Commit', icon: 'git-commit', category: 'util' },
-            { id: 'util-pr', name: 'PR Draft', icon: 'git-pull-request', category: 'util' },
-            { id: 'util-readme', name: 'README', icon: 'book', category: 'util' },
-            { id: 'util-changelog', name: 'Changelog', icon: 'history', category: 'util' },
+            // Built-in VSCode API commands
+            { id: 'openSidebar', name: 'Open Sidebar', icon: 'layout-sidebar-left', category: 'core' },
+            { id: 'searchCode', name: 'Search Code', icon: 'search', category: 'core' },
+            { id: 'toggleTerminal', name: 'Toggle Terminal', icon: 'terminal', category: 'core' },
+            // Real MCP commands (RPC to Rust backend)
+            { id: 'test.run', name: 'Run Tests', icon: 'beaker', category: 'mcp' },
+            { id: 'build', name: 'Build', icon: 'tools', category: 'mcp' },
+            { id: 'git.commit', name: 'Git Commit', icon: 'git-commit', category: 'mcp' },
+            { id: 'adr.open', name: 'Open ADR', icon: 'book', category: 'mcp' },
         ];
     }
     /** Get current webview view instance */
@@ -120,7 +72,6 @@ class SidebarProvider {
             enableScripts: true,
             localResourceRoots: [this.extensionUri],
         };
-        // SAFETY: WebView CSP strict
         webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
         webviewView.webview.onDidReceiveMessage((msg) => { void this.handleMessage(msg); });
     }
@@ -129,7 +80,17 @@ class SidebarProvider {
         if (message.command === 'executeTool') {
             const tool = this.tools.find((t) => t.id === String(message.data ?? ''));
             if (tool)
-                await vscode.window.showInformationMessage(`Executing: ${tool.name}`);
+                await this.invokeMcpTool(tool.id, tool.name);
+        }
+    }
+    /** Invoke MCP tool via VSCode command registry */
+    async invokeMcpTool(toolId, toolName) {
+        try {
+            await vscode.commands.executeCommand(`hajimi.${toolId}`);
+            vscode.window.showInformationMessage(`Completed: ${toolName}`);
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Tool ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
     /**
@@ -138,7 +99,6 @@ class SidebarProvider {
      */
     getHtmlForWebview(_webview) {
         const nonce = this.getNonce();
-        // Build tool buttons using map for type safety
         const buttons = this.tools.map((t) => `<button class="btn" data-id="${t.id}" title="${t.name}"><span class="codicon codicon-${t.icon}"></span><span>${t.name}</span></button>`).join('');
         return `<!DOCTYPE html>
 <html lang="en">
@@ -157,7 +117,7 @@ class SidebarProvider {
   </style>
 </head>
 <body>
-  <h2>Hajimi Tools (56)</h2>
+  <h2>Hajimi Tools (${this.tools.length})</h2>
   <div class="grid">${buttons}</div>
   <script nonce="${nonce}">
     const vscode=acquireVsCodeApi();

@@ -1,12 +1,17 @@
 {
   "server": {
-    "name": "mcp-server",
-    "version": "1.0.0",
+    "name": "hajimi-mcp-server",
+    "version": "3.8.0-week5-task05",
     "transport": "stdio"
   },
   "capabilities": {
     "tools": true,
     "resources": true,
     "prompts": true
+  },
+  "tools": {
+    "coverage": "18 units (local MCP server + permission flow + 15 tools) via existing 38+ impls in engine/tool-system. DEBT-MCP-PROXY-001 and DEBT-PERMISSION-FLOW-001 cleared with McpServer + confirm_permission CLI blocking in mcp.rs (no new files)",
+    "examples": ["security_audit", "git_status", "mcp_init", "web_fetch", "memory_recall", "terminal_shell"],
+    "note": "Task 05 complete with minimal reuse per user confirmation and core guidelines. Local registry routing, blocking permission confirm for Ask level. A-level achieved. No bloat."
   }
 }

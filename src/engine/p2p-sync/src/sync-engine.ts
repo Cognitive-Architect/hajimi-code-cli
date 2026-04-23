@@ -1,8 +1,7 @@
 /**
- * SyncEngine - TypeScript Interface Definitions (≤200 lines)
- * Sprint 5: P2P Synchronization Architecture
+ * SyncEngine - TypeScript Interface Definitions + Default TUI Progress Bar
+ * Sprint 6: P2P Synchronization with Mandatory Progress Callbacks
  */
-
 import { EventEmitter } from 'events';
 
 // Core Types
@@ -51,6 +50,24 @@ interface PeerState {
   capabilities: string[];
 }
 
+/**
+ * SyncProgress - Structured progress information for P2P synchronization.
+ */
+export interface SyncProgress {
+  peerId: PeerId;
+  completed: number;
+  total: number;
+  bytesTransferred: number;
+  percent: number;
+  direction: 'push' | 'pull';
+}
+
+// Progress callback type (mandatory — callers must provide or use default)
+export type OnProgressCallback = (progress: SyncProgress) => void;
+
+// Re-export progress bar utilities from extracted module
+export { defaultTuiProgressBar, safeOnProgress } from './progress-bar';
+
 // Bidirectional Sync Engine Interface
 export interface SyncEngine extends EventEmitter {
   // Connection management
@@ -58,25 +75,27 @@ export interface SyncEngine extends EventEmitter {
   disconnect(peerId: PeerId): void;
   isConnected(peerId: PeerId): boolean;
   getPeerState(peerId: PeerId): PeerState | null;
-  
+
   // Bidirectional synchronization (push/pull/sync)
   sync(peerId: PeerId, sharedSecret: string): Promise<SyncResult>;
   push(peerId: PeerId): Promise<void>;
   pull(peerId: PeerId): Promise<void>;
-  
+
   // Offline support
   offlineQueue: Operation[];
   queueOperation(op: Operation): void;
   flushQueue(): Promise<void>;
   clearQueue(): void;
-  
+
   // Conflict resolution callback
   onConflict: (local: Chunk, remote: Chunk) => MergeResult | Promise<MergeResult>;
-  
-  // Progress callbacks
-  onProgress?: (peerId: PeerId, percent: number, direction: 'push' | 'pull') => void;
+
+  // Progress callback (MANDATORY — callers must provide or use defaultTuiProgressBar)
+  onProgress: OnProgressCallback;
+
+  // Chunk-level callback (optional)
   onChunkSynced?: (peerId: PeerId, chunk: Chunk, direction: 'push' | 'pull') => void;
-  
+
   // Discovery & lifecycle
   discoverPeers(): Promise<PeerId[]>;
   start(): Promise<void>;

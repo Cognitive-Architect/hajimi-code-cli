@@ -3,13 +3,13 @@
 //! Provides the main event loop and command processing logic
 //! without TUI dependencies.
 
-use std::sync::Arc;
 
-use tokio::sync::{mpsc, RwLock};
+
+use crate::eventloop_adapter::{rwlock, write, ArcRwLock};
 use tracing::{debug, info};
 
 use crate::{
-    ReplConfig, ReplEngineCore, ReplError, ReplEvent, ReplEventSender, ReplResult,
+    ReplResult,
     SessionState,
 };
 
@@ -29,23 +29,23 @@ pub enum EngineState {
 /// Extended engine operations beyond basic lifecycle.
 pub struct EngineController {
     /// Current engine state.
-    pub state: Arc<RwLock<EngineState>>,
+    pub state: ArcRwLock<EngineState>,
     /// Reference to session state.
-    pub session: Arc<RwLock<SessionState>>,
+    pub session: ArcRwLock<SessionState>,
 }
 
 impl EngineController {
     /// Create new controller with shared state.
-    pub fn new(session: Arc<RwLock<SessionState>>) -> Self {
+    pub fn new(session: ArcRwLock<SessionState>) -> Self {
         Self {
-            state: Arc::new(RwLock::new(EngineState::Idle)),
+            state: rwlock(EngineState::Idle),
             session,
         }
     }
 
     /// Transition to running state.
     pub async fn start(&self) -> ReplResult<()> {
-        let mut state = self.state.write().await;
+        let mut state = write(&self.state).await;
         *state = EngineState::Running;
         info!("Engine transitioned to Running state");
         Ok(())
@@ -53,7 +53,7 @@ impl EngineController {
 
     /// Transition to shutdown state.
     pub async fn stop(&self) -> ReplResult<()> {
-        let mut state = self.state.write().await;
+        let mut state = write(&self.state).await;
         *state = EngineState::ShuttingDown;
         debug!("Engine shutdown initiated");
         Ok(())

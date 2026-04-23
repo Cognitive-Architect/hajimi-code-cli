@@ -8,6 +8,8 @@ pub enum WasmMemoryError {
     MisalignedPointer,
     InvalidMemoryRange,
     ZeroDimension,
+    /// 内存访问越界：ptr/len 超出 WASM_MAX_MEMORY 上限
+    OutOfBounds { ptr: usize, len: usize, max: usize },
 }
 
 impl std::fmt::Display for WasmMemoryError {
@@ -17,6 +19,9 @@ impl std::fmt::Display for WasmMemoryError {
             WasmMemoryError::MisalignedPointer => write!(f, "Pointer not 16-byte aligned"),
             WasmMemoryError::InvalidMemoryRange => write!(f, "Invalid memory range"),
             WasmMemoryError::ZeroDimension => write!(f, "Dimension cannot be zero"),
+            WasmMemoryError::OutOfBounds { ptr, len, max } => {
+                write!(f, "Memory access out of bounds: ptr=0x{:x}, len={}, max={}", ptr, len, max)
+            }
         }
     }
 }
@@ -24,10 +29,11 @@ impl std::fmt::Display for WasmMemoryError {
 impl std::error::Error for WasmMemoryError {}
 
 /// 从WasmMemory读取f32切片
-/// 
+///
 /// # Safety
 /// - ptr必须有效且16字节对齐
 /// - 内存生命周期由JS管理，此函数不释放
+/// - 调用者必须已通过 validate_memory_access 进行范围校验
 pub unsafe fn read_f32_slice_from_memory(
     ptr: *const f32,
     len: usize,
@@ -36,16 +42,16 @@ pub unsafe fn read_f32_slice_from_memory(
     if ptr.is_null() {
         return Err(WasmMemoryError::NullPointer);
     }
-    
+
     // SAFETY: 16字节对齐检查，SIMD优化要求
-    if (ptr as usize) % 16 != 0 {
+    if !(ptr as usize).is_multiple_of(16) {
         return Err(WasmMemoryError::MisalignedPointer);
     }
-    
+
     if len == 0 {
         return Ok(&[]);
     }
-    
+
     // SAFETY: 创建切片，前提条件已验证
     Ok(slice::from_raw_parts(ptr, len))
 }

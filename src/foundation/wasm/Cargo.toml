@@ -19,8 +19,4 @@ wasm-opt = false
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
 
-[profile.release]
-opt-level = 3
-lto = true
-panic = "abort"
-codegen-units = 1
+

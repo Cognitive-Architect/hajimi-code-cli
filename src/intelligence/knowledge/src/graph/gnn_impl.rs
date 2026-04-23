@@ -1,6 +1,6 @@
 //! GNN推理引擎实现
-use crate::knowledge::graph::{GraphDb, GraphError, Result};
-use crate::knowledge::graph::attention::attention_pooling;
+use crate::graph::{GraphDb, GraphError, Result};
+use crate::graph::attention::attention_pooling;
 
 pub struct GnnEngine { max_hops: usize }
 

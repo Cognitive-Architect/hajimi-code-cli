@@ -1,0 +1,49 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  security-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit (P0 requirement)
+        run: |
+          echo "Running npm audit..."
+          npm audit --audit-level=high
+          echo "✅ npm audit passed with 0 high+ vulnerabilities"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Run cargo audit (P1 blocking with --deny warnings per B-07)
+        run: |
+          rustup component add clippy
+          cargo install cargo-audit --locked || echo "cargo-audit already installed"
+          echo "Running cargo audit with --deny warnings (B-07 P1 security gate)..."
+          cargo audit --deny warnings
+          echo "✅ cargo audit passed with zero warnings (blocking CI)"
+
+      - name: Additional security checks
+        run: |
+          echo "Checking for dangerous patterns..."
+          if grep -r "curl.*|.*bash" src/foundation/scripts/setup/ --include="*.sh"; then
+            echo "❌ Dangerous curl|bash pattern found"
+            exit 1
+          fi
+          echo "✅ No dangerous patterns found"
+          echo "Security gate passed - all P0 issues addressed"

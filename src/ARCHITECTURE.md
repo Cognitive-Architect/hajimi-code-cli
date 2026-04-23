@@ -1,174 +1,247 @@
 # HAJIMI V3 架构文档
 
-> **文档版本**: v1.0  
-> **架构风格**: 本地优先 + P2P 同步 + 分层存储  
-> **核心原则**: ZeroTUI（无 TUI 依赖）、零拷贝、最小侵入
+> **文档版本**: v3.8.0-batch-1 (Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿 / B+→A-级评级)
+> **架构风格**: 四层分层架构 + 本地优先 + P2P 同步
+> **核心原则**: 下层零依赖上层、Git历史完整、最小侵入、数据诚实性
+> **Phase 7状态**: ✅ Agent Core 55测试全部通过，0编译error，unsafe SAFETY注释100%覆盖
 
 ---
 
-## 🏛️ 系统架构总览
+## 🏛️ 系统架构总览（四层模型 + 债务清偿后状态）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Application Layer                                  │
+│                              INTERFACE 层（界面层）                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   CLI工具   │  │  REST API   │  │  MCP 协议   │  │   EVM 检测流水线    │ │
-│  │  (cli/)     │  │   (api/)    │  │  (mcp/)     │  │   (adapters/evm/)   │ │
+│  │   CLI工具   │  │ MCP服务器   │  │  终端UI     │  │   VSCode插件        │ │
+│  │  (cli/)     │  │ (mcp-server)│  │ (terminal/) │  │   (vscode/)         │ │
+│  │  vector-debug│  │  真实RPC桥接│  │  Ink+React  │  │   TypeScript+LSP    │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │   web (web/) ─ Web界面                                                  │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
 └─────────┼────────────────┼────────────────┼────────────────────┼────────────┘
           │                │                │                    │
           └────────────────┴────────────────┴────────────────────┘
                                     │
-┌───────────────────────────────────┼─────────────────────────────────────────┐
-│                           Sync Engine Layer                                  │
-│  ┌────────────────────────────────┼──────────────────────────────────────┐  │
-│  │        P2P Synchronization     │  (p2p/)                              │  │
-│  │  ┌──────────────┐  ┌───────────┴──────────┐  ┌──────────────────┐    │  │
-│  │  │  CRDT Engine │  │   WebRTC Transport   │  │   Sync Manager   │    │  │
-│  │  │  (Yjs)       │  │   (ICE/TURN/DTLS)   │  │   (Push/Pull)    │    │  │
-│  │  └──────────────┘  └──────────────────────┘  └──────────────────┘    │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          INTELLIGENCE 层（智能层）                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Chimera   │  │Codex-Twist  │  │   Index     │  │   Knowledge         │ │
+│  │  (chimera/) │  │(codex-twist)│  │  (index/)   │  │   (knowledge/)      │ │
+│  │  REPL引擎   │  │ 5级内存架构 │  │  HNSW+向量  │  │   知识图谱+ADR      │ │
+│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
+│  │   Memory    │  │   Cloud     │  │   ONNX      │  │   TypeRacing        │ │
+│  │  (memory/)  │  │  (cloud/)   │  │  (onnx/)    │  │  (typeracing/)      │ │
+│  │ 5层:Session │  │ 批次同步    │  │ 推理引擎    │  │ LSP类型预测 ⭐      │ │
+│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
+│  │  Agent Core │  │ Integration │  │  pgvector   │  │                     │ │
+│  │(agent-core/)│  │(integration)│  │ (pgvector/) │  │                     │ │
+│  │ 7步循环+桥接⭐│  │ 第三方适配  │  │ PG向量存储  │  │                     │ │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
-┌───────────────────────────────────┼─────────────────────────────────────────┐
-│                          Storage & Index Layer                               │
-│  ┌──────────────────┬─────────────┴──────────────┬──────────────────────┐   │
-│  │   Vector Index   │     KV Storage             │   Chunk Storage      │   │
-│  │  (vector/)       │     (storage/)             │   (format/)          │   │
-│  │  ┌────────────┐  │  ┌──────────────────────┐  │  ┌────────────────┐  │   │
-│  │  │ HNSW (WASM)│  │  │ 16-Shard SQLite      │  │  │ .hctx Format   │  │   │
-│  │  │ SimHash-64 │  │  │ SimHash Routing      │  │  │ BLAKE3 Verify  │  │   │
-│  │  └────────────┘  │  │ WAL + ConnectionPool │  │  └────────────────┘  │   │
-│  └──────────────────┘  └──────────────────────┘  └──────────────────────┘   │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             ENGINE 层（引擎层）                               │
+│  ┌───────────────────────────────┐  ┌──────────────────────────────────────┐ │
+│  │      LLM-Core (llm-core/)     │  │     P2P-Sync (p2p-sync/)             │ │
+│  │  ┌──────────┐ ┌─────────────┐ │  │  ┌──────────┐ ┌──────────────────┐  │ │
+│  │  │Anthropic │ │   OpenAI    │ │  │  │ CRDT     │ │  WebRTC          │  │ │
+│  │  │  Claude  │ │   GPT-4     │ │  │  │ (Yjs)    │ │  ICE/TURN/DTLS   │  │ │
+│  │  └──────────┘ └─────────────┘ │  │  └──────────┘ └──────────────────┘  │ │
+│  │  ┌──────────┐ ┌─────────────┐ │  │  ┌──────────┐ ┌──────────────────┐  │ │
+│  │  │  Ollama  │ │  本地模型    │ │  │  │ Sync     │ │  Signal Server   │  │ │
+│  │  │ 本地推理 │ │             │ │  │  │ Manager  │ │  (PSK认证) ⭐     │  │ │
+│  │  └──────────┘ └─────────────┘ │  │  └──────────┘ └──────────────────┘  │ │
+│  └───────────────────────────────┘  └──────────────────────────────────────┘ │
+│  ┌───────────────────────────────┐  ┌──────────────────────────────────────┐ │
+│  │   Tool-System (tool-system/)  │  │     Search (search/) ⭐              │ │
+│  │  ┌─────────────────────────┐  │  │  ┌────────────────────────────────┐  │ │
+│  │  │ 40+ 工具实现            │  │  │  │ Tantivy 16分片索引 ⭐          │  │ │
+│  │  │ - 文件/目录操作         │  │  │  │ 向量+文本混合搜索              │  │ │
+│  │  │ - Git/终端/搜索         │  │  │  │ 219行高性能实现                │  │ │
+│  │  │ - LSP/MCP/网络          │  │  │  └────────────────────────────────┘  │ │
+│  │  │ - 构建/测试/安全        │  │  │                                      │ │
+│  │  │ - Shell白名单 ⭐        │  │  │                                      │ │
+│  │  └─────────────────────────┘  │  │                                      │ │
+│  └───────────────────────────────┘  └──────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │     Worker (worker/)                                                    │ │
+│  │     并行执行器 / 串行执行器 / 任务调度器                                 │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
-┌───────────────────────────────────┼─────────────────────────────────────────┐
-│                          AI & Memory Layer (Chimera)                         │
-│  ┌────────────────────────────────┼──────────────────────────────────────┐  │
-│  │    Chimera REPL (chimera/)     │  Codex Twist (crates/)               │  │
-│  │  ┌──────────────────────────┐  │  ┌────────────────────────────────┐  │  │
-│  │  │ ZeroTUI Event Loop       │  │  │ 5-Tier Memory Architecture     │  │  │
-│  │  │ - Clock Abstraction      │  │  │ - Focus (LRU 4K)               │  │  │
-│  │  │ - InputSource Trait      │  │  │ - Working (Sliding Window 32K) │  │  │
-│  │  │ - Archive Writer         │  │  │ - Archive (mmap+zstd 1M)       │  │  │
-│  │  │ - Codex Bridge           │  │  │ - RAG (HNSW 384-dim)           │  │  │
-│  │  └──────────────────────────┘  │  └────────────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────┴─────────────────────────────────────────┐
-│                         Runtime & Infrastructure Layer                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐│
-│  │   Worker    │  │    WASM     │  │   Security  │  │   Disk Management    ││
-│  │  (worker/)  │  │   (wasm/)   │  │ (security/) │  │     (disk/)          ││
-│  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────────┘│
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          FOUNDATION 层（地基层）                              │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────┐  │
+│  │   Storage  │ │   Network  │ │     DB     │ │  Security  │ │   Event   │  │
+│  │ (storage/) │ │(network/)  │ │   (db/)    │ │(security/) │ │ Loop      │  │
+│  │ LevelDB    │ │ WebSocket  │ │PostgreSQL  │ │限流/审计   │ │(eventloop)│  │
+│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └───────────┘  │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────┐  │
+│  │   Disk     │ │  Format    │ │    WASM    │ │   Tests    │ │   Utils   │  │
+│  │  (disk/)   │ │ (format/)  │ │  (wasm/)   │ │(test/tests)│ │ (utils/)  │  │
+│  │ 磁盘管理   │ │ .hctx格式  │ │ HNSW WASM  │ │ 单元/集成  │ │ 通用工具  │  │
+│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └───────────┘  │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │
+│  │   Bench    │ │ Middleware │ │ Migration  │ │    API     │ │ Compression │  │
+│  │ (bench/)   │ │(middleware)│ │(migration/)│ │  (api/)    │ │(compression)│  │
+│  │ 性能基准   │ │ 限流中间件 │ │ 数据迁移   │ │ REST API   │ │  压缩算法   │  │
+│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │
+│  ┌─ scripts ─┐ ┌─ hash ────┐                                                │
+│  │(scripts/) │ │  (hash/)  │                                                │
+│  │ 工具脚本   │ │ SimHash64 │                                                │
+│  └───────────┘ └───────────┘                                                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 📁 目录结构详解（债务清偿后状态）
+
+### 1. Foundation 层（地基层）
+**原则**: 零外部依赖，提供基础设施
+
+| 目录 | 功能 | 关键技术 | 债务清偿状态 |
+|:---|:---|:---|:---:|
+| `api/` | REST API 服务器 | Express.js, WebSocket | ✅ 稳定 |
+| `bench/` | 性能基准测试 | EVM检测流水线, 压力测试 | ✅ 稳定 |
+| `compression/` | 上下文压缩 | micro/auto/compact/mod (Rust) | ✅ 稳定 |
+| `db/` | 数据库连接池 | PostgreSQL | ✅ 稳定 |
+| `disk/` | 磁盘管理 | ENOSPC处理, 块缓存 | ✅ 稳定 |
+| `eventloop/` | 事件循环 | Rust异步运行时 | ✅ 稳定 |
+| `format/` | 数据格式 | .hctx 格式, BLAKE3校验 | ✅ 稳定 |
+| `hash/` | 哈希算法 | SimHash64, 指纹去重 | ✅ 稳定 |
+| `middleware/` | 中间件 | 限流, 错误处理 | ✅ 稳定 |
+| `migration/` | 数据迁移 | 版本检测, 迁移脚本 | ✅ 稳定 |
+| `network/` | 网络服务 | WebSocket服务器 (原ws_server) | ✅ PSK认证 |
+| `scripts/` | 工具脚本 | 构建, 安装, 迁移 | ✅ 安全改造 |
+| `security/` | 安全组件 | 限流器, 审计日志 | ✅ 稳定 |
+| `storage/` | 存储系统 | LevelDB, 16分片SQLite | ✅ 稳定 |
+| `test/` | 单元测试 | 测试工具, Mock | ✅ 稳定 |
+| `tests/` | 集成/E2E测试 | P2P, WASM, EVM测试 | ✅ 稳定 |
+| `utils/` | 通用工具 | SimHash64, Logger | ✅ 8处引用 |
+| `wasm/` | WASM运行时 | HNSW向量计算 | ✅ 稳定 |
+
+### 2. Engine 层（引擎层）
+**原则**: 仅依赖 Foundation 层
+
+| 目录 | 功能 | 关键技术 | 债务清偿状态 |
+|:---|:---|:---|:---:|
+| `llm-core/` | LLM客户端 | Anthropic, OpenAI, Ollama | ✅ 稳定 |
+| `p2p-sync/` | P2P同步引擎 | WebRTC, CRDT, ICE, Yjs, **进度条提取** ⭐ | ✅ PSK认证+B-02提取 |
+| `search/` | 搜索索引 | Tantivy 16分片 ⭐ | ✅ 稳定 |
+| `tool-system/` | 工具系统 | 40+工具, ToolRegistry, **白名单参数化** ⭐ | ✅ P0安全 |
+| `worker/` | 工作线程 | 并行/串行执行器 | ✅ 稳定 |
+
+### 3. Intelligence 层（智能层）
+**原则**: 依赖 Foundation + Engine 层
+
+| 目录 | 功能 | 关键技术 | 债务清偿状态 |
+|:---|:---|:---|:---:|
+| `agent-core/` | 自主Agent系统 | 7步循环, Swarm, 可插拔治理, LLM桥接 ⭐ | ✅ Day 10 A级 |
+| `chimera/` | REPL引擎 | ZeroTUI, EventLoop | ✅ 稳定 |
+| `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
+| `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
+| `index/` | 向量索引 | HNSW, Tantivy, pgvector | ✅ 稳定 |
+| `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
+| `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
+| `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud | ✅ 稳定 |
+| `onnx/` | ONNX推理 | 模型推理引擎 | ✅ 稳定 |
+| `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
+| `typeracing/` | 类型预测 | **LSP驱动, Ctrl+Space触发** ⭐ | ✅ Week 6还魂 |
+
+### 4. Interface 层（界面层）
+**原则**: 可依赖全下层
+
+| 目录 | 功能 | 关键技术 | 债务清偿状态 |
+|:---|:---|:---|:---:|
+| `cli/` | CLI工具 | vector-debug.js | ✅ 稳定 |
+| `mcp-server/` | MCP服务器 | **15工具真实RPC** ⭐ | ✅ Week 9修复+B-04扩容 |
+| `terminal/` | 终端UI | Ink + React, Pane管理 | ✅ TypeRacing集成 |
+| `vscode/` | VSCode插件 | TypeScript, LSP客户端, **7真实命令** ⭐ | ✅ Week 6止血+Sidebar对齐 |
+| `web/` | Web界面 | TypeScript, React | ✅ 稳定 |
 
 ---
 
 ## 🎯 核心设计模式
 
-### 1. ZeroTUI 架构
-**核心思想**: 业务逻辑与 TUI 完全解耦
+### 1. 分层依赖规则
+```
+interface ──────┐
+                ├──→ intelligence ────┐
+                │                      ├──→ engine ────┐
+                │                      │               ├──→ foundation
+                │                      │               │
+                └──────────────────────┴───────────────┘
+```
+**硬性约束**: Foundation 零依赖上层; Engine 仅依赖 Foundation; Intelligence 依赖 Foundation + Engine; Interface 可依赖全下层。
 
-```rust
-// chimera/src/repl.rs
-pub struct ChimeraRepl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> {
-    state: ReplState<C>,
-    input: I,           // 注入的输入源
-    output: Pin<Box<R>>, // 注入的输出目标
-    // ...
-}
+### 2. ZeroTUI 架构
+业务逻辑与 TUI 完全解耦。`TerminalUI<C: Clock, I: InputSource, R: AsyncWrite + Unpin>` 通过泛型参数隔离渲染层。
 
-// 可以搭配任何 I/O：Stdin/文件/Mock
-impl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> ChimeraRepl<C, I, R> {
-    pub async fn run<H: EventHandler>(&mut self, handler: &mut H) -> ReplResult<()> {
-        // 纯业务逻辑，无 TUI 依赖
-    }
-}
+### 3. Tool 系统架构（P0安全加固后）
+统一 `Tool` trait（`name/description/permissions/is_enabled/execute`）。Shell 参数化执行：白名单校验 → 元字符过滤 → `Command::new` 执行，无 `bash -c` 拼接。
+
+### 4. 5级内存架构 (Codex-Twist)
+```
+Hot:   Focus Memory   — LRU 4K tokens     O(1) ~100ns
+Warm:  Working Memory — mmap + zstd 32K   O(log n) ~1μs
+Cold:  Archive Memory — LevelDB 1M        O(log n) ~10ms
+RAG:   RAG Index      — HNSW 384-dim      O(log n) ~5ms
 ```
 
-### 2. 本地优先存储
-**层级**: Hot → Warm → Cold → Archive
+### 5. SimHash-64 分片路由
+`simhash64(text) -> u64`; `NUM_SHARDS = 16`; `get_shard_id(text) = simhash64(text) % 16`。
 
-```
-Hot Tier:     Memory (LRU 4K tokens)     O(1) ~100ns
-Warm Tier:    mmap + zstd (32K tokens)   O(log n) ~1μs
-Cold Tier:    LevelDB (1M tokens)        O(log n) ~10ms
-Archive Tier: .hctx File (unlimited)     O(log n) ~50ms
-```
-
-### 3. P2P 同步架构
-**协议栈**:
-```
-Application:    Yjs CRDT (State Vector)
-Transport:      WebRTC DataChannel ( unreliable )
-Security:       DTLS 1.2 + AES-256-GCM
-Connectivity:   ICEv2 (RFC 8445) + TURN (RFC 5766)
-Signaling:      WebSocket + JSON-RPC 2.0
-```
-
-### 4. 16分片 SQLite
-**路由算法**:
-```javascript
-// storage/shard-router.js
-function route(key) {
-    const hash = simhash64(key);        // 64-bit SimHash
-    const shard = (hash >> 56) & 0x0F;  // 高 8bit → 00-15
-    return `shard_${shard.toString(16).padStart(2, '0')}`;
-}
-```
+### 6. Agent Core 7步自主循环
+`AgentLoop { blackboard, planner, governance, swarm, tool_registry }`
+循环: Observe → Retrieve → Plan → Act → Reflect → Store → Decide。
+治理: 5级审批（Auto/Advisory/Required/Critical/Override）。Swarm: Supervisor-Worker 模式。
 
 ---
 
 ## 🔌 关键接口定义
 
-### 1. 存储接口
-```typescript
-// storage/queue-db-interface.ts
-interface IQueueDb {
-    getQueue(): Promise<SyncOperation[]>;
-    saveQueue(queue: SyncOperation[]): Promise<void>;
-    append(operation: SyncOperation): Promise<void>;
-}
-```
-
-### 2. CRDT 引擎接口
-```typescript
-// p2p/crdt-engine.ts
-interface ICrdtEngine {
-    merge(local: Chunk, remote: Chunk): MergeResult;
-    encodeState(chunk: Chunk): Uint8Array;
-    decodeState(state: Uint8Array): Partial<Chunk>;
-}
-```
-
-### 3. 限流器接口
-```typescript
-// security/rate-limiter.js
-interface RateLimiter {
-    check(key: string): Promise<RateLimitResult>;
-    consume(key: string, tokens: number): Promise<boolean>;
-    reset(key: string): Promise<void>;
-}
-```
-
-### 4. Clock 抽象（Rust）
+### 1. Tool 接口（Engine层）
 ```rust
-// chimera/src/clock.rs
-pub trait Clock: Send + Sync + Clone + 'static {
-    fn now_ms(&self) -> u64;
+#[async_trait]
+pub trait Tool: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn permissions(&self) -> ToolPermissions;
+    fn is_enabled(&self, config: &Config) -> bool;
+    async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError>;
 }
+```
 
-pub struct SystemTimeClock;
-impl Clock for SystemTimeClock {
-    fn now_ms(&self) -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-    }
+### 2. MCP RPC 接口（Interface层）
+```typescript
+class CommandRegistry {
+  private async invokeMcpTool(name: string, args: unknown[]): Promise<any> {
+    return this.lspClient.sendRequest('mcp/toolCall', { tool: name, arguments: args });
+  }
+}
+```
+
+### 3. LLM 接口（Engine层）
+```rust
+pub trait LlmClient: Send + Sync {
+    async fn chat(&self, messages: Vec<Message>) -> Result<String, LlmError>;
+    async fn stream(&self, messages: Vec<Message>) -> Result<Stream, LlmError>;
+}
+```
+
+### 4. AgentGovernance 接口（Intelligence层）
+```rust
+#[async_trait]
+pub trait AgentGovernance: Send + Sync {
+    async fn policy(&self, ctx: &AgentContext) -> ApprovalLevel;
+    async fn approve(&self, ctx: &AgentContext, req: &GovernanceRequest) -> Decision;
+    async fn register_policy(&mut self, name: &str, policy: Arc<dyn GovernancePolicy>) -> ReplResult<()>;
 }
 ```
 
@@ -176,163 +249,123 @@ impl Clock for SystemTimeClock {
 
 ## 🔄 数据流
 
-### 1. Chunk 写入流程
-```
-┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
-│  Input  │───→│  SimHash-64  │───→│  Shard Router│───→│  SQLite WAL │
-│  Chunk  │    │  (LSH)       │    │  (00-15)     │    │  (Async)    │
-└─────────┘    └──────────────┘    └──────────────┘    └─────────────┘
-                                                             │
-                                                             ↓
-┌─────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
-│  Complete   │←───│  HNSW Insert │←───│  Vector Enc  │←───│  Commit WAL │
-│             │    │  (WASM)      │    │  (384-dim)   │    │             │
-└─────────────┘    └──────────────┘    └──────────────┘    └─────────────┘
-```
+**查询流程**: User → Interface (terminal/mcp) → Engine (tool-system/llm) → Intelligence (chimera) → Foundation (storage/db) → Engine (LLM API) → Interface (Output)。
 
-### 2. P2P 同步流程
-```
-Peer A                                    Peer B
-  │                                         │
-  │── WebSocket Signaling ─────────────────→│
-  │   (offer/answer/ice-candidate)          │
-  │                                         │
-  │←──────── WebRTC Connection ────────────→│
-  │   (ICE + DTLS handshake)                │
-  │                                         │
-  │── DataChannel Open ────────────────────→│
-  │                                         │
-  │── Yjs State Vector ────────────────────→│
-  │   (encoded updates)                     │
-  │                                         │
-  │←─── Missing Updates ────────────────────│
-  │                                         │
-  │── CRDT Merge (YATA) ───────────────────→│
-  │   (conflict-free)                       │
-```
+**P2P 同步流程**: Peer A ↔ WebSocket Signaling (PSK验证) → WebRTC Connection (ICE+DTLS) → DataChannel → Yjs State Vector → CRDT Merge (YATA)。
 
-### 3. 向量检索流程
-```
-Query Vector
-     │
-     ↓
-┌─────────────────┐
-│ SimHash-64 LSH  │──→ Candidate Buckets
-└─────────────────┘
-     │
-     ↓
-┌─────────────────┐
-│ HNSW Search     │──→ Top-K Approximate
-│ (WASM)          │    (ef=64, m=16)
-└─────────────────┘
-     │
-     ↓
-┌─────────────────┐
-│ Exact Distance  │──→ Re-rank & Filter
-│ (Cosine)        │
-└─────────────────┘
-```
+**VSCode命令执行**: User Action → CommandRegistry (**7命令止血**) → invokeMcpTool → lspClient.sendCustomRequest → Rust McpServer → ToolRegistry.route → Tool.execute → 真实结果返回 UI。
 
 ---
 
-## 🛡️ 安全架构
+## 🛡️ 安全架构（P0加固后）
 
-### 1. 限流策略
-```
-Token Bucket (SQLite Persistent)
-├── Burst: 100 requests
-├── Rate: 10 req/s
-├── Window: 60s
-└── Circuit Breaker:
-    ├── Failure Threshold: 50%
-    ├── Recovery Timeout: 30s
-    └── Half-Open Requests: 5
-```
-
-### 2. 审批策略（Codex Twist）
-```rust
-enum ApprovalPolicy {
-    AskBeforeExec,      // 每次询问
-    AskForDangerous,    // 危险操作询问
-    AskOnceThenAuto,    // 首次询问后自动
-    FullAuto,           // 完全自动
-    FullDeny,           // 完全拒绝
-}
-```
-
-### 3. 数据完整性
-- **Chunk**: MD5-128 校验
-- **Archive**: BLAKE3 校验（.hctx 格式）
-- **P2P**: SHA256 分片校验
+1. **工具权限系统**: `PermissionLevel { Deny, Ask, Allow }`。Shell 严格白名单（38命令）+ `Command::new` 参数化执行。
+2. **限流策略**: Token Bucket（SQLite持久化）。Burst 100, Rate 10req/s, 熔断器（Failure 50%, Recovery 30s）。
+3. **WebRTC信令认证**: CSPRNG + 环境变量 PSK + `timingSafeEqual`。`clientId = crypto.randomUUID()`。
+4. **审批策略**: `ApprovalPolicy { AskBeforeExec, AskForDangerous, AskOnceThenAuto, FullAuto, FullDeny }`。
 
 ---
 
-## 📊 性能基准
+## 📊 性能基准（Phase 5固化标准）
 
-| 操作 | 指标 | 实现 |
-|------|------|------|
-| SQLite 批量写入 | 9,569 ops/s | WAL + 16分片 |
-| HNSW 查询 | 1.94x 加速 | WASM |
-| HNSW 构建 | 7.7x 加速 | WASM |
-| WebRTC 握手 | <5s | ICEv2 |
-| P2P 传输 | 64KB/s-10MB/s | DataChannel |
-| MemoryGateway | O(1) ~100ns | LRU Focus |
+| 操作 | 指标 | 实现 | 状态 |
+|:---|:---|:---|:---:|
+| SQLite 批量写入 | 9,569 ops/s | WAL + 16分片 | ✅ |
+| HNSW 查询 | 1.94x 加速 | WASM | ✅ |
+| HNSW 构建 | 7.7x 加速 | WASM | ✅ |
+| Tantivy 搜索 | 219行 | 16分片 | ✅ |
+| WebRTC 握手 | <5s | ICEv2 + PSK | ✅ |
+| Memory Gateway | O(1) ~100ns | LRU Focus | ✅ |
+| Agent Core E2E | 90 passed | cargo-discoverable | ✅ |
+| Agent Core 编译 | 0 warnings | cargo check | ✅ |
 
 ---
 
-## 🧩 扩展点
+## 🗺️ 目录迁移历史
 
-### 1. 添加新的存储后端
-```typescript
-// 实现 IQueueDb 接口
-class MyCustomStorage implements IQueueDb {
-    async getQueue(): Promise<SyncOperation[]> { }
-    async saveQueue(queue: SyncOperation[]): Promise<void> { }
-}
+### v1.x → v2.0 → v3.0 → v3.1 (8周债务清偿)
 ```
-
-### 2. 添加新的 Clock 实现
-```rust
-// 实现 Clock trait
-pub struct MyCustomClock;
-impl Clock for MyCustomClock {
-    fn now_ms(&self) -> u64 { }
-}
-```
-
-### 3. 添加新的 InputSource
-```rust
-// 实现 InputSource trait
-pub struct FileInput;
-impl InputSource for FileInput {
-    async fn read_line(&mut self) -> io::Result<String> { }
-}
+src/
+├── crates/              # 保留: evm-bench-adapter, hajimi-codex-twist
+├── engine/              # 引擎层 (5模块)
+│   ├── llm-core/        # LLM客户端
+│   ├── p2p-sync/        # P2P同步 (PSK认证)
+│   ├── search/          # Tantivy搜索
+│   ├── tool-system/     # 40+工具 (白名单参数化)
+│   └── worker/          # 工作线程
+├── foundation/          # 地基层 (17模块)
+│   ├── api/, bench/, compression/, db/, disk/
+│   ├── eventloop/, format/, hash/, middleware/, migration/
+│   ├── network/, scripts/, security/, storage/
+│   ├── test/, tests/, utils/, wasm/
+│   └── ...
+├── intelligence/        # 智能层 (11模块)
+│   ├── agent-core/      # 自主Agent系统 (7步循环/Swarm/治理/LLM桥接) ⭐
+│   ├── chimera/         # REPL引擎
+│   ├── cloud/           # 云端同步
+│   ├── codex-twist/     # AI内存 (双轨清理完成)
+│   ├── index/           # 向量索引
+│   ├── integration/     # 集成模块
+│   ├── knowledge/       # 知识图谱
+│   ├── memory/          # 5层记忆
+│   ├── onnx/            # ONNX推理
+│   ├── pgvector/        # PG向量
+│   └── typeracing/      # 类型预测 (Ctrl+Space)
+└── interface/           # 界面层 (5模块)
+    ├── cli/             # CLI工具
+    ├── mcp-server/      # MCP服务器 (真实RPC)
+    ├── terminal/        # 终端UI (TypeRacing)
+    ├── vscode/          # VSCode插件 (20显式注册)
+    └── web/             # Web界面
 ```
 
 ---
 
 ## 📝 架构决策记录 (ADR)
 
-### ADR-001: 16分片 SQLite
-- **决策**: 使用 SimHash-64 高 8bit 路由到 16 个 SQLite 分片
-- **原因**: 单机可支持 100K+ 向量，避免单库性能瓶颈
-- **状态**: 已实施
-
-### ADR-002: ZeroTUI
-- **决策**: REPL 引擎完全无 TUI 依赖
-- **原因**: 支持多种运行时环境（CLI/Server/嵌入式）
-- **状态**: 已实施（chimera-repl）
-
-### ADR-003: WASM HNSW
-- **决策**: 核心向量算法用 Rust/WASM 实现
-- **原因**: 比 JS 快 5 倍，内存安全
-- **状态**: 已实施
-
-### ADR-004: 5级内存架构
-- **决策**: Focus/Working/Archive/RAG/Gateway 分层
-- **原因**: 平衡延迟、容量和成本
-- **状态**: 已实施（hajimi-codex-twist）
+| ID | 决策 | 状态 | 关联 |
+|:---|:---|:---:|:---|
+| ADR-001 | 四层分层架构 | ✅ | v2.0重构完成 |
+| ADR-002 | 16分片 SQLite (SimHash-64) | ✅ | foundation/storage/ |
+| ADR-003 | ZeroTUI (业务逻辑与TUI解耦) | ✅ | intelligence/chimera/ |
+| ADR-004 | WASM HNSW (Rust/WASM, 比JS快5倍) | ✅ | foundation/wasm/ |
+| ADR-005 | 5级内存架构 (Session/Auto/Dream/Graph/Cloud) | ✅ | intelligence/memory/ |
+| ADR-006 | Tool Trait 标准接口 (5方法) | ✅ | engine/tool-system/ |
+| ADR-007 | Git历史完整保留 (git mv) | ✅ | v2.0重构 |
+| ADR-008 | SimHash-64统一分片 | ⚠️ | foundation 8处引用 |
+| ADR-009 | 数据诚实性机制 (ID-261验证器) | ✅ | tools/data-validator.js |
+| ADR-010 | Shell参数化白名单 (消除bash -c) | ✅ | engine/tool-system/shell.rs |
+| ADR-011 | WebRTC PSK认证 (CSPRNG+timingSafeEqual) | ✅ | engine/p2p-sync/ |
+| ADR-012 | VSCode真实RPC桥接 (lspClient.sendRequest) | ✅ | interface/vscode/ |
 
 ---
 
-*本架构文档与代码同步维护，最后更新于 2026-04-02*
+## 🔗 关联文档
+
+| 文档 | 路径 | 说明 |
+|:---|:---|:---|
+| 源代码索引 | `src/INDEX.md` | 详细文件索引 |
+| 贡献指南 | `src/CONTRIBUTING.md` | 开发指南（含诚实性规范） |
+| 8周债务清偿审计 | `audit report/8week/` | A-级评级确认 |
+| 债务文档 | `docs/debt/` | 活跃债务声明 |
+| E2E回归 | `tests/e2e/phase1-5-regression/` | 18个月全周期测试 |
+
+---
+
+## 📈 债务清偿关键指标
+
+| 指标 | 清偿前 | 清偿后 | 清收率 |
+|:---|:---:|:---:|:---:|
+| TODO/FIXME | 1,292 | 10 (src目录) | 99.2% |
+| setTimeout模拟 | 1 | 0 | 100% |
+| 硬编码成功消息 | 1 | 0 | 100% |
+| WebRTC Math.random | 1 | 0 | 100% |
+| Shell bash -c | 1 | 0 | 100% |
+| 8周综合评级 | C/D波动 | **A-** | - |
+| Phase 7综合 | B+ (首次NoGo) | **B+→A-** (返工后Go) | - |
+| DEBT-LLM-CLIENT | 未定义 | **A- (清偿)** | 164行桥接 |
+| DEBT-PHASE2 | B+ (有条件Go) | A- (返工后Go) | - |
+
+---
+
+*本架构文档与代码同步维护，最后更新于 2026-04-23 (v3.8.0-batch-1 - Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿完成)*

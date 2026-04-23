@@ -48,8 +48,8 @@ impl<T> JsonRpcRequest<T> {
 /// JSON-RPC响应结构
 #[derive(Debug, Deserialize)]
 struct JsonRpcResponse<T> {
-    jsonrpc: String,
-    id: Option<u64>,
+    #[allow(dead_code)] jsonrpc: String,
+    #[allow(dead_code)] id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +61,7 @@ struct JsonRpcResponse<T> {
 struct JsonRpcError {
     code: i32,
     message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[allow(dead_code)] #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<Value>,
 }
 
@@ -120,6 +120,7 @@ impl LspClient {
         self.check_server().await?;
         
         let id = self.next_id().await;
+        #[allow(deprecated)]
         let params = InitializeParams {
             process_id: Some(std::process::id()),
             root_path: None,

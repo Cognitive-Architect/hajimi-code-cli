@@ -1,5 +1,5 @@
 //! 元关系抽取模块
-use crate::knowledge::graph::{GraphDb, GraphError, Relation, Result};
+use crate::graph::{GraphDb, GraphError, Relation, Result};
 pub mod adr_extractor;
 
 pub trait RelationExtractor {

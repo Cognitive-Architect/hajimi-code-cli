@@ -1,0 +1,20 @@
+[package]
+name = "hajimi-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+foundation-hash = { path = "../../foundation/hash" }
+tantivy = "0.21"
+jieba-rs = "0.6"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+lru = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "debug_test"
+path = "src/debug_test.rs"

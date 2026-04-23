@@ -1,5 +1,5 @@
 //! ADR命令行接口
-use crate::knowledge::adr::{AdrEntry, AdrIndex, AdrStatus};
+use crate::core_adr::{AdrIndex, AdrStatus};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -20,7 +20,7 @@ impl AdrCli {
     pub async fn execute(&self, index: &AdrIndex) -> anyhow::Result<()> {
         match &self.command {
             AdrCommands::List { status } => {
-                println!("{:<10} {:<12} {:<32} {}", "ID", "Status", "Title", "Date");
+                println!("{:<10} {:<12} {:<32} Date", "ID", "Status", "Title");
                 for entry in &index.entries {
                     if let Some(s) = status { if entry.status != *s { continue; } }
                     let date = entry.date.format("%Y-%m-%d").to_string();
@@ -48,6 +48,7 @@ mod tests {
 
     #[test]
     fn test_cli_list() {
+        use crate::core_adr::AdrEntry;
         let mut index = AdrIndex::default();
         index.entries.push(AdrEntry {
             id: "ADR-001".to_string(), title: "Test".to_string(),

@@ -11,6 +11,7 @@ description = "EVMbench adapter for Hajimi - Rust types and bindings"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 ethers = { version = "2.0", features = ["rustls", "ws"] }
 thiserror = "1.0"
 

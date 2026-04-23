@@ -46,6 +46,8 @@ export declare class LspClient implements vscode.Disposable {
     private checkInitialized;
     /** Send JSON-RPC request using VsCodeRpcClient adapter */
     private sendRequest;
+    /** Send custom JSON-RPC request (for MCP tool calls and extensions) */
+    sendCustomRequest<TResult>(method: string, params: unknown): Promise<TResult>;
     /** Send JSON-RPC notification (no response expected) */
     private sendNotification;
     /** Get current message ID for debugging */

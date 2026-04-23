@@ -1,0 +1,28 @@
+[package]
+name = "foundation-eventloop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Lightweight Tokio runtime utilities with WASM32 compatibility"
+
+[lib]
+name = "foundation_eventloop"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { workspace = true, optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+
+[features]
+default = ["native"]
+native = ["tokio"]
+wasm = ["wasm-bindgen-futures"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }

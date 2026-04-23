@@ -16,7 +16,8 @@
     "test:real-e2e": "node --max-old-space-size=512 tests/p2p/real-yjs-level.e2e.js",
     "test:real-e2e:docker": "bash scripts/run-real-e2e.sh",
     "start:rc": "node --max-old-space-size=512 src/p2p/signaling-server.js",
-    "bench": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js"
+    "bench": "node --max-old-space-size=512 tests/rc/serial-transfer-100x.test.js",
+    "test:e2e:phase1-5": "node tests/e2e/phase1-5-regression/full_chain.test.js"
   },
   "keywords": [],
   "author": "",
@@ -29,5 +30,20 @@
     "sql.js": "^1.14.0",
     "ws": "^8.19.0",
     "yjs": "^13.6.29"
+  },
+  "overrides": {
+    "tar": "^7.5.11",
+    "@mapbox/node-pre-gyp": "^1.0.0",
+    "hono": "^4.19.0",
+    "path-to-regexp": "^8.4.0",
+    "express-rate-limit": "^7.4.0",
+    "brace-expansion": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.0",
+    "commander": "14.0.3",
+    "ts-node": "10.9.2",
+    "tsx": "4.21.0",
+    "typescript": "6.0.3"
   }
 }

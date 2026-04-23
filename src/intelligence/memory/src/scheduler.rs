@@ -17,7 +17,7 @@ pub enum SchedulerError {
 
 /// 内存调度器 - Dream层夜间Cron + Auto层自动persist
 pub struct MemoryScheduler {
-    dream_cron: String,
+    _dream_cron: String,
     auto_persist_interval: Duration,
     shutdown_tx: tokio::sync::watch::Sender<bool>,
     handles: Arc<RwLock<Vec<JoinHandle<()>>>>,
@@ -27,7 +27,7 @@ impl MemoryScheduler {
     pub fn new() -> Self {
         let (shutdown_tx, _) = tokio::sync::watch::channel(false);
         Self {
-            dream_cron: "0 0 2 * * *".to_string(),
+            _dream_cron: "0 0 2 * * *".to_string(),
             auto_persist_interval: Duration::from_secs(300),
             shutdown_tx,
             handles: Arc::new(RwLock::new(Vec::new())),

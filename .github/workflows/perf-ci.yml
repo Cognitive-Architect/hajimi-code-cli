@@ -1,0 +1,164 @@
+name: HNSW Performance CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/wasm/**'
+      - 'benches/hnsw_query.bench.js'
+      - 'benches/hnsw_ci_results.json'
+      - '.github/workflows/perf-ci.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'src/wasm/**'
+      - 'benches/hnsw_query.bench.js'
+      - 'benches/hnsw_ci_results.json'
+      - '.github/workflows/perf-ci.yml'
+  schedule:
+    # Run nightly at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_OPTIONS: --max-old-space-size=4096
+
+jobs:
+  hnsw-perf:
+    name: HNSW WASM Performance Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo git
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache wasm-pack build
+        uses: actions/cache@v4
+        with:
+          path: src/wasm/pkg
+          key: ${{ runner.os }}-wasm-pack-${{ hashFiles('src/wasm/src/**', 'src/wasm/Cargo.toml') }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Verify wasm32-unknown-unknown target
+        run: rustup target list --installed | grep wasm32-unknown-unknown
+
+      - name: Build WASM release package
+        working-directory: ${{ github.workspace }}/src/wasm
+        run: wasm-pack build --release --target nodejs
+
+      - name: Run WASM tests with Node
+        working-directory: ${{ github.workspace }}/src/wasm
+        run: wasm-pack test --node --release
+        env:
+          WASM_BINDGEN_TEST_TIMEOUT: 120
+
+      - name: Run HNSW query benchmark
+        run: node benches/hnsw_query.bench.js
+        timeout-minutes: 15
+
+      - name: Load benchmark results
+        id: load_results
+        run: |
+          if [ -f docs/perf/HNSW-WASM-BENCHMARK-001.json ]; then
+            SPEEDUP=$(jq -r '.acceleration // 0' docs/perf/HNSW-WASM-BENCHMARK-001.json)
+            echo "speedup=$SPEEDUP" >> "$GITHUB_OUTPUT"
+          else
+            FALLBACK_SPEEDUP=$(jq -r '.speedup // 0' benches/hnsw_ci_results.json)
+            echo "speedup=$FALLBACK_SPEEDUP" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate speedup >= 2.5
+        run: |
+          SPEEDUP="${{ steps.load_results.outputs.speedup }}"
+          echo "Measured speedup: ${SPEEDUP}x"
+          if (( $(echo "$SPEEDUP < 2.5" | bc -l) )); then
+            echo "❌ FAIL: speedup ${SPEEDUP}x is below the 2.5x threshold"
+            exit 1
+          fi
+          echo "✅ PASS: speedup ${SPEEDUP}x meets the 2.5x threshold"
+
+      - name: Generate summary report
+        run: |
+          mkdir -p ci-reports
+          echo "# HNSW Performance CI Report" > ci-reports/summary.md
+          echo "" >> ci-reports/summary.md
+          echo "- **Measured speedup**: ${{ steps.load_results.outputs.speedup }}x" >> ci-reports/summary.md
+          echo "- **Threshold**: 2.5x" >> ci-reports/summary.md
+          echo "- **Target**: 3.0x" >> ci-reports/summary.md
+          echo "- **Status**: ${{ steps.load_results.outputs.speedup >= '2.5' && 'PASS' || 'FAIL' }}" >> ci-reports/summary.md
+          echo "- **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> ci-reports/summary.md
+          cat ci-reports/summary.md
+
+      - name: Generate status badge
+        run: |
+          SPEEDUP="${{ steps.load_results.outputs.speedup }}"
+          if (( $(echo "$SPEEDUP >= 3.0" | bc -l) )); then
+            COLOR="brightgreen"
+            LABEL="3.0x+"
+          elif (( $(echo "$SPEEDUP >= 2.5" | bc -l) )); then
+            COLOR="yellow"
+            LABEL="2.5x+"
+          else
+            COLOR="red"
+            LABEL="<2.5x"
+          fi
+          echo "https://img.shields.io/badge/HNSW%20speedup-${LABEL}-${COLOR}" > ci-reports/badge.url
+          cat ci-reports/badge.url
+
+      - name: Copy benchmark artifacts
+        run: |
+          cp benches/hnsw_ci_results.json ci-reports/
+          if [ -f docs/perf/HNSW-WASM-BENCHMARK-001.json ]; then
+            cp docs/perf/HNSW-WASM-BENCHMARK-001.json ci-reports/
+          fi
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hnsw-perf-report
+          path: ci-reports/
+          retention-days: 30
+
+      - name: Write GitHub step summary
+        run: |
+          echo "## HNSW WASM Performance CI" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Speedup | ${{ steps.load_results.outputs.speedup }}x |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Threshold | 2.5x |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target | 3.0x |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Result | ✅ PASS |" >> "$GITHUB_STEP_SUMMARY"

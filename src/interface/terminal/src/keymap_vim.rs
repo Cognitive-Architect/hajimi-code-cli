@@ -116,7 +116,7 @@ impl VimKeymap {
         match key.code { KeyCode::Char('h') => VimAction::Move(Direction::Left), KeyCode::Char('j') => VimAction::Move(Direction::Down), KeyCode::Char('k') => VimAction::Move(Direction::Up), KeyCode::Char('l') => VimAction::Move(Direction::Right), _ => VimAction::None }
     }
 
-    fn change(&mut self, mode: VimMode, now: Instant) { if now.duration_since(self.last_switch) >= DEBOUNCE { self.mode = mode; self.last_switch = now; self.seq.clear(); } }
+    fn change(&mut self, mode: VimMode, now: Instant) { self.mode = mode; self.last_switch = now; self.seq.clear(); }
 }
 
 #[cfg(test)]

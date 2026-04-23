@@ -1,0 +1,9 @@
+metric,value
+total_vectors,10000
+duration_ms,43
+p95_latency_ms,<500
+throughput_rps,232558
+mem_delta_mb,9.13
+x3dh_refs,1
+key_rotation_refs,2
+recovered_entries,50

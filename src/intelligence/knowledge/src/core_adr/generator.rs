@@ -1,6 +1,6 @@
 //! ADR自动生成器（编号生成与文件创建）
-use crate::knowledge::adr::parser::generate_frontmatter;
-use crate::knowledge::adr::{AdrError, AdrStatus, Result};
+use crate::core_adr::parser::generate_frontmatter;
+use crate::core_adr::{AdrError, AdrStatus, Result};
 use regex::Regex;
 use std::sync::Mutex;
 

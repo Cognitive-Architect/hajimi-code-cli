@@ -138,12 +138,12 @@ impl AutoMemory {
 
     /// 获取可变条目
     pub fn get_mut(&mut self, key: &str) -> Option<&mut AutoEntry> {
-        self.entries.get_mut(key).map(|e| { self.dirty = true; e })
+        self.entries.get_mut(key).inspect(|_| { self.dirty = true; })
     }
 
     /// 删除条目（延迟写入）
     pub fn remove(&mut self, key: &str) -> Option<AutoEntry> {
-        self.entries.remove(key).map(|e| { self.dirty = true; e })
+        self.entries.remove(key).inspect(|_| { self.dirty = true; })
     }
 
     /// 清空（延迟写入）

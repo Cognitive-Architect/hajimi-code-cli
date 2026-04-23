@@ -52,7 +52,12 @@ impl SessionMemory {
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut SessionEntry> {
-        self.entries.get_mut(key).map(|e| { e.access_count += 1; e })
+        if let Some(e) = self.entries.get_mut(key) {
+            e.access_count += 1;
+            Some(e)
+        } else {
+            None
+        }
     }
 
     fn evict_lru(&mut self, required: usize) -> Result<(), SessionError> {

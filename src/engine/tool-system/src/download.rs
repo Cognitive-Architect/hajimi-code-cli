@@ -7,6 +7,7 @@ use std::path::Path;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
+#[allow(dead_code)]
 const CHUNK_SIZE: usize = 8192;
 
 pub struct DownloadOptions<F: Fn(u64, u64)> {

@@ -1,7 +1,7 @@
 //! ADR→Graph适配器（Week 33→Week 34桥接）
 
-use crate::knowledge::adr::{AdrEntry, AdrStatus};
-use crate::knowledge::graph::{EntityType, Node};
+use crate::core_adr::{AdrEntry, AdrStatus};
+use crate::graph::{EntityType, Node};
 use chrono::Utc;
 
 /// ADR条目到节点的零拷贝转换

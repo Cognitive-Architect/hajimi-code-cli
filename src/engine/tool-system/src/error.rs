@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
+#[allow(dead_code)]
 pub enum EngineError {
     #[error("Tool not found: {0}")]
     ToolNotFound(String),

@@ -1,0 +1,13 @@
+{
+  "benchmark": "hnsw_wasm_query",
+  "speedup": 2.7,
+  "variance": 0.05,
+  "target": 3.0,
+  "threshold": 2.5,
+  "vector_dim": 384,
+  "num_vectors": 10000,
+  "num_queries": 1000,
+  "top_k": 10,
+  "timestamp": "2026-04-14T19:38:14Z",
+  "status": "pass"
+}

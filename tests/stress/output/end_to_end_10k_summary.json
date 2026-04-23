@@ -1,0 +1,12 @@
+{
+  "test": "10K vectors flow through HNSW → Tantivy → Graph → Cloud",
+  "total": 10000,
+  "successCount": 10000,
+  "timeoutCount": 0,
+  "p95LatencyMs": 920,
+  "totalDurationMs": 93310,
+  "memoryRssMB": 179.61,
+  "memoryLimitMB": 2048,
+  "passed": true,
+  "timestamp": "2026-04-15T08:52:03.181Z"
+}

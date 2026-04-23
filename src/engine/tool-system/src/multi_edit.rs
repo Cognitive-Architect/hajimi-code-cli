@@ -19,7 +19,7 @@ impl EditPlan { pub fn new() -> Self { Self::default() } pub fn add(&mut self, o
 pub enum TransactionState { Pending, Committed, RolledBack }
 
 #[derive(Debug)]
-struct Snapshot { path: PathBuf, content: String, mtime: SystemTime, temp: PathBuf }
+struct Snapshot { path: PathBuf, content: String, mtime: SystemTime, #[allow(dead_code)] temp: PathBuf }
 
 pub struct MultiEditTransaction { pub plan: EditPlan, pub dry_run: bool, state: TransactionState, snapshots: Vec<Snapshot>, temp_dir: PathBuf }
 

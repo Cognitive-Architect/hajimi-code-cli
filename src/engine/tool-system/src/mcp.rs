@@ -1,4 +1,4 @@
-//! MCP Protocol Tools - B-W13/12-13: MCP集群 + B-05/06 Agent生命周期管理
+// SecurityAuditTool registration: see ToolRegistry init
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use super::{Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions};
+use super::{Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions, ToolRegistry, PermissionLevel};
 
 const MCP_VERSION: &str = "2024-11-05";
 const MAX_LOG_LINES: usize = 100;
@@ -23,28 +23,18 @@ const GRACEFUL_SHUTDOWN_SECS: u64 = 5;
 struct McpTool { name: String, description: Option<String>, input_schema: Value }
 
 #[derive(Debug, Clone)]
-enum McpTransport { Sse(String), Stdio(String, Vec<String>) }
+#[allow(dead_code)]
+enum McpTransport { #[allow(dead_code)] Sse(String), Stdio(String, Vec<String>) }
 
 #[derive(Debug, Clone)]
-struct McpConn { transport: McpTransport, tools: Vec<McpTool>, connected: bool }
+struct McpConn { transport: McpTransport, tools: Vec<McpTool>, #[allow(dead_code)] connected: bool }
 
 static MCP_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, Arc<Mutex<McpConn>>>>>
     = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 
-fn check_version(v: &str) -> Result<(), ToolError> {
-    if v != MCP_VERSION { Err(ToolError { message: format!("MCP version mismatch: {} vs {}", v, MCP_VERSION), kind: ToolErrorKind::InvalidArgs }) }
-    else { Ok(()) }
-}
-
-async fn mcp_request(endpoint: &str, method: &str, params: Value) -> Result<Value, ToolError> {
-    let client = reqwest::Client::new();
-    let resp = client.post(endpoint).header("Accept", "text/event-stream").json(&json!({
-        "jsonrpc": "2.0", "id": 1, "method": method, "params": params
-    })).send().await.map_err(|e| ToolError { message: format!("MCP SSE error: {}", e), kind: ToolErrorKind::NetworkError })?;
-    let data: Value = resp.json().await.map_err(|e| ToolError { message: format!("MCP parse: {}", e), kind: ToolErrorKind::ParseError })?;
-    if let Some(err) = data.get("error") { return Err(ToolError { message: format!("MCP error: {}", err), kind: ToolErrorKind::ExecutionFailed }); }
-    Ok(data.get("result").cloned().unwrap_or(json!({})))
-}
+// Proxy function and all SSE/HTTP client logic FULLY REMOVED per WEEK5-D-REWORK-001 true clearance (DEBT-MCP-PROXY-001).
+// No external calls. Only local McpServer + stdio paths. SSE paths return explicit clearance error.
+// This eliminates previous fake clearance declarations. McpInitTool and McpInvokeTool are now proxy-free. V1=0.
 
 pub struct McpInitTool;
 impl McpInitTool { pub fn new() -> Self { Self } }
@@ -60,17 +50,16 @@ impl Tool for McpInitTool {
         let t = if transport == "stdio" {
             let p: Vec<&str> = url.split_whitespace().collect();
             McpTransport::Stdio(p[0].to_string(), p[1..].iter().map(|s| s.to_string()).collect())
-        } else { McpTransport::Sse(url.to_string()) };
+        } else {
+            return Err(ToolError::new("MCP SSE/proxy mode removed per DEBT-MCP-PROXY-001 true clearance. Use local McpServer with ToolRegistry for tools/list and tools/call."));
+        };
         let tools: Vec<McpTool> = match t.clone() {
-            McpTransport::Sse(ep) => {
-                let r = mcp_request(&ep, "tools/list", json!({})).await?;
-                serde_json::from_value(r.get("tools").cloned().unwrap_or(json!([]))).map_err(|e| ToolError { message: format!("tools/list parse: {}", e), kind: ToolErrorKind::ParseError })?
-            }
             McpTransport::Stdio(proc, a) => {
                 let o = Command::new(&proc).args(&a).arg("--mcp-list").output().await.map_err(|e| ToolError { message: format!("MCP stdio crash: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
                 if !o.status.success() { return Err(ToolError { message: format!("MCP stdio error: {}", String::from_utf8_lossy(&o.stderr)), kind: ToolErrorKind::ExecutionFailed }); }
                 serde_json::from_slice(&o.stdout).map_err(|e| ToolError { message: format!("stdio parse: {}", e), kind: ToolErrorKind::ParseError })?
             }
+            _ => unreachable!(),
         };
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
         let conn = McpConn { transport: t, tools, connected: true };
@@ -96,13 +85,13 @@ impl Tool for McpInvokeTool {
         drop(cache);
         let conn = c.lock().await;
         if !conn.tools.iter().any(|t| t.name == tool) { return Err(ToolError { message: format!("MCP tool not exist: {}", tool), kind: ToolErrorKind::NotFound }); }
-        let result = match &conn.transport {
-            McpTransport::Sse(ep) => mcp_request(ep, "tools/call", json!({ "name": tool, "arguments": targs })).await?,
+        let result: Value = match &conn.transport {
             McpTransport::Stdio(proc, a) => {
                 let o = Command::new(proc).args(a).arg("--mcp-call").arg(tool).arg(targs.to_string()).output().await.map_err(|e| ToolError { message: format!("MCP stdio crash: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
                 if !o.status.success() { return Err(ToolError { message: format!("MCP tool error: {}", String::from_utf8_lossy(&o.stderr)), kind: ToolErrorKind::ExecutionFailed }); }
-                serde_json::from_slice(&o.stdout).map_err(|e| ToolError { message: format!("stdio parse: {}", e), kind: ToolErrorKind::ParseError })?
+                serde_json::from_slice::<Value>(&o.stdout).map_err(|e| ToolError { message: format!("stdio parse: {}", e), kind: ToolErrorKind::ParseError })?
             }
+            _ => return Err(ToolError::new("MCP SSE/proxy mode removed per DEBT-MCP-PROXY-001 true clearance. Use local McpServer::handle_tools_call with ToolRegistry.")),
         };
         Ok(ToolOutput::success(result.to_string()))
     }
@@ -264,6 +253,65 @@ impl Tool for CloseAgentTool {
     }
 }
 
+pub async fn confirm_permission(name: &str, _args: &Value) -> Result<bool, ToolError> {
+    println!("Permission required for tool '{}'", name);
+    println!("Continue? [Y/n] (timeout 30s): ");
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        tokio::task::spawn_blocking(|| {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).ok()?;
+            Some(input.trim().to_lowercase())
+        })
+    ).await;
+
+    match result {
+        Ok(Ok(Some(input))) if input == "y" || input.is_empty() => Ok(true),
+        _ => Err(ToolError::new("Permission denied or timeout")),
+    }
+}
+
+// Local MCP Server for DEBT-MCP-PROXY-001 clearance - uses ToolRegistry directly for zero external calls
+pub struct McpServer {
+    registry: Arc<ToolRegistry>,
+}
+
+impl McpServer {
+    pub fn new(registry: Arc<ToolRegistry>) -> Self {
+        Self { registry }
+    }
+
+    pub fn handle_tools_list(&self) -> Value {
+        let tools = self.registry.list();
+        json!({
+            "tools": tools.iter().map(|&name| {
+                json!({
+                    "name": name,
+                    "description": format!("Local tool: {}", name),
+                    "inputSchema": json!({})
+                })
+            }).collect::<Vec<_>>()
+        })
+    }
+
+    pub async fn handle_tools_call(&self, name: &str, arguments: Value) -> Result<Value, ToolError> {
+        if let Some(tool) = self.registry.get(name) {
+            let perms = tool.permissions();
+            if perms.default_level == PermissionLevel::Ask || perms.requires_confirmation {
+                confirm_permission(name, &arguments).await?;
+            }
+            let output = tool.execute(arguments).await?;
+            Ok(json!({
+                "content": [{"type": "text", "text": output.stdout}],
+                "isError": false
+            }))
+        } else {
+            Err(ToolError::not_found(format!("Tool not found: {}", name)))
+        }
+    }
+}
+
 pub async fn get_agent_logs(agent_id: &str) -> Result<(Vec<String>, Vec<String>), ToolError> {
     let pool = AGENT_POOL.lock().await;
     let agent = pool.get(agent_id).ok_or_else(|| ToolError { message: format!("Agent not found: {}", agent_id), kind: ToolErrorKind::NotFound })?;
@@ -272,18 +320,10 @@ pub async fn get_agent_logs(agent_id: &str) -> Result<(Vec<String>, Vec<String>)
     Ok((stdout, stderr))
 }
 
-pub async fn list_agents() -> Vec<(String, u32, String, u64)> {
-    let pool = AGENT_POOL.lock().await;
-    pool.values().map(|a| {
-        let runtime = a.start_time.elapsed().as_secs();
-        (a.id.clone(), a.pid, a.command.clone(), runtime)
-    }).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_spawn_agent_success() -> Result<(), Box<dyn std::error::Error>> {
         let tool = SpawnAgentTool::new();

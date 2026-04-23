@@ -5,6 +5,7 @@ use super::{PermissionLevel, Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutpu
 use image::{DynamicImage, GenericImageView};
 use serde_json::Value;
 use std::path::PathBuf;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 const MAX_IMAGE_SIZE: u64 = 50 * 1024 * 1024;
 const MAX_ASCII_HEIGHT: u32 = 40;
@@ -31,6 +32,7 @@ fn is_image_file(path: &PathBuf) -> bool {
 }
 
 /// Validate image path and return appropriate error for invalid inputs
+#[allow(dead_code)]
 fn validate_image_path(path: &PathBuf) -> Result<(), ToolError> {
     if !path.exists() {
         return Err(ToolError { message: format!("Path not found: {}", path.display()), kind: ToolErrorKind::NotFound });
@@ -82,7 +84,7 @@ impl Tool for ViewImageTool {
         let max_width = args.get("max_width").and_then(Value::as_u64).map(|v| v as u32).unwrap_or(DEFAULT_MAX_WIDTH);
         let mut result = format!("Image: {}\nSize: {}\nDimensions: {}x{}\n", path, human_size(meta.len()), width, height);
         if ascii { result.push_str(&format!("\nASCII Preview ({} cols):\n{}", max_width, ascii_art(&img, max_width))); }
-        if base64 { let data = std::fs::read(&path_buf).map_err(|e| ToolError::new(format!("Read: {}", e)))?; result.push_str(&format!("\nBase64:\n{}", base64::encode(&data))); }
+        if base64 { let data = std::fs::read(&path_buf).map_err(|e| ToolError::new(format!("Read: {}", e)))?; result.push_str(&format!("\nBase64:\n{}", BASE64.encode(&data))); }
         Ok(ToolOutput::success(result))
     }
 }

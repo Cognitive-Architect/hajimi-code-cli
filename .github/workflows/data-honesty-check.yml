@@ -1,0 +1,51 @@
+name: Data Honesty Check
+
+on:
+  push:
+    paths:
+      - 'docs/perf/**'
+      - 'tests/stress/output/**'
+      - 'tools/data-validator.js'
+      - 'docs/correction/**'
+  pull_request:
+    paths:
+      - 'docs/perf/**'
+      - 'tests/stress/output/**'
+      - 'tools/data-validator.js'
+      - 'docs/correction/**'
+
+jobs:
+  verify-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run 10K stress test to generate artifact
+        run: node tests/stress/end_to_end_10k.test.js
+
+      - name: Run data-honesty validator
+        run: node tools/data-validator.js
+
+      - name: Verify corrected report exists
+        run: |
+          test -f docs/perf/END-TO-END-10K-BENCHMARK-001-CORRECTED.md
+          test -f docs/correction/DATA-DISCREPANCY-EXPLANATION-001.md
+          test -f docs/audit/CORRECTED-WEEK10-SELF-ASSESSMENT.md
+
+      - name: Verify no fake values in corrected report
+        run: |
+          ! grep -E "Overall Grade: A\+\s*$" docs/perf/END-TO-END-10K-BENCHMARK-001.md
+          ! grep -E "\*\*Rating:\*\* A\+" docs/perf/END-TO-END-10K-BENCHMARK-001.md
+
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-summary
+          path: tests/stress/output/

@@ -13,22 +13,30 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-dirs = "5.0"
-tempfile = "3.0"
+dirs = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["time", "sync", "fs", "rt", "macros"] }
-
-# Week 32: Dream层ONNX + SQLite依赖
-# DEBT-ONNX-API-W28-W32: P1-活动中（接口迁移完成，模型优化Week 33-34）
-rusqlite = { version = "0.30", features = ["bundled", "chrono"] }
-rand = "0.8"
-
+rusqlite = { workspace = true, features = ["bundled", "chrono"] }
+rand = { workspace = true }
 # ONNX Runtime依赖（可选feature）
-ort = { version = "2.0.0-rc.12", optional = true, default-features = false }
-ndarray = { version = "0.15", optional = true }
-cfg-if = "1.0"
+ort = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+cfg-if = { workspace = true }
+
+# Week 6-8: Cloud E2EE加密依赖 (B-07: scrypt fallback and degraded_mode removed - pure Argon2id only, DEBT-CRYPTO-004 for low-memory envs if needed)
+age = { workspace = true, features = ["armor"] }
+argon2 = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+aho-corasick = { workspace = true }
+lru = { workspace = true }
+jieba-rs = { workspace = true }
 
 [features]
 default = []

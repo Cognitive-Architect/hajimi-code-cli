@@ -1,6 +1,4 @@
-//! Unified Input Handler - B-15/04: Input Event Dispatcher
-//! Coordinates Animation/Vim/Emacs/Config systems, handles mode conflicts
-//! Required: enum InputMode, Vim|Emacs|Standard, dispatch|route, config.*reload
+//! Unified Input Handler - B-15/04: Input Event Dispatcher. Coordinates Animation/Vim/Emacs/Config systems, handles mode conflicts.
 
 use crate::animation::AnimationEngine;
 use crate::keymap_vim::{VimKeymap, VimMode, VimAction, Direction, LineRange};
@@ -18,10 +16,16 @@ const MAX_QUEUE: usize = 128;
 const LOCK_TIMEOUT_MS: u64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputMode { Standard, Vim(VimMode), Emacs }
+pub enum InputMode { Standard, Vim(VimMode), Emacs, TypeRacing }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action { Move(Direction), Delete(LineRange), Insert, Animation(u64), Quit, None }
+pub enum Action { Move(Direction), Delete(LineRange), Insert, Animation(u64), Quit, TypeRacing(TypeRacingAction), None }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeRacingAction { Predict, Up, Down, Confirm, Cancel }
+
+#[derive(Debug, Clone, Copy)]
+pub struct TypeRacingAdapter;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum HandlerError {
@@ -40,6 +44,7 @@ pub struct InputHandler {
     pub animation: AnimationEngine,
     pub key_buffer: VecDeque<KeyEvent>,
     pub config_watcher: Option<RecommendedWatcher>,
+    pub typeracing_adapter: Option<TypeRacingAdapter>,
 }
 
 impl InputHandler {
@@ -51,6 +56,7 @@ impl InputHandler {
             animation: AnimationEngine::new(),
             key_buffer: VecDeque::with_capacity(MAX_QUEUE),
             config_watcher: None,
+            typeracing_adapter: None,
         }
     }
 
@@ -88,6 +94,17 @@ impl InputHandler {
                 KeyCode::Left => Action::Move(Direction::Left),
                 KeyCode::Right => Action::Move(Direction::Right),
                 KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
+                KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if self.typeracing_adapter.is_some() { if let Ok(mut g) = self.mode.try_write() { *g = InputMode::TypeRacing; } } else { eprintln!("TypeRacing adapter not initialized"); }
+                    Action::TypeRacing(TypeRacingAction::Predict)
+                }
+                _ => Action::None,
+            },
+            InputMode::TypeRacing => match key.code {
+                KeyCode::Up => Action::TypeRacing(TypeRacingAction::Up),
+                KeyCode::Down => Action::TypeRacing(TypeRacingAction::Down),
+                KeyCode::Enter => Action::TypeRacing(TypeRacingAction::Confirm),
+                KeyCode::Esc => { if let Ok(mut g) = self.mode.try_write() { *g = InputMode::Standard; } Action::TypeRacing(TypeRacingAction::Cancel) }
                 _ => Action::None,
             },
         }
@@ -122,10 +139,7 @@ impl InputHandler {
     }
 
     async fn hot_reload(mode: Arc<RwLock<InputMode>>) {
-        let config_path = crate::config::config_dir()
-            .unwrap_or_default()
-            .join("input_config.toml");
-        
+        let config_path = crate::config::config_dir().unwrap_or_default().join("input_config.toml");
         if let Ok(content) = tokio::fs::read_to_string(&config_path).await {
             if let Some(mode_line) = content.lines().find(|l| l.starts_with("mode=")) {
                 let new_mode = match mode_line.trim().strip_prefix("mode=") {

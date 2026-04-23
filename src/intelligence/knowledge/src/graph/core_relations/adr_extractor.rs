@@ -1,6 +1,6 @@
 //! ADR关系抽取
-use crate::knowledge::adr::AdrEntry;
-use crate::knowledge::graph::{GraphError, Relation, Result};
+use crate::core_adr::AdrEntry;
+use crate::graph::{GraphError, Relation, Result};
 use regex::Regex;
 
 pub struct AdrRelationExtractor;

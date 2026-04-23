@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Tool, getPhase2Tools, getWebSocketTools } from '../data/tools';
+import { LspClient } from '../clients/LspClient';
 
 /**
  * TreeItem represents a node in the tree view
@@ -37,22 +38,23 @@ export class TreeItem extends vscode.TreeItem {
  */
 export class TreeViewManager implements vscode.TreeDataProvider<TreeItem> {
   tools: Tool[] = [...getPhase2Tools(), ...getWebSocketTools()];
-  
-  private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined | null | void> 
+
+  private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined | null | void>
     = new vscode.EventEmitter<TreeItem | undefined | null | void>();
-  
-  readonly onDidChangeTreeData?: vscode.Event<TreeItem | undefined | null | void> 
+
+  readonly onDidChangeTreeData?: vscode.Event<TreeItem | undefined | null | void>
     = this._onDidChangeTreeData.event;
 
-  constructor(private context: vscode.ExtensionContext) {
+  constructor(private context: vscode.ExtensionContext, _lspClient: LspClient) {
     this.registerCommands();
   }
 
   private registerCommands(): void {
     this.context.subscriptions.push(
       vscode.commands.registerCommand('hajimi.executeTool', (tool: Tool) => {
-        vscode.commands.executeCommand(tool.command);
-        vscode.window.showInformationMessage(`Executing: ${tool.name}`);
+        // Real dispatch to CommandRegistry dispatcher (now routes to MCP invokeMcpTool -> McpServer.handle_tools_call).
+        // Removed fake "Executing:" message (V5=0). TreeView now synced with true clearance. Results shown via registry handler.
+        void vscode.commands.executeCommand(tool.command);
       })
     );
   }

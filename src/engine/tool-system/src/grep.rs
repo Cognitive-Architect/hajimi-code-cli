@@ -71,7 +71,7 @@ impl Tool for GrepTool {
 /// Find + Grep integration: find . -name "*.rs" | grep "pattern"
 pub struct FindGrepIntegration;
 impl FindGrepIntegration {
-    pub async fn pipe(find: &FindTool, grep: &GrepTool, find_args: serde_json::Value, pattern: &str) -> Result<ToolOutput, ToolError> {
+    pub async fn pipe(find: &FindTool, _grep: &GrepTool, find_args: serde_json::Value, pattern: &str) -> Result<ToolOutput, ToolError> {
         let out = find.execute(find_args).await?;
         let files: Vec<String> = out.stdout.lines().map(|s: &str| s.to_string()).collect();
         if files.is_empty() { return Ok(ToolOutput { stdout: String::new(), stderr: "No files".to_string(), exit_code: Some(1) }); }

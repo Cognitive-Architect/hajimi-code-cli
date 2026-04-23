@@ -16,7 +16,7 @@ pub struct Node {
 pub struct Edge { pub from_id: String, pub to_id: String, pub rel_type: String, pub weight: f64 }
 
 impl Node {
-    pub fn from_graph_entity(entity: crate::knowledge::adr::GraphEntity) -> Self {
+    pub fn from_graph_entity(entity: crate::core_adr::GraphEntity) -> Self {
         Self {
             id: entity.id, label: entity.label,
             entity_type: match entity.entity_type.as_str() { "ADR" => EntityType::ADR, _ => EntityType::Concept },

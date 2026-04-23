@@ -1,7 +1,7 @@
 //! GNN图神经网络接口
 
-use crate::knowledge::graph::{GraphDb, Result};
-use crate::knowledge::graph::attention::{attention_pooling, EMBEDDING_DIM};
+use crate::graph::{GraphDb, Result};
+use crate::graph::attention::{attention_pooling, EMBEDDING_DIM};
 
 /// GNN聚合（注意力加权）
 pub fn gnn_aggregate(db: &GraphDb, node_ids: &[String]) -> Result<Vec<f32>> {

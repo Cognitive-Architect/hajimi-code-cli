@@ -27,10 +27,17 @@ pub struct ArchiveTier { base_path: PathBuf }
 impl ArchiveTier {
     pub fn new(p: impl AsRef<Path>) -> Self { Self { base_path: p.as_ref().to_path_buf() } }
     fn path(&self, k: &str) -> PathBuf { self.base_path.join(format!("{k}.bin")) }
+    /// # Safety
+    ///
+    /// The file at `path` must exist and be readable. `Mmap::map` requires the file descriptor
+    /// to remain valid for the duration of the mapping. We have verified the file was
+    /// successfully opened above. The mmap lifetime is bound to this scope.
     fn mmap_read(path: PathBuf) -> std::io::Result<Option<Vec<u8>>> {
         let file = match File::open(&path) {
             Ok(f) => f, Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None), Err(e) => return Err(e),
         };
+        // SAFETY: Mmap::map requires the file to be valid and readable. We have verified
+        // the file was successfully opened above. The mmap lifetime is bound to this scope.
         let mmap = unsafe { Mmap::map(&file)? };
         Ok(Some(mmap.to_vec()))
     }

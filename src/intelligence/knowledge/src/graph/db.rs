@@ -62,6 +62,7 @@ impl GraphDb {
 
     // E-001修复：提取公共辅助方法
     /// 将数据库行转换为Node（pub(crate)供其他模块使用）
+    #[allow(dead_code)]
     pub(crate) fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<Node> {
         use chrono::Utc;
         let entity_type: String = row.get(2)?;

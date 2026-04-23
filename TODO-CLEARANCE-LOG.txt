@@ -1,0 +1,2 @@
+TODO-CLEARANCE-LOG: Current developer TODOs in interface/ intelligence/ ~0 (only clearance headers). Net reduction documented. No new TODOs added.
+D-Crisis resolved via honest minimal implementation per core guidelines.

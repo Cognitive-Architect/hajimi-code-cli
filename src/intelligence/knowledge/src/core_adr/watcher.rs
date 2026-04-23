@@ -1,5 +1,5 @@
 //! ADR目录监听（基于notify crate）
-use crate::knowledge::adr::{AdrError, Result};
+use crate::core_adr::{AdrError, Result};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
@@ -17,10 +17,10 @@ impl AdrWatcher {
                 if let Ok(event) = res { callback(event); }
             },
             Config::default().with_poll_interval(Duration::from_millis(500)),
-        ).map_err(|e| AdrError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        ).map_err(|e| AdrError::Io(std::io::Error::other(e)))?;
         let mut watcher = watcher;
         watcher.watch(dir, RecursiveMode::NonRecursive)
-            .map_err(|e| AdrError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| AdrError::Io(std::io::Error::other(e)))?;
         Ok(Self { _watcher: watcher })
     }
 }

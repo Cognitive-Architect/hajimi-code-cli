@@ -11,6 +11,7 @@ mod error;
 mod streaming;
 pub use error::EngineError;
 pub use streaming::channel_stream::ChannelStream;
+pub use streaming::StreamChunk;
 use async_trait::async_trait;
 use std::env;
 

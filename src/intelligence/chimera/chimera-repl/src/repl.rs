@@ -2,21 +2,23 @@
 use std::pin::Pin;
 
 use tokio::io::AsyncWrite;
-use tokio::sync::mpsc;
+use crate::eventloop_adapter::EventReceiver;
 use tracing::{debug, error, info};
 
 use crate::clock::Clock;
 use crate::event::{EventHandler, ReplEvent};
 use crate::io::InputSource;
 use crate::state::ReplState;
-use crate::{ReplConfig, ReplError, ReplResult};
+use crate::{ReplConfig, ReplResult};
 
 /// ZeroTUI REPL with I/O injection (Clock + InputSource + AsyncWrite).
 pub struct ChimeraRepl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> {
     state: ReplState<C>,
     input: I,
+    #[allow(dead_code)]
     output: Pin<Box<R>>,
-    event_rx: mpsc::Receiver<ReplEvent>,
+    event_rx: EventReceiver<ReplEvent>,
+    #[allow(dead_code)]
     config: ReplConfig,
     running: bool,
 }
@@ -27,7 +29,7 @@ impl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> ChimeraRepl<C, I, R> {
         state: ReplState<C>,
         input: I,
         output: R,
-        event_rx: mpsc::Receiver<ReplEvent>,
+        event_rx: EventReceiver<ReplEvent>,
         config: ReplConfig,
     ) -> Self {
         Self { state, input, output: Box::pin(output), event_rx, config, running: false }
