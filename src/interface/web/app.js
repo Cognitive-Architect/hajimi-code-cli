@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 
 const chatArea = document.getElementById('chatArea');
 const messageInput = document.getElementById('messageInput');
@@ -39,7 +39,7 @@ newSessionBtn.addEventListener('click', () => {
         <rect x="42" y="44" width="6" height="8" rx="1" fill="#d4a574"/>
       </svg>
     </div>
-    <p class="welcome-text">Local-first AI agent. Ask me to read files, run tests, or edit code.</p>
+    <p class="welcome-text">Local-first AI agent. Ask me to read files, run tests, or chat with an LLM.</p>
   `;
   chatArea.appendChild(welcome);
   sessionTitle.textContent = 'Untitled';
@@ -63,10 +63,12 @@ async function sendMessage() {
   try {
     const response = await handleCommand(text);
     removeThinking(thinkingId);
-    addMessage('ai', response);
+    if (response && typeof response === 'string') {
+      addMessage('ai', response);
+    }
   } catch (err) {
     removeThinking(thinkingId);
-    addMessage('ai', '**Error:** ' + err.message);
+    addMessage('ai', '**Error:** ' + (err.message || err));
   } finally {
     isProcessing = false;
     sendBtn.disabled = false;
@@ -77,6 +79,57 @@ async function sendMessage() {
 async function handleCommand(text) {
   const lower = text.toLowerCase();
 
+  // --- Tool-system commands ---
+  if (lower === '/tools' || lower === '/list') {
+    const tools = await invoke('list_tools');
+    return [
+      '**Available tools (' + tools.length + '):**',
+      '',
+      tools.map(t => '- `' + t.name + '` — ' + t.description).join('\n'),
+      '',
+      'Use `/tool <name> <json-args>` to execute.'
+    ].join('\n');
+  }
+
+  if (lower.startsWith('/tool ')) {
+    const rest = text.slice(6).trim();
+    const spaceIdx = rest.indexOf(' ');
+    const name = spaceIdx > 0 ? rest.slice(0, spaceIdx) : rest;
+    const argsStr = spaceIdx > 0 ? rest.slice(spaceIdx + 1) : '{}';
+    let args;
+    try {
+      args = JSON.parse(argsStr);
+    } catch {
+      args = { input: argsStr };
+    }
+    const result = await invoke('execute_tool', { name, args });
+    let out = '**Tool:** `' + name + '`\n';
+    if (result.stdout) out += '```\n' + result.stdout + '\n```\n';
+    if (result.stderr) out += '**stderr:**\n```\n' + result.stderr + '\n```\n';
+    out += '**exit:** ' + (result.exit_code ?? 'N/A');
+    return out;
+  }
+
+  if (lower === '/providers') {
+    const providers = await invoke('get_providers');
+    return [
+      '**LLM Providers:**',
+      '',
+      providers.map(p => '- `' + p.name + '` — ' + (p.available ? '✅ available' : '❌ not configured') + ' (default: `' + p.defaultModel + '`)').join('\n')
+    ].join('\n');
+  }
+
+  if (lower.startsWith('/chat ')) {
+    const rest = text.slice(6).trim();
+    const spaceIdx = rest.indexOf(' ');
+    const provider = spaceIdx > 0 ? rest.slice(0, spaceIdx) : 'ollama';
+    const prompt = spaceIdx > 0 ? rest.slice(spaceIdx + 1) : rest;
+    if (!prompt) return 'Usage: `/chat <provider> <prompt>`';
+    await streamChat(provider, prompt);
+    return null; // streaming handles its own message rendering
+  }
+
+  // --- Legacy file-system commands ---
   if (lower.startsWith('read ') || lower.startsWith('cat ') || lower.startsWith('show ')) {
     const path = text.replace(/^\w+\s+/, '').trim();
     try {
@@ -122,23 +175,77 @@ async function handleCommand(text) {
     }
   }
 
-  if (lower === 'help' || lower === '?') {
+  if (lower === 'help' || lower === '?' || lower === '/help') {
     return [
       '**Available commands:**',
       '',
+      '**File system:**',
       '- `read &lt;path&gt;` — read file contents',
       '- `write &lt;path&gt; &lt;content&gt;` — write to file',
       '- `ls &lt;path&gt;` — list directory',
       '- `run &lt;command&gt;` — run shell command',
-      '- `help` — show this message',
       '',
-      'LLM integration is not yet connected. To add AI responses, wire up an LLM provider.'
+      '**Tool system:**',
+      '- `/tools` — list all 38+ registered tools',
+      '- `/tool &lt;name&gt; &lt;json-args&gt;` — execute a tool',
+      '',
+      '**LLM:**',
+      '- `/providers` — show available LLM providers',
+      '- `/chat &lt;provider&gt; &lt;prompt&gt;` — stream chat (providers: ollama, anthropic, openai)',
+      '',
+      'Or type any message to chat with the default LLM (Ollama).'
     ].join('\n');
   }
 
-  return 'I am Hajimi running in **tool mode** without a connected LLM.\n\nTry:\n- `read README.md`\n- `ls src`\n- `run git status`\n- `help` for more';
+  // Default: treat as chat with default provider (Ollama)
+  await streamChat('ollama', text);
+  return null;
 }
 
+// ------------------------------------------------------------------
+// Streaming chat
+// ------------------------------------------------------------------
+async function streamChat(provider, prompt) {
+  const msgId = 'msg-' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'message ai';
+  div.id = msgId;
+  div.innerHTML = '<div class="message-avatar">H</div><div class="message-body"><span class="stream-text"></span><span class="cursor">▋</span></div>';
+  chatArea.appendChild(div);
+  chatArea.scrollTop = chatArea.scrollHeight;
+
+  const textSpan = div.querySelector('.stream-text');
+  const cursor = div.querySelector('.cursor');
+
+  const channel = new Channel();
+  channel.onmessage = (ev) => {
+    if (ev.error) {
+      textSpan.innerHTML += formatText('\n**Error:** ' + ev.error);
+      cursor.remove();
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return;
+    }
+    if (ev.done) {
+      cursor.remove();
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return;
+    }
+    textSpan.innerHTML += formatText(ev.chunk);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  };
+
+  try {
+    await invoke('stream_chat', { provider, prompt, onEvent: channel });
+  } catch (e) {
+    textSpan.innerHTML += formatText('\n**Error:** ' + (e.message || e));
+    cursor.remove();
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+}
+
+// ------------------------------------------------------------------
+// UI helpers
+// ------------------------------------------------------------------
 function addMessage(role, text) {
   const div = document.createElement('div');
   div.className = 'message ' + role;

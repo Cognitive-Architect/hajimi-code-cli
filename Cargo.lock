@@ -1257,15 +1257,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-p2p-sync"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "engine-tool-system"
 version = "0.1.0"
 dependencies = [
