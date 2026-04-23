@@ -1,94 +1,29 @@
 {
   "name": "hajimi-code-cli",
   "displayName": "Hajimi Code CLI",
-  "description": "VSCode extension for Hajimi Code CLI",
+  "description": "VSCode extension for Hajimi",
   "version": "1.0.0",
   "publisher": "hajimi",
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onCommand:hajimi.openSidebar"
-  ],
+  "categories": ["Other"],
+  "activationEvents": ["onCommand:hajimi.openSidebar"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "hajimi.openSidebar",
-        "title": "Open Sidebar",
+        "title": "Open Web UI",
         "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.searchCode",
-        "title": "Search Code",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.toggleTerminal",
-        "title": "Toggle Terminal",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.test.run",
-        "title": "Run Tests",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.build",
-        "title": "Build",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.git.commit",
-        "title": "Git: Commit",
-        "category": "Hajimi"
-      },
-      {
-        "command": "hajimi.adr.open",
-        "title": "Open ADR",
-        "category": "Hajimi"
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "hajimi.openSidebar",
-        "key": "ctrl+shift+h",
-        "mac": "cmd+shift+h"
-      },
-      {
-        "command": "hajimi.searchCode",
-        "key": "ctrl+shift+f",
-        "mac": "cmd+shift+f"
-      },
-      {
-        "command": "hajimi.toggleTerminal",
-        "key": "ctrl+shift+`",
-        "mac": "cmd+shift+`"
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && npm run build:webview",
-    "compile": "tsc -p ./",
-    "build:webview": "node build.mjs",
-    "watch": "tsc -watch -p ./",
-    "watch:webview": "node build.mjs --watch"
-  },
-  "dependencies": {
-    "diff2html": "^3.4.56",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.1",
-    "remark-gfm": "^4.0.0"
+    "compile": "tsc -p ./"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.80.0",
-    "esbuild": "^0.21.0",
     "typescript": "^5.0.0"
   }
 }
