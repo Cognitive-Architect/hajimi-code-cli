@@ -48,19 +48,19 @@ src/
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐
-│   ├── index/           # 向量索引（HNSW+Tantivy）⭐
+│   ├── index/           # [已归档] 向量索引（HNSW+Tantivy）
 │   ├── integration/     # 集成模块
 │   ├── knowledge/       # 知识图谱（ADR/GNN/知识库）⭐
 │   ├── memory/          # 5层记忆系统⭐
-│   ├── onnx/            # ONNX推理引擎
+│   ├── onnx/            # [已归档] ONNX推理引擎
 │   ├── pgvector/        # PostgreSQL向量扩展
-│   └── typeracing/      # LSP驱动类型预测引擎（Ctrl+Space）⭐
+│   └── typeracing/      # [已归档] LSP驱动类型预测引擎
 │
 └── interface/           # 界面层 - 依赖全下层（4模块）
-    ├── cli/             # CLI工具
+    ├── cli/             # [已归档] CLI工具
     ├── mcp-server/      # MCP服务器（真实RPC桥接）⭐
-    ├── terminal/        # 终端UI（Ink+React/TypeRacing集成）⭐
-    └── vscode/          # VSCode插件（TypeScript+LSP/20显式注册）⭐
+    ├── terminal/        # [已归档] 终端UI
+    └── vscode/          # [已归档] VSCode插件
 ```
 
 ---

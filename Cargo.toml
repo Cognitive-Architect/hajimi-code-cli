@@ -12,11 +12,9 @@ members = [
     "src/intelligence/codex-twist",
     "src/intelligence/memory",
     "src/intelligence/pgvector",
-    "src/intelligence/typeracing",
     "src/intelligence/cloud",
     "src/intelligence/knowledge",
     "src/intelligence/agent-core",
-    "src/interface/terminal",
     "src/engine/search",
     "src/integration"
 ]
