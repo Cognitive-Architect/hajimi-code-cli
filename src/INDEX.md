@@ -37,7 +37,7 @@ src/
 │
 ├── engine/              # 引擎层 - 仅依赖foundation（5模块）
 │   ├── llm-core/        # LLM客户端（Anthropic/OpenAI/Ollama）
-│   ├── p2p-sync/        # P2P同步引擎（WebRTC/CRDT/PSK认证）⭐
+│   ├── p2p-sync/        # [已归档] P2P同步引擎（WebRTC/CRDT/PSK认证）
 │   ├── search/          # 搜索索引（Tantivy 16分片）⭐
 │   ├── tool-system/     # 工具系统（40+工具/白名单参数化）⭐
 │   └── worker/          # 工作线程池
@@ -190,7 +190,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 
 **性能指标**: 混合搜索，16分片并行
 
-#### p2p-sync/ - P2P同步引擎 ⭐（P0加固）
+#### p2p-sync/ - [已归档] P2P同步引擎
 **来源**: 原 `p2p/` + `sync/` 合并  
 **技术**: TypeScript + WebRTC DataChannel  
 **协议**: ICEv2 (RFC 8445) + Yjs CRDT + **PSK认证（B-03 P0）**
@@ -384,7 +384,7 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 
 **5层链路注释**: Session → Auto → Dream → Graph → Knowledge
 
-#### typeracing/ - 类型预测引擎 ⭐（Week 6还魂）
+#### typeracing/ - [已归档] 类型预测引擎（Week 6还魂）
 **Phase 5**: LSP驱动的智能代码补全  
 **依赖**: `engine/tool-system` LSP工具  
 **触发**: Ctrl+Space
@@ -394,7 +394,7 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 | `src/lib.rs` | 模块导出 |
 | `src/engine.rs` | 类型预测引擎 |
 | `src/algorithm.rs` | 预测算法 |
-| `src/terminal_adapter.rs` ⭐ | 终端适配器（Ctrl+Space触发） |
+| `src/terminal_adapter.rs` | [已归档] 终端适配器（Ctrl+Space触发） |
 
 **核心算法**: 
 - `calculate_weighted_confidence`: 加权置信度
@@ -411,7 +411,7 @@ pub struct TerminalAdapter {
 // Ctrl+Space触发 spawn_predict()
 ```
 
-#### index/ - 向量索引 ⭐
+#### index/ - [已归档] 向量索引
 **来源**: 原 `index/` + `vector/` 合并
 
 | 文件 | 功能 |
@@ -448,7 +448,7 @@ pub struct TerminalAdapter {
 | `src/lib.rs` | 云同步模块 |
 | `src/batch_sync.rs` | 批次同步 |
 
-#### onnx/ - ONNX推理
+#### onnx/ - [已归档] ONNX推理
 | 文件 | 功能 |
 |------|------|
 | `mod.rs` | 模块入口 |
@@ -461,7 +461,7 @@ pub struct TerminalAdapter {
 **原则**: 可依赖全下层  
 **债务状态**: ✅ Week 9真实RPC修复完成，20显式注册完成
 
-#### terminal/ - 终端UI ⭐（TypeRacing集成）
+#### terminal/ - [已归档] 终端UI（TypeRacing集成）
 **来源**: 原 `crates/hajimi-core/src/ui/terminal/` 迁移  
 **技术**: Ink + React
 
@@ -504,7 +504,7 @@ pub struct TerminalAdapter {
 | `lifecycle.ts` | 生命周期管理 |
 | `cli.ts` | CLI入口 |
 
-#### vscode/ - VSCode插件 ⭐（20显式注册）
+#### vscode/ - [已归档] VSCode插件（20显式注册）
 **债务**: Week 9修复完成（真实RPC桥接）
 
 | 文件 | 功能 |
@@ -533,7 +533,7 @@ this.registerCommand(CommandId.RUN_TESTS, async () => {
 // ... 共7个命令（4 built-in + 3 MCP）
 ```
 
-#### cli/ - CLI工具
+#### cli/ - [已归档] CLI工具
 | 文件 | 功能 |
 |------|------|
 | `vector-debug.js` | 向量调试工具 |
@@ -574,8 +574,8 @@ this.registerCommand(CommandId.RUN_TESTS, async () => {
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
 | Rust | 220 | ~25,428 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 131 | ~26,917 | foundation/, interface/, engine/p2p-sync/ |
-| TypeScript | 114 | ~10,853 | foundation/, interface/, engine/p2p-sync/ |
+| JavaScript | 131 | ~26,917 | foundation/, interface/ |
+| TypeScript | 114 | ~10,853 | foundation/, interface/ |
 | TSX | 23 | ~2,284 | interface/ |
 | **总计** | **488** | **~65,482** | - |
 
@@ -607,18 +607,15 @@ interface ──────┐
 intelligence/chimera/
 └── intelligence/codex-twist (Thread/Turn/MemoryGateway)
 
-intelligence/index/
+intelligence/index/  [已归档]
 ├── foundation/wasm (WASM HNSW)
 └── intelligence/memory (向量存储)
-
-intelligence/typeracing/
-└── engine/tool-system (LSP工具)
 
 intelligence/knowledge/
 ├── intelligence/memory (5层记忆)
 └── engine/search (Tantivy索引)
 
-engine/p2p-sync/
+engine/p2p-sync/  [已归档]
 ├── Yjs (CRDT)
 ├── @koush/wrtc (WebRTC)
 └── ws (WebSocket)
@@ -629,7 +626,7 @@ engine/tool-system/
 interface/mcp-server/
 └── engine/tool-system (工具调用)
 
-interface/vscode/
+interface/vscode/  [已归档]
 ├── LspClient (WebSocket)
 └── CommandRegistry (真实RPC桥接)
 ```
@@ -651,7 +648,7 @@ interface/vscode/
 1. `engine/tool-system/src/mod.rs` - Tool Trait 定义
 2. `engine/tool-system/src/shell.rs` - **Shell白名单参数化** ⭐
 3. `engine/search/src/tantivy_index.rs` - 搜索索引（219行）⭐
-4. `engine/p2p-sync/src/signaling-server.js` - **WebRTC PSK认证** ⭐
+
 5. `engine/llm-core/src/anthropic.rs` - LLM 客户端
 6. `engine/worker/src/parallel.rs` - 并行执行
 
@@ -659,14 +656,12 @@ interface/vscode/
 1. `intelligence/chimera/src/repl.rs` - REPL 引擎
 2. `intelligence/memory/src/session.rs` - Session 记忆
 3. `intelligence/knowledge/src/adr_index.rs` - ADR索引（185行）⭐
-4. `intelligence/typeracing/src/terminal_adapter.rs` - **TypeRacing** ⭐
+
 5. `intelligence/index/src/tantivy.rs` - 全文索引
 
 **4. Interface 层（用户界面）**:
-1. `interface/terminal/src/mod.rs` - 终端UI
+
 2. `interface/mcp-server/server.ts` - MCP 服务器
-3. `interface/vscode/src/registry/CommandRegistry.ts` - **真实RPC** ⭐
-4. `interface/vscode/extension.ts` - VSCode 插件
 
 ---
 
@@ -680,17 +675,17 @@ interface/vscode/
 | **知识库 ADR** | `src/intelligence/knowledge/src/adr_index.rs` |
 | **LLM 客户端** | `src/engine/llm-core/src/anthropic.rs` |
 | **LLM Bridge** | `src/intelligence/agent-core/src/llm/bridge.rs` |
-| **P2P 同步** | `src/engine/p2p-sync/src/sync-engine.ts` |
-| **P2P PSK认证** | `src/engine/p2p-sync/src/signaling-server.js` |
+| **Tauri 桌面** | `src-tauri/src/main.rs` |
+| **Tauri 流式聊天** | `src-tauri/src/main.rs` (stream_chat) |
 | **搜索索引** | `src/engine/search/src/tantivy_index.rs` |
-| **终端 UI** | `src/interface/terminal/src/mod.rs` |
+| **Web 前端** | `src/interface/web/app.js` |
 | **MCP 服务器** | `src/interface/mcp-server/server.ts` |
-| **真实RPC** | `src/interface/vscode/src/registry/CommandRegistry.ts` |
+| **MCP 真实RPC** | `src/interface/mcp-server/capabilities/tools.ts` |
 | **限流器** | `src/foundation/security/rate-limiter-sqlite-luxury.js` |
 | **向量索引** | `src/intelligence/index/src/tantivy.rs` |
 | **HNSW WASM** | `src/foundation/wasm/src/lib.rs` |
 | **存储路由** | `src/foundation/storage/shard-router.js` |
-| **TypeRacing** | `src/intelligence/typeracing/src/terminal_adapter.rs` |
+| **Tauri 工具集成** | `src-tauri/src/main.rs` (execute_tool) |
 | **Agent Core E2E** | `src/intelligence/agent-core/tests/agent_core_e2e.rs` |
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
@@ -714,7 +709,7 @@ interface/vscode/
 | `network/` | `foundation/network/` | Foundation |
 | `wasm/` | `foundation/wasm/` | Foundation |
 | `llm-core/` | `engine/llm-core/` | Engine |
-| `p2p-sync/` | `engine/p2p-sync/` | Engine |
+| `src-tauri/` | `src-tauri/` | Interface |
 | `search/` | `engine/search/` | Engine |
 | `tool-system/` | `engine/tool-system/` | Engine |
 | `chimera/` | `intelligence/chimera/` | Intelligence |
@@ -723,10 +718,8 @@ interface/vscode/
 | `knowledge/` | `intelligence/knowledge/` | Intelligence |
 | `memory/` | `intelligence/memory/` | Intelligence |
 | `onnx/` | `intelligence/onnx/` | Intelligence |
-| `typeracing/` | `intelligence/typeracing/` | Intelligence |
+
 | `mcp-server/` | `interface/mcp-server/` | Interface |
-| `terminal/` | `interface/terminal/` | Interface |
-| `vscode/` | `interface/vscode/` | Interface |
 
 ---
 

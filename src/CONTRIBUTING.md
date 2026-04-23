@@ -48,10 +48,6 @@ npm run test:unit
 # Agent Core单元测试
 cargo test -p intelligence-agent-core --lib  # 55 tests passed, 0 failed
 
-# P2P 测试 (需要PSK环境变量)
-export HAJIMI_SIGNALING_PSK="test-psk-16chars"
-node src/engine/p2p-sync/src/signaling-server.js
-
 # Phase 5 E2E回归（18个月全周期）
 node tests/e2e/phase1-5-regression/full_chain.test.js
 
@@ -111,27 +107,22 @@ foundation/     # 地基层 - 零依赖
 │   ├── 事件循环 → foundation/eventloop/
 │   └── 安全相关 → foundation/security/
 │
-├── LLM/P2P/搜索/工具/线程 → engine/
+├── LLM/搜索/工具/线程 → engine/
 │   ├── LLM 客户端 → engine/llm-core/
-│   ├── P2P 同步 → engine/p2p-sync/ (PSK认证)
 │   ├── 搜索索引 → engine/search/ ⭐
 │   ├── 工具系统 → engine/tool-system/ (白名单参数化) ⭐
 │   └── 工作线程 → engine/worker/
 │
-├── AI/记忆/知识/索引/类型预测/Agent → intelligence/
+├── AI/记忆/知识/Agent → intelligence/
 │   ├── 自主Agent系统 → intelligence/agent-core/ (7步循环/Swarm) ⭐
 │   ├── REPL 引擎 → intelligence/chimera/
 │   ├── 内存管理 → intelligence/codex-twist/
 │   ├── 记忆系统 → intelligence/memory/
-│   ├── 向量索引 → intelligence/index/
 │   ├── 知识图谱 → intelligence/knowledge/ ⭐
-│   └── 类型预测 → intelligence/typeracing/ (Ctrl+Space) ⭐
 │
 └── UI/接口 → interface/
-    ├── CLI 工具 → interface/cli/
-    ├── 终端 UI → interface/terminal/ (TypeRacing集成)
     ├── MCP 服务器 → interface/mcp-server/ (真实RPC)
-    └── VSCode 插件 → interface/vscode/ (7命令止血+Sidebar对齐)
+    └── Web 界面 → interface/web/ (Tauri v2 桌面应用)
 ```
 
 **步骤 2: 检查依赖规则**
@@ -231,9 +222,8 @@ mod tests {
 feat(engine/tool-system): add new file search tool
 fix(foundation/storage): resolve shard routing bug
 docs(intelligence/knowledge): update 5-tier architecture description
-refactor(interface/terminal): extract input handler trait
 feat(intelligence/knowledge): add ADR pattern extraction
-feat(interface/vscode): add explicit command registration ⭐
+feat(interface/web): improve chat UI streaming
 security(engine/tool-system): harden shell with allow-list ⭐
 ```
 
@@ -274,9 +264,7 @@ security(engine/tool-system): harden shell with allow-list ⭐
 2. `engine/tool-system/src/shell.rs` - **Shell白名单参数化** ⭐ (P0安全)
 3. `engine/search/src/tantivy_index.rs` - 搜索索引（219行，Tantivy 16分片）
 4. `engine/llm-core/src/anthropic.rs` - LLM 客户端（外部调用）
-5. `engine/p2p-sync/src/signaling-server.js` - **WebRTC PSK认证** ⭐ (P0安全)
-6. `engine/p2p-sync/src/sync-engine.ts` - P2P 同步（复杂协议）
-7. `engine/worker/src/parallel.rs` - 并行执行（并发）
+5. `engine/worker/src/parallel.rs` - 并行执行（并发）
 
 **3. Intelligence 层（智能系统）**:
 1. `intelligence/agent-core/agent_loop.rs` - **AgentLoop 7步循环** ⭐（Day 10）
@@ -286,17 +274,12 @@ security(engine/tool-system): harden shell with allow-list ⭐
 5. `intelligence/memory/src/session.rs` - Session 记忆（5层之一）
 6. `intelligence/knowledge/src/adr_index.rs` - ADR索引（185行，SimHash-64）
 7. `intelligence/knowledge/src/search.rs` - ADR搜索（35行）
-8. `intelligence/index/src/tantivy.rs` - 全文索引（搜索）
-9. `intelligence/typeracing/src/terminal_adapter.rs` - **TypeRacing Ctrl+Space** ⭐
-10. `intelligence/agent-core/src/llm/bridge.rs` - **LLM 适配器桥接** ⭐（engine-llm-core → planner/reflector，零侵入）
+8. `intelligence/agent-core/src/llm/bridge.rs` - **LLM 适配器桥接** ⭐（engine-llm-core → planner/reflector，零侵入）
 
 **4. Interface 层（用户界面）**:
-1. `interface/terminal/src/mod.rs` - 终端 UI（Ink/React）
-2. `interface/mcp-server/server.ts` - MCP 服务器（协议）
-3. `interface/mcp-server/capabilities/tools.ts` - **真实RPC工具调用** ⭐
-4. `interface/vscode/src/registry/CommandRegistry.ts` - **7命令止血+真实RPC** ⭐
-5. `interface/vscode/extension.ts` - VSCode 插件（IDE）
-6. `interface/cli/vector-debug.js` - CLI 工具（调试）
+1. `interface/mcp-server/server.ts` - MCP 服务器（协议）
+2. `interface/mcp-server/capabilities/tools.ts` - **真实RPC工具调用** ⭐
+3. `interface/web/app.js` - Tauri v2 Web 前端（聊天界面）
 
 ### 按角色阅读
 
@@ -306,7 +289,7 @@ security(engine/tool-system): harden shell with allow-list ⭐
 3. 从 `foundation/storage/shard-router.js` 开始 - 最简单核心逻辑
 4. 看 `engine/tool-system/src/shell.rs` - **P0安全白名单示例**
 5. 看 `intelligence/memory/src/session.rs` - 理解记忆系统
-6. 看 `intelligence/typeracing/src/terminal_adapter.rs` - **僵尸还魂示例**
+6. 看 `src-tauri/src/main.rs` - Tauri 后端命令集成
 
 **审计员**:
 1. 必读 `Agent prompt/Mike.md` - 审计规范
@@ -314,13 +297,12 @@ security(engine/tool-system): harden shell with allow-list ⭐
 3. 检查分层依赖：确保无下层依赖上层
 4. 重点关注：
    - `engine/tool-system/src/shell.rs` - **P0安全白名单完整性**
-   - `engine/p2p-sync/src/signaling-server.js` - **PSK认证实现**
    - `foundation/security/rate-limiter-*.js` - 安全策略
    - `intelligence/memory/src/` - 记忆系统一致性
-   - `interface/vscode/src/registry/CommandRegistry.ts` - **真实RPC非模拟**
+   - `src-tauri/src/main.rs` - Tauri 命令安全（run_command 白名单）
 
 **性能优化者**:
-1. 查看 `intelligence/index/vector/*.js` - 向量检索性能
+1. 查看 `foundation/wasm/` - WASM 边界跨越性能
 2. 查看 `foundation/storage/batch-writer-*.js` - 写入性能
 3. 查看 `foundation/wasm/` - WASM 边界跨越
 4. 查看 `engine/worker/src/` - 线程池利用率
@@ -334,7 +316,7 @@ security(engine/tool-system): harden shell with allow-list ⭐
 ```
 User Input
     ↓
-interface/terminal/src/input_handler.rs
+interface/web/app.js
     ↓
 engine/tool-system/src/registry.rs  (ToolRegistry)
     ↓
@@ -345,59 +327,6 @@ intelligence/chimera/src/repl.rs    (REPL 引擎)
 intelligence/memory/src/session.rs  (记忆存储)
     ↓
 foundation/storage/shard-router.js  (持久化)
-```
-
-### P2P 同步流程（PSK认证版）
-```
-Peer A                                              Peer B
-    ↓                                                   ↓
-engine/p2p-sync/src/signaling-server.js           engine/p2p-sync/src/signaling-client.js
-(PSK验证: HAJIMI_SIGNALING_PSK)                      (PSK验证)
-    ↓                                                   ↓
-    └──────────── WebSocket Signaling ───────────────→  │
-    ↓                                                   ↓
-    ←────────── WebRTC Connection (ICE+DTLS) ────────→  │
-    ↓                                                   ↓
-engine/p2p-sync/src/datachannel-manager.js          engine/p2p-sync/src/datachannel-manager.js
-    ↓                                                   ↓
-engine/p2p-sync/src/crdt-engine.ts                  engine/p2p-sync/src/crdt-engine.ts
-(Yjs CRDT Merge)
-```
-
-### VSCode真实RPC流程（Week 9修复后）
-```
-User Action (VSCode)
-    ↓
-interface/vscode/src/registry/CommandRegistry.ts
-    ↓ (20高频显式注册)
-CommandId.RUN_TESTS → invokeMcpTool('run_tests')
-    ↓ (真实RPC，非setTimeout模拟)
-LspClient.sendRequest('mcp/toolCall', {tool, args})
-    ↓ (WebSocket)
-Rust McpServer.handle_tools_call()
-    ↓
-ToolRegistry.route(toolName)
-    ↓
-Tool.execute(args)
-    ↓ (真实结果透传)
-VSCode UI 更新
-```
-
-### TypeRacing触发流程（Week 6还魂）
-```
-User Input (Ctrl+Space)
-    ↓
-interface/terminal/src/mod.rs
-    ↓
-intelligence/typeracing/src/terminal_adapter.rs
-    ↓
-TerminalAdapter::spawn_predict()
-    ↓
-intelligence/typeracing/src/engine.rs
-    ↓
-Engine::predict() → LSP请求
-    ↓
-预测结果展示
 ```
 
 ---
@@ -438,17 +367,12 @@ node --max-old-space-size=512 --inspect src/foundation/tests/xxx.test.js
 # 性能分析
 npx clinic flame -- node src/foundation/tests/bench/xxx.bench.js
 
-# 网络调试 (PSK认证)
-export HAJIMI_SIGNALING_PSK="debug-psk-16chars"
-DEBUG=* node src/engine/p2p-sync/src/signaling-server.js
-
 # Phase 5 E2E回归
 node tests/e2e/phase1-5-regression/full_chain.test.js
 
-# VSCode扩展调试
-# 1. 在VSCode中打开 src/interface/vscode/
-# 2. F5启动调试
-# 3. 检查Output面板 > Hajimi日志
+# Tauri 桌面应用调试
+# 1. cd src-tauri && cargo tauri dev
+# 2. 前端自动从 src/interface/web/ 加载
 ```
 
 ### 常见问题
@@ -510,18 +434,6 @@ let results = (0..NUM_SHARDS)
     .map(|shard| search_shard(shard, query))
     .flatten()
     .collect::<Vec<_>>();
-```
-
-### 4. P2P 优化
-```javascript
-// 使用 State Vector 差量同步
-const diff = Y.encodeStateVector(doc);
-
-// 使用 64KB 分片
-const chunks = chunkData(data, 64 * 1024);
-
-// 启用 DataChannel 压缩
-const dc = pc.createDataChannel('sync', { ordered: true });
 ```
 
 ### 5. Tool 系统优化
@@ -729,8 +641,6 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 - ✅ 硬编码返回值 清零
 - ✅ WebRTC PSK认证 完成
 - ✅ Shell白名单参数化 完成
-- ✅ TypeRacing真实还魂 完成
-- ✅ VSCode真实RPC桥接 完成
 - ✅ Agent Core单元测试 完成（49测试/0failed/A-级）
 - ✅ engine-tool-system warning清零 完成
 - ✅ unsafe SAFETY注释100%覆盖 完成（C-01/DEBT-REWORK）
@@ -751,62 +661,3 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 ---
 
 *本指南与代码同步维护，最后更新于 2026-04-23 (v3.8.0-batch-1 - Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿完成)*
-
-## UI Development Guide (Week 6 Modern UI)
-
-### VSCode CSS Variables
-
-All webview components MUST use VSCode CSS variables for theming:
-
-```tsx
-// �?Correct
-<div className="bg-[var(--vscode-editor-background)] text-[var(--vscode-foreground)]">
-
-// �?Wrong
-<div className="bg-gray-900 text-white">
-```
-
-### ThemeManager Usage
-
-```tsx
-import { getThemeManager } from './theme/ThemeManager';
-
-// Auto-detect and listen to VSCode theme changes
-const tm = getThemeManager();
-tm.listenVSCodeTheme();
-
-// Get current unified palette (Terminal Solarized �?VSCode)
-const palette = tm.getUnifiedPalette();
-// palette.primary  -> S_CYAN   (#2aa198)
-// palette.success  -> S_GREEN  (#859900)
-// palette.error    -> S_RED    (#dc322f)
-```
-
-### Loading States
-
-```tsx
-import { Skeleton, LoadingSpinner, EmptyState } from './components/LoadingStates';
-
-// Skeleton for streaming messages
-<Skeleton lines={3} />
-
-// Spinner for global loading
-<LoadingSpinner size={20} />
-
-// Empty state for zero messages
-<EmptyState />
-```
-
-### Adding New Components
-
-1. Use Tailwind utility classes with VSCode CSS variables
-2. Avoid hard-coded colors; use `--hajimi-*` custom properties when needed
-3. Keep animations pure CSS (no framer-motion dependency)
-4. Test with `npm run build:webview` before commit
-
-### Performance Guidelines
-
-- Message render latency target: < 100ms
-- File list cache TTL: 30s (via ContextProvider)
-- Avoid re-renders: use `useCallback` and `useMemo` for handlers
-- Debounce user input at 100ms (InputBox already implements)

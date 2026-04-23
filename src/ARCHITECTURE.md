@@ -1,7 +1,7 @@
 # HAJIMI V3 架构文档
 
 > **文档版本**: v3.8.0-batch-1 (Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿 / B+→A-级评级)
-> **架构风格**: 四层分层架构 + 本地优先 + P2P 同步
+> **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入、数据诚实性
 > **Phase 7状态**: ✅ Agent Core 55测试全部通过，0编译error，unsafe SAFETY注释100%覆盖
 
@@ -12,14 +12,11 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              INTERFACE 层（界面层）                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   CLI工具   │  │ MCP服务器   │  │  终端UI     │  │   VSCode插件        │ │
-│  │  (cli/)     │  │ (mcp-server)│  │ (terminal/) │  │   (vscode/)         │ │
-│  │  vector-debug│  │  真实RPC桥接│  │  Ink+React  │  │   TypeScript+LSP    │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
-│  ┌─────────────────────────────────────────────────────────────────────────┐ │
-│  │   web (web/) ─ Web界面                                                  │ │
-│  └─────────────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────┐  ┌─────────────────────────┐ │
+│  │     MCP服务器             │  │     Web 界面            │ │
+│  │   (mcp-server/)           │  │   (web/)                │ │
+│  │   真实 RPC 桥接           │  │   Tauri v2 + 纯 HTML/JS │ │
+│  └───────────────────────────┘  └─────────────────────────┘ │
 └─────────┼────────────────┼────────────────┼────────────────────┼────────────┘
           │                │                │                    │
           └────────────────┴────────────────┴────────────────────┘
@@ -27,35 +24,31 @@
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          INTELLIGENCE 层（智能层）                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   Chimera   │  │Codex-Twist  │  │   Index     │  │   Knowledge         │ │
-│  │  (chimera/) │  │(codex-twist)│  │  (index/)   │  │   (knowledge/)      │ │
-│  │  REPL引擎   │  │ 5级内存架构 │  │  HNSW+向量  │  │   知识图谱+ADR      │ │
-│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
-│  │   Memory    │  │   Cloud     │  │   ONNX      │  │   TypeRacing        │ │
-│  │  (memory/)  │  │  (cloud/)   │  │  (onnx/)    │  │  (typeracing/)      │ │
-│  │ 5层:Session │  │ 批次同步    │  │ 推理引擎    │  │ LSP类型预测 ⭐      │ │
-│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
-│  │  Agent Core │  │ Integration │  │  pgvector   │  │                     │ │
-│  │(agent-core/)│  │(integration)│  │ (pgvector/) │  │                     │ │
-│  │ 7步循环+桥接⭐│  │ 第三方适配  │  │ PG向量存储  │  │                     │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Chimera   │  │Codex-Twist  │  │   Knowledge         │ │
+│  │  (chimera/) │  │(codex-twist)│  │   (knowledge/)      │ │
+│  │  REPL引擎   │  │ 5级内存架构 │  │   知识图谱+ADR      │ │
+│  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
+│  │   Memory    │  │   Cloud     │  │   Agent Core        │ │
+│  │  (memory/)  │  │  (cloud/)   │  │  (agent-core/)      │ │
+│  │ 5层:Session │  │ 批次同步    │  │  7步循环+桥接 ⭐     │ │
+│  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
+│  │  Integration│  │  pgvector   │  │                     │ │
+│  │(integration)│  │ (pgvector/) │  │                     │ │
+│  │ 第三方适配  │  │ PG向量存储  │  │                     │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             ENGINE 层（引擎层）                               │
-│  ┌───────────────────────────────┐  ┌──────────────────────────────────────┐ │
-│  │      LLM-Core (llm-core/)     │  │     P2P-Sync (p2p-sync/)             │ │
-│  │  ┌──────────┐ ┌─────────────┐ │  │  ┌──────────┐ ┌──────────────────┐  │ │
-│  │  │Anthropic │ │   OpenAI    │ │  │  │ CRDT     │ │  WebRTC          │  │ │
-│  │  │  Claude  │ │   GPT-4     │ │  │  │ (Yjs)    │ │  ICE/TURN/DTLS   │  │ │
-│  │  └──────────┘ └─────────────┘ │  │  └──────────┘ └──────────────────┘  │ │
-│  │  ┌──────────┐ ┌─────────────┐ │  │  ┌──────────┐ ┌──────────────────┐  │ │
-│  │  │  Ollama  │ │  本地模型    │ │  │  │ Sync     │ │  Signal Server   │  │ │
-│  │  │ 本地推理 │ │             │ │  │  │ Manager  │ │  (PSK认证) ⭐     │  │ │
-│  │  └──────────┘ └─────────────┘ │  │  └──────────┘ └──────────────────┘  │ │
-│  └───────────────────────────────┘  └──────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │      LLM-Core (llm-core/)                                               │ │
+│  │  ┌────────┐ ┌────────────┐ ┌────────┐                            │ │
+│  │  │Anthropic │ │   OpenAI    │ │  Ollama  │                            │ │
+│  │  │  Claude  │ │   GPT-4     │ │ 本地推理 │                            │ │
+│  │  └────────┘ └────────────┘ └────────┘                            │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
 │  ┌───────────────────────────────┐  ┌──────────────────────────────────────┐ │
 │  │   Tool-System (tool-system/)  │  │     Search (search/) ⭐              │ │
 │  │  ┌─────────────────────────┐  │  │  ┌────────────────────────────────┐  │ │
@@ -122,7 +115,7 @@
 | `security/` | 安全组件 | 限流器, 审计日志 | ✅ 稳定 |
 | `storage/` | 存储系统 | LevelDB, 16分片SQLite | ✅ 稳定 |
 | `test/` | 单元测试 | 测试工具, Mock | ✅ 稳定 |
-| `tests/` | 集成/E2E测试 | P2P, WASM, EVM测试 | ✅ 稳定 |
+| `tests/` | 集成/E2E测试 | WASM, EVM测试 | ✅ 稳定 |
 | `utils/` | 通用工具 | SimHash64, Logger | ✅ 8处引用 |
 | `wasm/` | WASM运行时 | HNSW向量计算 | ✅ 稳定 |
 
@@ -131,8 +124,7 @@
 
 | 目录 | 功能 | 关键技术 | 债务清偿状态 |
 |:---|:---|:---|:---:|
-| `llm-core/` | LLM客户端 | Anthropic, OpenAI, Ollama | ✅ 稳定 |
-| `p2p-sync/` | P2P同步引擎 | WebRTC, CRDT, ICE, Yjs, **进度条提取** ⭐ | ✅ PSK认证+B-02提取 |
+| `llm-core/` | LLM客户端 | Anthropic, OpenAI, Ollama SSE 流式 | ✅ 稳定 |
 | `search/` | 搜索索引 | Tantivy 16分片 ⭐ | ✅ 稳定 |
 | `tool-system/` | 工具系统 | 40+工具, ToolRegistry, **白名单参数化** ⭐ | ✅ P0安全 |
 | `worker/` | 工作线程 | 并行/串行执行器 | ✅ 稳定 |
@@ -146,24 +138,18 @@
 | `chimera/` | REPL引擎 | ZeroTUI, EventLoop | ✅ 稳定 |
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
-| `index/` | 向量索引 | HNSW, Tantivy, pgvector | ✅ 稳定 |
 | `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
 | `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
 | `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud | ✅ 稳定 |
-| `onnx/` | ONNX推理 | 模型推理引擎 | ✅ 稳定 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
-| `typeracing/` | 类型预测 | **LSP驱动, Ctrl+Space触发** ⭐ | ✅ Week 6还魂 |
 
 ### 4. Interface 层（界面层）
 **原则**: 可依赖全下层
 
 | 目录 | 功能 | 关键技术 | 债务清偿状态 |
 |:---|:---|:---|:---:|
-| `cli/` | CLI工具 | vector-debug.js | ✅ 稳定 |
 | `mcp-server/` | MCP服务器 | **15工具真实RPC** ⭐ | ✅ Week 9修复+B-04扩容 |
-| `terminal/` | 终端UI | Ink + React, Pane管理 | ✅ TypeRacing集成 |
-| `vscode/` | VSCode插件 | TypeScript, LSP客户端, **7真实命令** ⭐ | ✅ Week 6止血+Sidebar对齐 |
-| `web/` | Web界面 | TypeScript, React | ✅ 稳定 |
+| `web/` | Web界面 | 纯 HTML/CSS/JS, Tauri v2 桌面应用 | ✅ 稳定 |
 
 ---
 
@@ -249,11 +235,7 @@ pub trait AgentGovernance: Send + Sync {
 
 ## 🔄 数据流
 
-**查询流程**: User → Interface (terminal/mcp) → Engine (tool-system/llm) → Intelligence (chimera) → Foundation (storage/db) → Engine (LLM API) → Interface (Output)。
-
-**P2P 同步流程**: Peer A ↔ WebSocket Signaling (PSK验证) → WebRTC Connection (ICE+DTLS) → DataChannel → Yjs State Vector → CRDT Merge (YATA)。
-
-**VSCode命令执行**: User Action → CommandRegistry (**7命令止血**) → invokeMcpTool → lspClient.sendCustomRequest → Rust McpServer → ToolRegistry.route → Tool.execute → 真实结果返回 UI。
+**查询流程**: User → Interface (web/mcp) → Engine (tool-system/llm) → Intelligence (agent-core/chimera) → Foundation (storage/db) → Engine (LLM API) → Interface (Output)。
 
 ---
 
@@ -274,7 +256,6 @@ pub trait AgentGovernance: Send + Sync {
 | HNSW 查询 | 1.94x 加速 | WASM | ✅ |
 | HNSW 构建 | 7.7x 加速 | WASM | ✅ |
 | Tantivy 搜索 | 219行 | 16分片 | ✅ |
-| WebRTC 握手 | <5s | ICEv2 + PSK | ✅ |
 | Memory Gateway | O(1) ~100ns | LRU Focus | ✅ |
 | Agent Core E2E | 90 passed | cargo-discoverable | ✅ |
 | Agent Core 编译 | 0 warnings | cargo check | ✅ |
@@ -287,9 +268,8 @@ pub trait AgentGovernance: Send + Sync {
 ```
 src/
 ├── crates/              # 保留: evm-bench-adapter, hajimi-codex-twist
-├── engine/              # 引擎层 (5模块)
+├── engine/              # 引擎层 (4模块)
 │   ├── llm-core/        # LLM客户端
-│   ├── p2p-sync/        # P2P同步 (PSK认证)
 │   ├── search/          # Tantivy搜索
 │   ├── tool-system/     # 40+工具 (白名单参数化)
 │   └── worker/          # 工作线程
@@ -299,24 +279,18 @@ src/
 │   ├── network/, scripts/, security/, storage/
 │   ├── test/, tests/, utils/, wasm/
 │   └── ...
-├── intelligence/        # 智能层 (11模块)
+├── intelligence/        # 智能层 (8模块)
 │   ├── agent-core/      # 自主Agent系统 (7步循环/Swarm/治理/LLM桥接) ⭐
 │   ├── chimera/         # REPL引擎
 │   ├── cloud/           # 云端同步
 │   ├── codex-twist/     # AI内存 (双轨清理完成)
-│   ├── index/           # 向量索引
 │   ├── integration/     # 集成模块
 │   ├── knowledge/       # 知识图谱
 │   ├── memory/          # 5层记忆
-│   ├── onnx/            # ONNX推理
-│   ├── pgvector/        # PG向量
-│   └── typeracing/      # 类型预测 (Ctrl+Space)
-└── interface/           # 界面层 (5模块)
-    ├── cli/             # CLI工具
+│   └── pgvector/        # PG向量
+└── interface/           # 界面层 (2模块)
     ├── mcp-server/      # MCP服务器 (真实RPC)
-    ├── terminal/        # 终端UI (TypeRacing)
-    ├── vscode/          # VSCode插件 (20显式注册)
-    └── web/             # Web界面
+    └── web/             # Web界面 (Tauri v2 桌面应用)
 ```
 
 ---
@@ -335,8 +309,8 @@ src/
 | ADR-008 | SimHash-64统一分片 | ⚠️ | foundation 8处引用 |
 | ADR-009 | 数据诚实性机制 (ID-261验证器) | ✅ | tools/data-validator.js |
 | ADR-010 | Shell参数化白名单 (消除bash -c) | ✅ | engine/tool-system/shell.rs |
-| ADR-011 | WebRTC PSK认证 (CSPRNG+timingSafeEqual) | ✅ | engine/p2p-sync/ |
-| ADR-012 | VSCode真实RPC桥接 (lspClient.sendRequest) | ✅ | interface/vscode/ |
+| ADR-011 | Tauri v2 桌面应用架构 | ✅ | src-tauri/ |
+| ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
 
 ---
 
