@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/evm-bench-adapter",
     "src/foundation/hash",
     "src/engine/llm-core",
     "src/engine/tool-system",
