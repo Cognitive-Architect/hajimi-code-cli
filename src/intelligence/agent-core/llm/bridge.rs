@@ -7,10 +7,14 @@ use std::sync::Arc;
 /// Bridge that wraps an engine-llm-core LlmClient to implement planner::LlmClient.
 pub struct PlannerLlmBridge {
     inner: Arc<dyn engine_llm_core::LlmClient>,
+    blackboard: Option<Arc<crate::blackboard::Blackboard>>,
+    clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>,
 }
 
 impl PlannerLlmBridge {
-    pub fn new(inner: Arc<dyn engine_llm_core::LlmClient>) -> Self { Self { inner } }
+    pub fn new(inner: Arc<dyn engine_llm_core::LlmClient>) -> Self { Self { inner, blackboard: None, clients: std::collections::HashMap::new() } }
+    pub fn with_blackboard(mut self, bb: Arc<crate::blackboard::Blackboard>) -> Self { self.blackboard = Some(bb); self }
+    pub fn with_clients(mut self, clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>) -> Self { self.clients = clients; self }
 }
 
 #[async_trait]
@@ -38,7 +42,13 @@ impl crate::planner::LlmClient for PlannerLlmBridge {
 
 impl PlannerLlmBridge {
     async fn chat_and_collect(&self, prompt: String) -> ReplResult<String> {
-        let mut stream = self.inner.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
+        let client = if let Some(ref bb) = self.blackboard {
+            if let Some(entry) = bb.read("__hajimi_provider_id").await {
+                tracing::info!("PlannerLlmBridge selecting client for provider_id: {}", entry.value);
+                self.clients.get(&entry.value).unwrap_or(&self.inner)
+            } else { &self.inner }
+        } else { &self.inner };
+        let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
         collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))
     }
 }
@@ -46,10 +56,14 @@ impl PlannerLlmBridge {
 /// Bridge that wraps an engine-llm-core LlmClient to implement reflector::ReflectionLlmClient.
 pub struct ReflectorLlmBridge {
     inner: Arc<dyn engine_llm_core::LlmClient>,
+    blackboard: Option<Arc<crate::blackboard::Blackboard>>,
+    clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>,
 }
 
 impl ReflectorLlmBridge {
-    pub fn new(inner: Arc<dyn engine_llm_core::LlmClient>) -> Self { Self { inner } }
+    pub fn new(inner: Arc<dyn engine_llm_core::LlmClient>) -> Self { Self { inner, blackboard: None, clients: std::collections::HashMap::new() } }
+    pub fn with_blackboard(mut self, bb: Arc<crate::blackboard::Blackboard>) -> Self { self.blackboard = Some(bb); self }
+    pub fn with_clients(mut self, clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>) -> Self { self.clients = clients; self }
 }
 
 #[async_trait]
@@ -74,7 +88,13 @@ impl crate::reflector::ReflectionLlmClient for ReflectorLlmBridge {
 
 impl ReflectorLlmBridge {
     async fn chat_and_collect(&self, prompt: String) -> ReplResult<String> {
-        let mut stream = self.inner.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
+        let client = if let Some(ref bb) = self.blackboard {
+            if let Some(entry) = bb.read("__hajimi_provider_id").await {
+                tracing::info!("ReflectorLlmBridge selecting client for provider_id: {}", entry.value);
+                self.clients.get(&entry.value).unwrap_or(&self.inner)
+            } else { &self.inner }
+        } else { &self.inner };
+        let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
         collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))
     }
 }

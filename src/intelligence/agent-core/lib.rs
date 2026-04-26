@@ -102,6 +102,9 @@ pub struct AgentCapability {
     pub max_subagents: usize,
     /// Whether this agent can approve actions from other agents.
     pub can_govern: bool,
+    /// Preferred LLM provider ID for this agent (e.g. "openai", "anthropic").
+    /// None falls back to system default.
+    pub preferred_provider: Option<String>,
 }
 
 impl AgentCapability {
@@ -113,6 +116,7 @@ impl AgentCapability {
             memory_access: vec![MemoryLayerAccess::Session],
             max_subagents: 0,
             can_govern: false,
+            preferred_provider: None,
         }
     }
 }
@@ -159,6 +163,7 @@ impl AgentConfig {
                 memory_access: vec![MemoryLayerAccess::Session, MemoryLayerAccess::Graph],
                 max_subagents: 4,
                 can_govern: true,
+                preferred_provider: None,
             },
             initial_goal: None,
             metadata: HashMap::new(),

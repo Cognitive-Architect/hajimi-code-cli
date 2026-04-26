@@ -13,6 +13,7 @@ pub use error::EngineError;
 pub use streaming::channel_stream::ChannelStream;
 pub use streaming::StreamChunk;
 use async_trait::async_trait;
+use secrecy::SecretString;
 use std::env;
 
 /// LLM provider enumeration
@@ -22,13 +23,13 @@ use std::env;
 pub enum LlmProvider {
     /// Anthropic Claude API
     Anthropic {
-        api_key: String,
+        api_key: SecretString,
         model: String,
         base_url: String,
     },
     /// OpenAI GPT API
     OpenAi {
-        api_key: String,
+        api_key: SecretString,
         model: String,
         base_url: String,
     },
@@ -40,18 +41,18 @@ pub enum LlmProvider {
 }
 
 /// Manual Debug implementation to redact sensitive api_key fields
-/// 
-/// Security: api_key is displayed as ***REDACTED*** to prevent accidental logging
+///
+/// Security: api_key (now SecretString) is displayed as ***REDACTED*** to prevent accidental logging
 impl std::fmt::Debug for LlmProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Anthropic { api_key, model, base_url } => f
+            Self::Anthropic { api_key: _, model, base_url } => f
                 .debug_struct("Anthropic")
                 .field("api_key", &"***REDACTED***")
                 .field("model", model)
                 .field("base_url", base_url)
                 .finish(),
-            Self::OpenAi { api_key, model, base_url } => f
+            Self::OpenAi { api_key: _, model, base_url } => f
                 .debug_struct("OpenAi")
                 .field("api_key", &"***REDACTED***")
                 .field("model", model)
@@ -66,7 +67,8 @@ impl std::fmt::Debug for LlmProvider {
     }
 }
 
-/// Manual Clone implementation to preserve field-level cloning behavior
+/// Manual Clone implementation to preserve field-level cloning behavior.
+/// Now uses SecretString for api_key (which implements Clone safely).
 impl Clone for LlmProvider {
     fn clone(&self) -> Self {
         match self {
@@ -96,7 +98,7 @@ impl LlmProvider {
                 "ANTHROPIC_API_KEY not set".to_string()
             ))?;
         Ok(Self::Anthropic {
-            api_key,
+            api_key: SecretString::new(api_key.into_boxed_str()),
             model: "claude-3-sonnet-20240229".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
         })
@@ -109,7 +111,7 @@ impl LlmProvider {
                 "OPENAI_API_KEY not set".to_string()
             ))?;
         Ok(Self::OpenAi {
-            api_key,
+            api_key: SecretString::new(api_key.into_boxed_str()),
             model: "gpt-4".to_string(),
             base_url: "https://api.openai.com".to_string(),
         })

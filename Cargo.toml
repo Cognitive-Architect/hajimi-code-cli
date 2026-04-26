@@ -16,7 +16,8 @@ members = [
     "src/intelligence/knowledge",
     "src/intelligence/agent-core",
     "src/engine/search",
-    "src/integration"
+    "src/integration",
+    "src/interface/desktop"
 ]
 resolver = "2"
 

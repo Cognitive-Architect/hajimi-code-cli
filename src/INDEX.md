@@ -1,14 +1,14 @@
 # HAJIMI V3 源代码索引
 
-> **文档版本**: v3.8.0-batch-1 (Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿 / B+→A-级评级)  
+> **文档版本**: v3.8.0  
 > **最后更新**: 2026-04-23  
-> **代码总行数**: ~65,482行自有代码（不含依赖，含agent-core ~2,760行源文件 / ~3,184行总计）  
+> **代码总行数**: ~42,100行自有代码（不含依赖，含agent-core ~2,540行源文件 / ~2,920行总计）  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
-> **Phase 7状态**: ✅ Agent Core 55测试通过，0编译error，unsafe SAFETY 100%覆盖
+> **当前状态**: ✅ Agent Core 55测试通过，0编译error，unsafe SAFETY 100%覆盖
 
 ---
 
-## 📁 目录总览（v3.1 四层架构 + 债务清偿后）
+## 📁 目录总览（四层架构）
 
 ```
 src/
@@ -16,7 +16,7 @@ src/
 │   ├── evm-bench-adapter/   # EVM检测适配器
 │   └── hajimi-codex-twist/  # AI内存核心 (Rust workspace兼容)
 │
-├── foundation/          # 地基层 - 零依赖（17模块）
+├── foundation/          # 地基层 - 零依赖（18模块）
 │   ├── api/             # REST API 服务器
 │   ├── bench/           # 性能基准测试
 │   ├── compression/     # 上下文压缩（micro/auto/compact/mod）
@@ -24,6 +24,7 @@ src/
 │   ├── disk/            # 磁盘管理（ENOSPC处理）
 │   ├── eventloop/       # 异步事件循环 (Rust)
 │   ├── format/          # 数据格式（.hctx/BLAKE3）
+│   ├── hash/            # 哈希算法（SimHash64）
 │   ├── middleware/      # Express/Koa中间件
 │   ├── migration/       # 数据库迁移工具
 │   ├── network/         # WebSocket服务器（PSK认证）⭐
@@ -35,41 +36,36 @@ src/
 │   ├── utils/           # 通用工具（SimHash64）
 │   └── wasm/            # WASM运行时（HNSW）⭐
 │
-├── engine/              # 引擎层 - 仅依赖foundation（5模块）
+├── engine/              # 引擎层 - 仅依赖foundation（4模块）
 │   ├── llm-core/        # LLM客户端（Anthropic/OpenAI/Ollama）
-│   ├── p2p-sync/        # [已归档] P2P同步引擎（WebRTC/CRDT/PSK认证）
 │   ├── search/          # 搜索索引（Tantivy 16分片）⭐
 │   ├── tool-system/     # 工具系统（40+工具/白名单参数化）⭐
 │   └── worker/          # 工作线程池
 │
-├── intelligence/        # 智能层 - 依赖foundation+engine（11模块）
+├── intelligence/        # 智能层 - 依赖foundation+engine（8模块）
 │   ├── agent-core/      # 自主Agent系统（7步循环/Swarm/可插拔治理/LLM桥接）⭐
 │   │   └── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐
-│   ├── index/           # [已归档] 向量索引（HNSW+Tantivy）
 │   ├── integration/     # 集成模块
 │   ├── knowledge/       # 知识图谱（ADR/GNN/知识库）⭐
 │   ├── memory/          # 5层记忆系统⭐
-│   ├── onnx/            # [已归档] ONNX推理引擎
 │   ├── pgvector/        # PostgreSQL向量扩展
-│   └── typeracing/      # [已归档] LSP驱动类型预测引擎
 │
-└── interface/           # 界面层 - 依赖全下层（4模块）
-    ├── cli/             # [已归档] CLI工具
+└── interface/           # 界面层 - 依赖全下层（3模块）
     ├── mcp-server/      # MCP服务器（真实RPC桥接）⭐
-    ├── terminal/        # [已归档] 终端UI
-    └── vscode/          # [已归档] VSCode插件
+    ├── web/             # Web界面（Tauri v2 纯HTML/JS前端）
+    └── desktop/         # 桌面后端（Tauri v2 Rust 后端，38+工具注册）
 ```
 
 ---
 
-## 🎯 分层详解（债务清偿后状态）
+## 🎯 分层详解
 
 ### Foundation 层（地基层）
 **原则**: 零外部依赖，提供基础设施  
-**债务状态**: ✅ P0安全加固完成，TODO清收完成
+**状态**: ✅ P0安全加固完成
 
 #### storage/ - 存储层 ⭐
 **核心**: 16分片 SQLite + WAL 模式  
@@ -104,7 +100,7 @@ src/
 #### network/ - 网络服务（P0加固）
 **来源**: 原 `ws_server/` 迁移  
 **功能**: WebSocket 服务器  
-**债务**: DEBT-P0-001 (PSK长期管理)
+**约束**: PSK长期管理待完善（KMS/Vault/Rotation）
 
 | 文件 | 功能 |
 |------|------|
@@ -113,13 +109,13 @@ src/
 | `src/protocol.rs` | 协议定义 |
 
 #### security/ - 安全组件
-**功能**: 限流、审计、沙盒
+**功能**: 限流、日志、沙盒
 
 | 文件 | 功能 |
 |------|------|
 | `rate-limiter-sqlite-luxury.js` | SQLite持久化限流器 |
 | `rate-limiter-redis.js` | Redis限流器 |
-| `audit-logger.rs` | 审计日志 |
+| `audit-logger.rs` | 安全审计与日志 |
 
 #### utils/ - 通用工具
 **功能**: SimHash64（8处分散引用，未完全统一）
@@ -133,7 +129,7 @@ src/
 
 ### Engine 层（引擎层）
 **原则**: 仅依赖 Foundation 层  
-**债务状态**: ✅ P0安全加固完成，Shell白名单参数化
+**状态**: ✅ P0安全加固完成，Shell白名单参数化
 
 #### tool-system/ - 工具系统 ⭐（P0加固）
 **规模**: 40+ 工具实现  
@@ -173,12 +169,12 @@ const ALLOWED_COMMANDS: &[&str] = &[
 ]; // 38工具，无rm/sudo
 
 // 降级功能: 复杂管道/重定向/逻辑运算符
-// 债务: docs/debt/SHELL-FEATURE-DEBT-002.md
+// 约束: docs/debt/SHELL-FEATURE-DEBT-002.md
 ```
 
-#### search/ - 搜索索引 ⭐ (Phase 5)
+#### search/ - 搜索索引 ⭐
 **技术**: Tantivy 全文搜索 + 16分片  
-**债务状态**: ✅ 完成
+**状态**: ✅ 完成
 
 | 文件 | 功能 |
 |------|------|
@@ -189,36 +185,6 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `src/debug_test.rs` | 调试测试 |
 
 **性能指标**: 混合搜索，16分片并行
-
-#### p2p-sync/ - [已归档] P2P同步引擎
-**来源**: 原 `p2p/` + `sync/` 合并  
-**技术**: TypeScript + WebRTC DataChannel  
-**协议**: ICEv2 (RFC 8445) + Yjs CRDT + **PSK认证（B-03 P0）**
-
-| 文件 | 功能 |
-|------|------|
-| `sync-engine.ts` | 同步生命周期管理 |
-| `sync-engine.ts` | 同步引擎接口（141行，B-02提取后） |
-| `progress-bar.ts` ⭐ | 进度条模块（57行，从sync-engine提取） |
-| `crdt-engine.ts` | Yjs CRDT 引擎封装 |
-| `datachannel-manager.js` | DataChannel 管理 |
-| `signaling-server.js` ⭐ | WebSocket 信令服务器（PSK认证） |
-| `signaling-client.js` | WebRTC 客户端 |
-| `ice-manager.ts` | ICE 候选管理 |
-| `ice-v2-client.ts` | ICEv2 客户端 |
-| `turn-client.ts` | TURN 客户端 |
-| `dvv-manager.ts` | DVV 版本向量管理 |
-| `latency-monitor.ts` | 延迟监控 |
-| `memory-monitor.ts` | 内存监控 |
-| `yjs-adapter.ts` | Yjs 适配器 |
-
-**PSK认证（B-03 P0）**:
-```javascript
-const crypto = require('crypto');
-const clientId = crypto.randomUUID(); // CSPRNG，替换Math.random()
-const psk = process.env.HAJIMI_SIGNALING_PSK; // 环境变量
-// timingSafeEqual验证
-```
 
 #### llm-core/ - LLM客户端
 **来源**: 原 `crates/hajimi-core/src/llm/` 迁移
@@ -247,34 +213,36 @@ const psk = process.env.HAJIMI_SIGNALING_PSK; // 环境变量
 
 ### Intelligence 层（智能层）
 **原则**: 依赖 Foundation + Engine 层  
-**债务状态**: ✅ TypeRacing还魂完成，TODO清收完成
+**状态**: ✅ 稳定
 
 #### agent-core/ - 自主Agent系统 ⭐（Day 10 FULL）
 **技术栈**: Rust (tokio + async-trait)  
 **来源**: Day 1-10 渐进式构建（Planner→Reflector→Governance→Swarm→AgentLoop）  
-**代码规模**: ~2,760行源文件 / ~3,184行总计（16源文件 + 3测试文件）  
-**状态**: A级审计通过，55 lib测试 + 90 E2E测试全部通过，0编译warning  
-**DEBT**: 4项Phase 5债务 + 3项Phase 7延续债务诚实申报（目标≤8）
+**代码规模**: ~2,540行源文件 / ~2,920行总计（19源文件 + 3测试文件）  
+**状态**: 98 测试全部通过（55 lib + 43 E2E），0编译warning  
+**约束**: 7项技术约束与待办已记录（见下方）
 
 | 文件 | 功能 | 行数 |
 |------|------|:----:|
-| `lib.rs` | 模块入口 + 公共类型 | 192 |
-| `agent_loop.rs` | 7步自主循环（Observe→Retrieve→Plan→Act→Reflect→Store→Decide） | 242 |
-| `agent_loop_builder.rs` | AgentLoop构建器 | 53 |
-| `swarm.rs` | Swarm协调器（Supervisor-Worker模式） | 277 |
-| `governance.rs` | 可插拔治理（5级审批策略 + 投票机制） | 271 |
-| `orchestrator.rs` | Agent编排器 | 293 |
-| `planner.rs` | 任务规划器 | 182 |
-| `reflector.rs` | 反思优化器 | 314 |
-| `blackboard.rs` | 共享黑板状态 | 136 |
-| `checkpoint.rs` | 检查点恢复 | 95 |
-| `events.rs` | 事件系统 | 127 |
-| `tools.rs` | 工具集成 | 179 |
-| `degrade.rs` | 降级策略 | 15 |
-| `ports.rs` | 端口抽象 | 53 |
-| `llm/bridge.rs` | **LLM 适配器桥接**（PlannerLlmBridge + ReflectorLlmBridge）⭐ | 164 |
-| `llm/mod.rs` | LLM 模块入口 | 4 |
-| `mod.rs` | 公共API导出（含DEBT声明） | 36 |
+| `lib.rs` | 模块入口 + 公共类型 | 180 |
+| `agent_loop.rs` | 7步自主循环 | 224 |
+| `agent_loop_builder.rs` | AgentLoop构建器 | 51 |
+| `agent_loop_tests.rs` | AgentLoop单元测试 | 93 |
+| `swarm.rs` | Swarm协调器（Supervisor-Worker模式） | 251 |
+| `governance.rs` | 可插拔治理（5级审批策略 + 投票机制） | 239 |
+| `orchestrator.rs` | Agent编排器 | 305 |
+| `planner.rs` | 任务规划器 | 167 |
+| `reflector.rs` | 反思优化器 | 277 |
+| `blackboard.rs` | 共享黑板状态 | 112 |
+| `checkpoint.rs` | 检查点恢复 | 83 |
+| `events.rs` | 事件系统 | 115 |
+| `tools.rs` | 工具集成 | 171 |
+| `degrade.rs` | 降级策略 | 13 |
+| `ports.rs` | 端口抽象 | 46 |
+| `minimal_agent.rs` | 最小Agent实现 | 18 |
+| `llm/bridge.rs` | **LLM 适配器桥接**（PlannerLlmBridge + ReflectorLlmBridge）⭐ | 161 |
+| `llm/mod.rs` | LLM 模块入口 | 3 |
+| `mod.rs` | 公共API导出（含约束声明） | 34 |
 
 **测试套件**（cargo-discoverable，位于 `tests/` 目录）：
 
@@ -284,14 +252,14 @@ const psk = process.env.HAJIMI_SIGNALING_PSK; // 环境变量
 | `tests/autonomous_goal_test.rs` | 8 | `test_completion_rate`, `bench_agent_loop` |
 | `tests/integration.rs` | 10 | `test_worker_crash_isolation`, `test_loop_timeout_handling` |
 | **lib内测试** | **55** | 各模块单元测试（含 llm/bridge.rs 5个桥接测试）⭐ |
-| **E2E总计** | **90** | `cargo test -p intelligence-agent-core` |
+| **E2E总计** | **43** | `cargo test -p intelligence-agent-core` |
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
 - **可插拔治理**: `GovernancePolicy` trait 支持运行时策略注册
 - **Swarm协调**: Supervisor-Worker多Agent协作，`TaskAssignment`/`WorkerResult`通信
 - **LLM 桥接**: `PlannerLlmBridge` / `ReflectorLlmBridge` 将 `engine_llm_core::LlmClient` 桥接到上层 trait，零侵入 planner.rs / reflector.rs ⭐
-- **诚实性**: 4项 `DEBT-XXX-PHASE5` 注释 + 3项 Phase 7 延续债务（非虚构，非阻塞）
+- 7项技术约束与待办已记录于代码注释中
 
 **7步循环代码示例**:
 ```rust
@@ -299,31 +267,31 @@ const psk = process.env.HAJIMI_SIGNALING_PSK; // 环境变量
 pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
     for iteration in 0..MAX_ITERATIONS {
         self.observe(agent_id).await;
-        self.retrieve(agent_id).await;  // DEBT-RETRIEVE-PHASE5
+        self.retrieve(agent_id).await;  // RETRIEVE-PHASE5: Graph/Dream层待集成
         let plan = self.planner.plan(agent_id).await?;
         let result = self.act(agent_id, &plan.goal_id).await?;
         self.reflect(agent_id, &result).await?;
-        self.store(agent_id).await?;      // DEBT-MEMORY-SYNC
+        self.store(agent_id).await?;      // MEMORY-SYNC: 待完善
         if self.decide(agent_id).await? { break; }
     }
     Ok(())
 }
 ```
 
-**DEBT Summary**:
-| DEBT | 状态 | 说明 |
+**技术约束与待办**:
+| 编号 | 状态 | 说明 |
 |------|------|------|
-| DEBT-RETRIEVE-PHASE5 | 活跃 | Graph/Dream层记忆检索待全面集成 |
-| DEBT-WORKER-TOOL-EXECUTION | 活跃 | Worker执行结果回调机制待完善 |
-| DEBT-LEAK-TEST-PHASE5 | 活跃 | AgentLoop资源泄漏测试待重写 |
-| DEBT-W5-CONTEXT-DEEP | 延续Phase 8 | tree-sitter AST 感知上下文 |
-| DEBT-W1-STREAMING-001 | 延续Phase 8 | MCP SSE/WebSocket 真实流式 |
-| DEBT-W5-ONBOARD-ADVANCED | 延续Phase 8 | 视频导览素材待产 |
+| RETRIEVE-PHASE5 | 进行中 | Graph/Dream层记忆检索待全面集成 |
+| WORKER-TOOL-EXECUTION | 进行中 | Worker执行结果回调机制待完善 |
+| LEAK-TEST-PHASE5 | 进行中 | AgentLoop资源泄漏测试待重写 |
+| W5-CONTEXT-DEEP | 待办 | tree-sitter AST 感知上下文 |
+| W1-STREAMING-001 | 待办 | MCP SSE/WebSocket 真实流式 |
+| W5-ONBOARD-ADVANCED | 待办 | 视频导览素材待产 |
 
 **相关文档**:
 - `src/intelligence/agent-core/README.md` - 模块README
-- `docs/debt/agent-core-debt-history.md` - 9项已清偿债务
-- `docs/debt/DEBT-ACTIVE-DECLARATION.md` - 4项活跃债务声明
+- `docs/debt/agent-core-debt-history.md` - 历史技术约束记录
+- `docs/debt/DEBT-ACTIVE-DECLARATION.md` - 活跃技术约束声明
 
 ---
 
@@ -335,24 +303,24 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 
 | 文件 | 功能 |
 |------|------|
-| `src/lib.rs` | 核心引擎入口 |
-| `src/archive_writer.rs` | .hctx 归档格式 + BLAKE3 |
-| `src/codex_bridge.rs` | Codex MemoryGateway FFI |
-| `src/state.rs` | ReplState 状态机 |
-| `src/traits.rs` | ReplEngineCore trait |
-| `src/session.rs` | 会话状态管理 |
-| `src/engine.rs` | 异步事件循环 |
-| `src/repl.rs` | ZeroTUI 主循环 |
-| `src/clock.rs` | 时钟抽象 |
-| `src/event.rs` | 事件系统 |
-| `src/eventloop_adapter.rs` | EventLoop适配器 |
-| `src/io.rs` | IO抽象 |
+| `chimera-repl/src/lib.rs` | 核心引擎入口 |
+| `chimera-repl/src/archive_writer.rs` | .hctx 归档格式 + BLAKE3 |
+| `chimera-repl/src/codex_bridge.rs` | Codex MemoryGateway FFI |
+| `chimera-repl/src/state.rs` | ReplState 状态机 |
+| `chimera-repl/src/traits.rs` | ReplEngineCore trait |
+| `chimera-repl/src/session.rs` | 会话状态管理 |
+| `chimera-repl/src/engine.rs` | 异步事件循环 |
+| `chimera-repl/src/repl.rs` | ZeroTUI 主循环 |
+| `chimera-repl/src/clock.rs` | 时钟抽象 |
+| `chimera-repl/src/event.rs` | 事件系统 |
+| `chimera-repl/src/eventloop_adapter.rs` | EventLoop适配器 |
+| `chimera-repl/src/io.rs` | IO抽象 |
 
 **关键特性**: ZeroTUI 架构（无 TUI 依赖）
 
 #### memory/ - 5层记忆系统 ⭐
 **来源**: 原 `memory/` 迁移  
-**Phase 5**: 5层数据流验证通过
+**状态**: 5层数据流验证通过
 
 | 层级 | 文件 | 功能 | 容量 |
 |------|------|------|------|
@@ -366,70 +334,21 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 
 #### knowledge/ - 知识图谱 ⭐
 **来源**: 原 `knowledge/` + `crates/hajimi-core/src/knowledge/` 合并  
-**Phase 5 Month 4**: 知识库实现完成（227行）
+**状态**: 知识库实现完成（227行）
 
 | 文件 | 功能 |
 |------|------|
-| `src/adr_index.rs` | ADR索引 + SimHash-64（185行）⭐ |
-| `src/search.rs` | ADR搜索（35行）⭐ |
-| `src/mod.rs` | 模块导出（7行）⭐ |
-| `src/graph/mod.rs` | 知识图谱核心 |
-| `src/graph/db.rs` | 图数据库接口 |
-| `src/graph/gnn_impl.rs` | GNN 实现 |
-| `src/graph/attention.rs` | 注意力机制 |
-| `src/graph/traversal.rs` | 图遍历 |
-| `src/core_adr/` | ADR 架构决策记录模块 |
-| `src/core_adapters/` | 核心适配器 |
-| `src/core_relations/` | 核心关系提取 |
+| `src/adr_index.rs` | ADR索引 + SimHash-64 ⭐ |
+| `src/search.rs` | ADR搜索 ⭐ |
+| `src/lib.rs` | 模块入口 |
+| `src/mod.rs` | 模块导出 |
 
 **5层链路注释**: Session → Auto → Dream → Graph → Knowledge
 
-#### typeracing/ - [已归档] 类型预测引擎（Week 6还魂）
-**Phase 5**: LSP驱动的智能代码补全  
-**依赖**: `engine/tool-system` LSP工具  
-**触发**: Ctrl+Space
-
-| 文件 | 功能 |
-|------|------|
-| `src/lib.rs` | 模块导出 |
-| `src/engine.rs` | 类型预测引擎 |
-| `src/algorithm.rs` | 预测算法 |
-| `src/terminal_adapter.rs` | [已归档] 终端适配器（Ctrl+Space触发） |
-
-**核心算法**: 
-- `calculate_weighted_confidence`: 加权置信度
-- `rank_predictions`: 预测排序
-- `select_top_k`: Top-K选择
-
-**TerminalAdapter**:
-```rust
-pub struct TerminalAdapter {
-    engine: Arc<Mutex<Engine>>,
-    state: AdapterState,
-    last_predictions: Vec<PredictionNode>,
-}
-// Ctrl+Space触发 spawn_predict()
-```
-
-#### index/ - [已归档] 向量索引
-**来源**: 原 `index/` + `vector/` 合并
-
-| 文件 | 功能 |
-|------|------|
-| `src/tantivy.rs` | 全文索引（Tantivy）|
-| `src/pgvector.rs` | PG向量索引 |
-| `src/unified.rs` | 统一检索接口 |
-| `src/batch_compute.rs` | 批量计算 |
-| `src/mod.rs` | 模块入口 |
-| `vector/*.js` | HNSW JS/WASM 实现 |
-| `vector/hnsw-core.js` | HNSW核心 |
-| `vector/hnsw-index-wasm-v3.js` | WASM索引v3 |
-| `vector/wasm-loader.js` | WASM加载器 |
-
 #### codex-twist/ - AI内存管理
 **来源**: 原 `crates/hajimi-codex-twist/` 迁移  
-**定位**: OpenAI Codex 本地优先移植版  
-**债务**: 双轨清理完成（0重复文件）
+**定位**: AI内存管理核心  
+**状态**: 双轨清理完成（0重复文件）
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
@@ -442,50 +361,20 @@ pub struct TerminalAdapter {
 | 内存 | `memory/` | 5级内存架构 |
 | 分层 | `tiered/` | Hot/Warm/Cold/Archive |
 
-#### cloud/ - 云端同步 (Phase 5)
+#### cloud/ - 云端同步
 | 文件 | 功能 |
 |------|------|
 | `src/lib.rs` | 云同步模块 |
 | `src/batch_sync.rs` | 批次同步 |
 
-#### onnx/ - [已归档] ONNX推理
-| 文件 | 功能 |
-|------|------|
-| `mod.rs` | 模块入口 |
-| `adapter.rs` | 适配器 |
-| `real_inference.rs` | 真实推理 |
-
----
-
 ### Interface 层（界面层）
 **原则**: 可依赖全下层  
-**债务状态**: ✅ Week 9真实RPC修复完成，20显式注册完成
-
-#### terminal/ - [已归档] 终端UI（TypeRacing集成）
-**来源**: 原 `crates/hajimi-core/src/ui/terminal/` 迁移  
-**技术**: Ink + React
-
-| 文件 | 功能 |
-|------|------|
-| `src/mod.rs` | 终端UI主模块（TypeRacing集成） |
-| `src/layout.rs` | 布局管理 |
-| `src/pane.rs` | Pane 组件 |
-| `src/pane_manager.rs` | Pane 管理器 |
-| `src/pane_layout.rs` | Pane 布局 |
-| `src/pane_utils.rs` | Pane 工具 |
-| `src/keymap_emacs.rs` | Emacs 快捷键 |
-| `src/keymap_vim.rs` | Vim 快捷键 |
-| `src/theme.rs` | 主题系统 |
-| `src/animation.rs` | 动画效果 |
-| `src/virtual_list.rs` | 虚拟列表 |
-| `src/input_handler.rs` | 输入处理（Ctrl+Space触发） |
-| `src/config.rs` | 配置管理 |
-| `src/config_utils.rs` | 配置工具 |
+**状态**: ✅ 真实RPC修复完成，20显式注册完成
 
 #### mcp-server/ - MCP服务器 ⭐（真实RPC）
 **来源**: 原 `adapters/mcp/` + `mcp/` 合并  
 **规范**: MCP 2025-03-26  
-**债务**: Week 9真实RPC修复完成（setTimeout清零）
+**状态**: 真实RPC修复完成（setTimeout已移除）
 
 | 文件 | 功能 |
 |------|------|
@@ -504,40 +393,6 @@ pub struct TerminalAdapter {
 | `lifecycle.ts` | 生命周期管理 |
 | `cli.ts` | CLI入口 |
 
-#### vscode/ - [已归档] VSCode插件（20显式注册）
-**债务**: Week 9修复完成（真实RPC桥接）
-
-| 文件 | 功能 |
-|------|------|
-| `extension.ts` | 插件入口 |
-| `src/registry/CommandRegistry.ts` ⭐ | 命令注册（7命令止血+真实RPC） |
-| `src/clients/LspClient.ts` ⭐ | LSP客户端（WebSocket） |
-| `src/managers/TreeViewManager.ts` | 树形视图管理器 |
-| `package.json` | 7命令定义（Week 6止血完成） |
-
-**CommandRegistry真实RPC（Week 9）**:
-```typescript
-// 真实RPC调用（非setTimeout模拟）
-private async invokeMcpTool(toolName: string, args: unknown[] = []): Promise<unknown> {
-  const result = await this.lspClient.sendCustomRequest<unknown>('mcp/toolCall', {
-    tool: toolName,
-    arguments: args
-  });
-  return result; // 真实结果透传
-}
-
-// 7个真实命令显式注册（Week 6止血：从64→7）
-this.registerCommand(CommandId.RUN_TESTS, async () => {
-  return this.invokeMcpTool('run_tests');
-});
-// ... 共7个命令（4 built-in + 3 MCP）
-```
-
-#### cli/ - [已归档] CLI工具
-| 文件 | 功能 |
-|------|------|
-| `vector-debug.js` | 向量调试工具 |
-
 ---
 
 ### crates/ 目录（根目录保留）
@@ -545,7 +400,7 @@ this.registerCommand(CommandId.RUN_TESTS, async () => {
 #### hajimi-codex-twist/ - AI内存核心
 **状态**: 已迁移至 `src/intelligence/codex-twist/`  
 **保留原因**: Rust workspace 兼容性  
-**债务**: 双轨清理完成（0文件）
+**状态**: 双轨共存（intelligence/ 为活跃版本，crates/ 保留 workspace 兼容）
 
 #### evm-bench-adapter/ - EVM检测适配器
 **状态**: 保留在根目录  
@@ -560,33 +415,44 @@ this.registerCommand(CommandId.RUN_TESTS, async () => {
 
 ---
 
-## 📊 代码统计（8周债务清偿后）
+### src/ 根目录其他目录
+
+#### meta/ - 项目元数据
+**功能**: ADR 工具与项目元数据管理  
+**文件**: `adr.rs` (~153行)
+
+#### integration/ - 集成测试 crate
+**功能**: 端到端集成测试  
+**文件**: `lib.rs`, `mod.rs`, `end_to_end.rs`, `end_to_end_tests.rs`
+
+---
+
+## 📊 代码统计
 
 | 分层 | 模块数 | 主要语言 | 状态 |
 |:---|:---:|:---|:---|
-| Foundation | 17 | TS/JS/Rust | 稳定 ✅ |
-| Engine | 5 | TS/Rust | P0安全 ✅ |
-| Intelligence | 11 | Rust/TS | Day 10 A级 ✅ |
-| Interface | 4 | TS/Rust | 真实RPC ✅ |
-| **总计** | **37** | - | **v3.2** |
+| Foundation | 18 | TS/JS/Rust | 稳定 ✅ |
+| Engine | 4 | TS/Rust | P0安全 ✅ |
+| Intelligence | 8 | Rust/TS | 稳定 ✅ |
+| Interface | 3 | TS/Rust | 稳定 ✅ |
+| **总计** | **33** | - | **v3.8** |
 
 **按语言统计**:
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 220 | ~25,428 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 131 | ~26,917 | foundation/, interface/ |
-| TypeScript | 114 | ~10,853 | foundation/, interface/ |
-| TSX | 23 | ~2,284 | interface/ |
-| **总计** | **488** | **~65,482** | - |
+| Rust | 193 | ~20,906 | engine/, intelligence/, foundation/wasm/ |
+| JavaScript | 82 | ~17,899 | foundation/, interface/ |
+| TypeScript | 42 | ~3,295 | foundation/, interface/ |
+| TSX | 0 | 0 | - |
+| **总计** | **317** | **~42,100** | - |
 
-**TODO清收统计**:
-| 范围 | 清偿前 | 清偿后 | 清收率 |
-|:---|:---:|:---:|:---:|
-| src目录 | 1,292 | 10 | 99.2% |
-| engine核心层 | - | 0 | - |
-| intelligence层 | - | 5 | 4项Phase 5诚实申报 |
-| agent-core DEBT | 13有记录 | 4活跃 | 69.2% |
-|  | *(历史总数22含早期未归档条目)* |  |  |
+**TODO统计**:
+| 范围 | 当前数量 | 说明 |
+|:---|:---:|:---|
+| src目录 | 10 | 持续维护中 |
+| engine核心层 | 0 | - |
+| intelligence层 | 5 | 4项约束声明 |
+| agent-core | 4活跃 | 历史总数13项，9项已处理 |
 
 ---
 
@@ -607,18 +473,9 @@ interface ──────┐
 intelligence/chimera/
 └── intelligence/codex-twist (Thread/Turn/MemoryGateway)
 
-intelligence/index/  [已归档]
-├── foundation/wasm (WASM HNSW)
-└── intelligence/memory (向量存储)
-
 intelligence/knowledge/
 ├── intelligence/memory (5层记忆)
 └── engine/search (Tantivy索引)
-
-engine/p2p-sync/  [已归档]
-├── Yjs (CRDT)
-├── @koush/wrtc (WebRTC)
-└── ws (WebSocket)
 
 engine/tool-system/
 └── foundation/storage (持久化)
@@ -626,9 +483,6 @@ engine/tool-system/
 interface/mcp-server/
 └── engine/tool-system (工具调用)
 
-interface/vscode/  [已归档]
-├── LspClient (WebSocket)
-└── CommandRegistry (真实RPC桥接)
 ```
 
 ---
@@ -653,11 +507,9 @@ interface/vscode/  [已归档]
 6. `engine/worker/src/parallel.rs` - 并行执行
 
 **3. Intelligence 层（智能系统）**:
-1. `intelligence/chimera/src/repl.rs` - REPL 引擎
+1. `intelligence/chimera/chimera-repl/src/repl.rs` - REPL 引擎
 2. `intelligence/memory/src/session.rs` - Session 记忆
 3. `intelligence/knowledge/src/adr_index.rs` - ADR索引（185行）⭐
-
-5. `intelligence/index/src/tantivy.rs` - 全文索引
 
 **4. Interface 层（用户界面）**:
 
@@ -675,33 +527,33 @@ interface/vscode/  [已归档]
 | **知识库 ADR** | `src/intelligence/knowledge/src/adr_index.rs` |
 | **LLM 客户端** | `src/engine/llm-core/src/anthropic.rs` |
 | **LLM Bridge** | `src/intelligence/agent-core/src/llm/bridge.rs` |
-| **Tauri 桌面** | `src-tauri/src/main.rs` |
-| **Tauri 流式聊天** | `src-tauri/src/main.rs` (stream_chat) |
+| **Tauri 桌面** | `src/interface/desktop/src/main.rs` |
+| **Tauri 流式聊天** | `src/interface/desktop/src/main.rs` (stream_chat) |
+| **配置文件权限** | `src/interface/desktop/src/main.rs` (write_configs_to_path) |
+| **Workspace 配置隔离** | `src/interface/desktop/src/main.rs` (read_merged_configs) |
 | **搜索索引** | `src/engine/search/src/tantivy_index.rs` |
 | **Web 前端** | `src/interface/web/app.js` |
 | **MCP 服务器** | `src/interface/mcp-server/server.ts` |
 | **MCP 真实RPC** | `src/interface/mcp-server/capabilities/tools.ts` |
 | **限流器** | `src/foundation/security/rate-limiter-sqlite-luxury.js` |
-| **向量索引** | `src/intelligence/index/src/tantivy.rs` |
 | **HNSW WASM** | `src/foundation/wasm/src/lib.rs` |
 | **存储路由** | `src/foundation/storage/shard-router.js` |
-| **Tauri 工具集成** | `src-tauri/src/main.rs` (execute_tool) |
+| **Tauri 工具集成** | `src/interface/desktop/src/main.rs` (execute_tool) |
 | **Agent Core E2E** | `src/intelligence/agent-core/tests/agent_core_e2e.rs` |
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
 | **E2E回归** | `tests/e2e/phase1-5-regression/full_chain.test.js` |
-| **债务文档** | `docs/debt/DEBT-P0-001.md` |
-| **债务文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
-| **Day 10审计** | `docs/self-audit/DAY10-AGENT-CORE-SELF-AUDIT-001.md` |
-| **债务历史** | `docs/debt/agent-core-debt-history.md` |
-| **活跃债务** | `docs/debt/DEBT-ACTIVE-DECLARATION.md` |
-| **8周审计** | `audit report/8week/HAJIMI-8WEEK-DEBT-CLEARANCE-AUDIT.md` |
+| **技术约束文档** | `docs/debt/DEBT-P0-001.md` |
+| **技术约束文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
+| **历史约束记录** | `docs/debt/agent-core-debt-history.md` |
+| **活跃约束声明** | `docs/debt/DEBT-ACTIVE-DECLARATION.md` |
+
 
 ---
 
 ## 🗺️ 目录迁移对照
 
-| 原路径 (v1.x) | 新路径 (v3.1) | 层级 |
+| 原路径 | 新路径 | 层级 |
 |:---|:---|:---:|
 | `api/` | `foundation/api/` | Foundation |
 | `compression/` | `foundation/compression/` | Foundation |
@@ -709,52 +561,40 @@ interface/vscode/  [已归档]
 | `network/` | `foundation/network/` | Foundation |
 | `wasm/` | `foundation/wasm/` | Foundation |
 | `llm-core/` | `engine/llm-core/` | Engine |
-| `src-tauri/` | `src-tauri/` | Interface |
+| `src-tauri/` | `src/interface/desktop/` | Interface |
 | `search/` | `engine/search/` | Engine |
 | `tool-system/` | `engine/tool-system/` | Engine |
 | `chimera/` | `intelligence/chimera/` | Intelligence |
 | `codex-twist/` | `intelligence/codex-twist/` | Intelligence |
-| `index/` | `intelligence/index/` | Intelligence |
 | `knowledge/` | `intelligence/knowledge/` | Intelligence |
 | `memory/` | `intelligence/memory/` | Intelligence |
-| `onnx/` | `intelligence/onnx/` | Intelligence |
 
 | `mcp-server/` | `interface/mcp-server/` | Interface |
 
 ---
 
-## 🎯 8周债务清偿资产
+## 🎯 质量保障资产
 
 | 资产 | 路径 | 说明 |
 |:---|:---|:---|
-| 8周审计报告 | `audit report/8week/HAJIMI-8WEEK-DEBT-CLEARANCE-AUDIT.md` | A-级评级确认 |
-| DEBT-PHASE2审计 | `audit report/DEBT-PHASE2-CONSTRUCTIVE-AUDIT-REPORT.md` | B+级，2项返工 |
-| DEBT-PHASE2-REWORK审计 | `audit report/DEBT-PHASE2-REWORK-CONSTRUCTIVE-AUDIT-REPORT.md` | A-级，Go |
-| Week 9审计 | `audit report/week9/WEEK9-TRUE-RPC-AUDIT-004.md` | 真实跃升证据 |
-| Day 10审计 | `docs/self-audit/DAY10-AGENT-CORE-SELF-AUDIT-001.md` | A级评级确认 |
-| 债务历史 | `docs/debt/agent-core-debt-history.md` | 9项已清偿债务 |
-| 活跃债务 | `docs/debt/DEBT-ACTIVE-DECLARATION.md` | 4项Phase 5诚实申报 |
-| 债务文档 | `docs/debt/DEBT-P0-001.md` | PSK长期管理债务 |
-| 债务文档 | `docs/debt/SHELL-FEATURE-DEBT-002.md` | Shell降级功能清单 |
-| TODO清收日志 | `TODO-CLEARANCE-LOG.txt` | 清收记录 |
+| 历史约束记录 | `docs/debt/agent-core-debt-history.md` | 9项已处理约束 |
+| 活跃约束声明 | `docs/debt/DEBT-ACTIVE-DECLARATION.md` | 4项约束 |
+| 技术约束文档 | `docs/debt/DEBT-P0-001.md` | PSK长期管理 |
+| 技术约束文档 | `docs/debt/SHELL-FEATURE-DEBT-002.md` | Shell功能限制 |
+
 | E2E回归套件 | `tests/e2e/phase1-5-regression/` | 18个月全周期测试 |
 
 ---
 
-## 📈 债务清偿关键指标
+## 📈 项目改进指标
 
-| 指标 | 清偿前 | 清偿后 | 清收率 |
+| 指标 | 改进前 | 当前 | 改进率 |
 |:---|:---:|:---:|:---:|
-| TODO/FIXME (src) | 1,292 | 10 | 99.2% |
 | setTimeout模拟 | 1 | 0 | 100% |
 | 硬编码返回值 | 1 | 0 | 100% |
-| WebRTC Math.random | 1 | 0 | 100% |
 | Shell bash -c | 1 | 0 | 100% |
-| codex-twist双轨 | 重复文件 | 0文件 | 100% |
-| Phase 7综合 | B+/NoGo | **B+→A-** (返工后Go) | - |
-| DEBT-LLM-CLIENT | 未清偿 | **A-清偿** | 164行桥接 |
-| 综合评级 | C/D波动 | **A-** | - |
+| 综合状态 | 波动 | **稳定** | - |
 
 ---
 
-*本索引文档与代码同步维护，最后更新于 2026-04-23 (v3.8.0-batch-1 - Phase 7 Debt Clearance + DEBT-LLM-CLIENT 清偿完成)*
+*本索引文档与代码同步维护，最后更新于 2026-04-23*

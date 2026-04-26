@@ -5,6 +5,7 @@ use crate::streaming::{ChannelStream, StreamChunk};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 
 /// OpenAI GPT client
@@ -24,26 +25,41 @@ impl OpenAiClient {
 impl LlmClient for OpenAiClient {
     async fn stream_chat(&self, prompt: String) -> Result<ChannelStream, EngineError> {
         let (stream, tx) = ChannelStream::new(100);
-        let LlmProvider::OpenAi { api_key, model, base_url } = &self.provider else {
-            return Err(EngineError::InvalidParameters("Invalid".into()));
+        let (api_key_secret, model, base_url) = match &self.provider {
+            LlmProvider::OpenAi { api_key, model, base_url } => (api_key.clone(), model.clone(), base_url.clone()),
+            _ => return Err(EngineError::InvalidParameters("Invalid provider type".into())),
         };
         let client = Client::new();
         let url = format!("{}/v1/chat/completions", base_url);
         let req = ChatRequest { model: model.clone(), messages: vec![
             ChatMessage { role: "user".into(), content: prompt }
         ], stream: true };
-        let key = api_key.clone();
+        let key = api_key_secret.expose_secret().to_string();  // Expose only for the HTTP request
         tokio::spawn(async move {
             match client.post(&url).header("Authorization", format!("Bearer {}", key))
                 .json(&req).send().await {
-                Ok(r) => { let mut s = r.bytes_stream();
-                    while let Some(Ok(d)) = s.next().await {
-                        for l in String::from_utf8_lossy(&d).lines() {
-                            if let Some(j) = l.strip_prefix("data: ") {
-                                if j == "[DONE]" { tx.send(StreamChunk::Done).await.ok(); }
-                                else if let Ok(r) = serde_json::from_str::<StreamResp>(j) {
-                                    if let Some(c) = r.choices.first().and_then(|c| c.delta.content.clone()) {
-                                        tx.send(StreamChunk::Output(c)).await.ok();
+                Ok(r) => {
+                    let status = r.status();
+                    if status == 401 || status == 403 || status == 429 {
+                        let err_msg = match status.as_u16() {
+                            401 => "API Key 无效或已过期，请检查配置 (401)".to_string(),
+                            403 => "API Key 权限不足，请检查配置 (403)".to_string(),
+                            429 => "请求过于频繁，请稍后再试 (429)".to_string(),
+                            _ => format!("HTTP 错误: {}", status),
+                        };
+                        let _ = tx.send(StreamChunk::Error(err_msg)).await;
+                    } else if !status.is_success() {
+                        let _ = tx.send(StreamChunk::Error(format!("HTTP 错误: {}", status))).await;
+                    } else {
+                        let mut s = r.bytes_stream();
+                        while let Some(Ok(d)) = s.next().await {
+                            for l in String::from_utf8_lossy(&d).lines() {
+                                if let Some(j) = l.strip_prefix("data: ") {
+                                    if j == "[DONE]" { tx.send(StreamChunk::Done).await.ok(); }
+                                    else if let Ok(r) = serde_json::from_str::<StreamResp>(j) {
+                                        if let Some(c) = r.choices.first().and_then(|c| c.delta.content.clone()) {
+                                            tx.send(StreamChunk::Output(c)).await.ok();
+                                        }
                                     }
                                 }
                             }

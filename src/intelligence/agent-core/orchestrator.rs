@@ -19,6 +19,7 @@ use crate::planner::{HierarchicalPlanner, Plan};
 use crate::reflector::{AutonomousReflector, Reflection};
 use crate::tools::{PlanningTool, ReflectionTool};
 use crate::agent_loop::{AgentLoop, LoopOutcome};
+use crate::agent_loop_builder::AgentLoopBuilder;
 use engine_tool_system::ToolRegistry;
 use chimera_repl::event::{ReplEvent, ReplEventSender};
 use chimera_repl::engine::{EngineController, EngineState};
@@ -45,6 +46,7 @@ pub struct AgentOrchestrator {
     checkpoint_mgr: Arc<CheckpointManager>, last_checkpoint: Arc<RwLock<u64>>,
     shutdown_rx: Arc<Mutex<mpsc::Receiver<()>>>,
     tool_registry: Arc<Mutex<ToolRegistry>>,
+    clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>,
 }
 
 impl AgentOrchestrator {
@@ -64,32 +66,68 @@ impl AgentOrchestrator {
         let reflector = Arc::new(Mutex::new(AutonomousReflector::new(memory.clone(), context.clone())));
         tool_registry.register(Arc::new(PlanningTool::new(planner.clone(), governance.clone(), blackboard.clone())));
         tool_registry.register(Arc::new(ReflectionTool::new(reflector.clone(), governance.clone(), blackboard.clone())));
-        Self { state: Arc::new(RwLock::new(State::new())), context, engine, event_processor, event_rx: Arc::new(Mutex::new(event_rx)), shutdown_tx, governance, supervisor: None, blackboard: Some(blackboard), checkpoint_mgr, last_checkpoint: Arc::new(RwLock::new(0)), shutdown_rx: Arc::new(Mutex::new(shutdown_rx)), tool_registry: Arc::new(Mutex::new(tool_registry)) }
+        Self { state: Arc::new(RwLock::new(State::new())), context, engine, event_processor, event_rx: Arc::new(Mutex::new(event_rx)), shutdown_tx, governance, supervisor: None, blackboard: Some(blackboard), checkpoint_mgr, last_checkpoint: Arc::new(RwLock::new(0)), shutdown_rx: Arc::new(Mutex::new(shutdown_rx)), tool_registry: Arc::new(Mutex::new(tool_registry)), clients: std::collections::HashMap::new() }
     }
     pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self { self.governance = gov; self }
     pub fn governance(&self) -> &Arc<dyn AgentGovernance> { &self.governance }
     pub fn with_supervisor(mut self, sv: Arc<Mutex<Supervisor>>) -> Self { self.supervisor = Some(sv); self }
     pub fn with_blackboard(mut self, bb: Arc<Blackboard>) -> Self { self.blackboard = Some(bb); self }
+    pub fn with_clients(mut self, clients: std::collections::HashMap<String, Arc<dyn engine_llm_core::LlmClient>>) -> Self { self.clients = clients; self }
 
     /// Create and initialize AgentLoop for autonomous execution.
     pub fn create_agent_loop(&self) -> AgentLoop {
+        self.create_agent_loop_with_provider(None)
+    }
+
+    pub fn create_agent_loop_with_provider(&self, provider_id: Option<String>) -> AgentLoop {
         let memory = Arc::new(Mutex::new(MemoryGateway::new("agent_loop")));
-        AgentLoop::new(
-            self.context.clone(),
-            Arc::new(Mutex::new(HierarchicalPlanner::new(memory.clone(), self.context.clone()))) as Arc<Mutex<dyn crate::planner::Planner>>,
-            Arc::new(Mutex::new(AutonomousReflector::new(memory.clone(), self.context.clone()))) as Arc<Mutex<dyn crate::reflector::Reflector>>,
-            self.governance.clone(),
-            self.supervisor.clone(),
-            self.blackboard.clone().unwrap_or_else(|| Arc::new(Blackboard::new())),
-            self.checkpoint_mgr.clone(),
-            Some(memory),
-        )
+        let bb = self.blackboard.clone().unwrap_or_else(|| Arc::new(Blackboard::new()));
+        let planner: Arc<Mutex<dyn crate::planner::Planner>> = if self.clients.is_empty() {
+            Arc::new(Mutex::new(HierarchicalPlanner::new(memory.clone(), self.context.clone())))
+        } else {
+            let default_client = self.clients.values().next().cloned().unwrap_or_else(|| Arc::new(engine_llm_core::OllamaClient::default_local()));
+            let planner_bridge = Arc::new(crate::llm::bridge::PlannerLlmBridge::new(default_client.clone())
+                .with_blackboard(bb.clone())
+                .with_clients(self.clients.clone()));
+            Arc::new(Mutex::new(HierarchicalPlanner::new(memory.clone(), self.context.clone()).with_llm(planner_bridge)))
+        };
+        let reflector: Arc<Mutex<dyn crate::reflector::Reflector>> = if self.clients.is_empty() {
+            Arc::new(Mutex::new(AutonomousReflector::new(memory.clone(), self.context.clone())))
+        } else {
+            let default_client = self.clients.values().next().cloned().unwrap_or_else(|| Arc::new(engine_llm_core::OllamaClient::default_local()));
+            let reflector_bridge = Arc::new(crate::llm::bridge::ReflectorLlmBridge::new(default_client)
+                .with_blackboard(bb.clone())
+                .with_clients(self.clients.clone()));
+            Arc::new(Mutex::new(AutonomousReflector::new(memory.clone(), self.context.clone()).with_llm(reflector_bridge)))
+        };
+        AgentLoopBuilder::new()
+            .with_context(self.context.clone())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(self.governance.clone())
+            .with_swarm(self.supervisor.clone())
+            .with_blackboard(bb)
+            .with_checkpoint_mgr(self.checkpoint_mgr.clone())
+            .with_memory(Some(memory))
+            .with_provider_id(provider_id)
+            .build()
+            .expect("AgentLoopBuilder should succeed with all required fields")
+    }
+
+    pub fn create_agent_loop_for(&self, config: &AgentConfig) -> AgentLoop {
+        self.create_agent_loop_with_provider(config.capability.preferred_provider.clone())
     }
 
     /// Execute a natural language goal autonomously.
     pub async fn execute_natural_language_goal(&self, agent_id: &str, goal: &str) -> ReplResult<LoopOutcome> {
         info!("Executing natural language goal for {}: {}", agent_id, goal);
         let agent_loop = self.create_agent_loop();
+        agent_loop.execute_goal(agent_id.to_string(), goal).await
+    }
+
+    pub async fn execute_natural_language_goal_with_provider(&self, agent_id: &str, goal: &str, provider_id: Option<String>) -> ReplResult<LoopOutcome> {
+        info!("Executing natural language goal for {} with provider {:?}: {}", agent_id, provider_id, goal);
+        let agent_loop = self.create_agent_loop_with_provider(provider_id);
         agent_loop.execute_goal(agent_id.to_string(), goal).await
     }
 

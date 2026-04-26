@@ -40,6 +40,7 @@ pub struct AgentLoop {
     iteration_count: Arc<Mutex<usize>>,
     current_state: Arc<Mutex<LoopState>>,
     trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
+    provider_id: Option<String>,
 }
 
 impl AgentLoop {
@@ -54,7 +55,7 @@ impl AgentLoop {
         checkpoint_mgr: Arc<CheckpointManager>,
         memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
     ) -> Self {
-        Self::from_components(context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory)
+        Self::from_components(context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, None)
     }
 
     pub(crate) fn from_components(
@@ -66,12 +67,16 @@ impl AgentLoop {
         blackboard: Arc<Blackboard>,
         checkpoint_mgr: Arc<CheckpointManager>,
         memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
+        provider_id: Option<String>,
     ) -> Self {
-        Self { context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, iteration_count: Arc::new(Mutex::new(0)), current_state: Arc::new(Mutex::new(LoopState::Idle)), trace_tx: Some(tokio::sync::broadcast::channel(64).0) }
+        Self { context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, iteration_count: Arc::new(Mutex::new(0)), current_state: Arc::new(Mutex::new(LoopState::Idle)), trace_tx: Some(tokio::sync::broadcast::channel(64).0), provider_id }
     }
 
     pub async fn run(&self, agent_id: AgentId, initial_goal: &str) -> ReplResult<LoopOutcome> {
         info!("AgentLoop starting for {} with goal: {}", agent_id, initial_goal);
+        if let Some(ref pid) = self.provider_id {
+            self.blackboard.write("__hajimi_provider_id", pid, &agent_id).await;
+        }
         *self.current_state.lock().await = LoopState::Planning;
         self.emit_trace(LoopState::Planning, format!("Planning initial goal: {}", initial_goal), 0);
         let goal_id = self.plan_initial_goal(initial_goal).await?;

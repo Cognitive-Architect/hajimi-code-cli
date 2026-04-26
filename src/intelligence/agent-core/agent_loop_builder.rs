@@ -18,11 +18,12 @@ pub struct AgentLoopBuilder {
     blackboard: Option<Arc<Blackboard>>,
     checkpoint_mgr: Option<Arc<CheckpointManager>>,
     memory: Option<Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>>,
+    provider_id: Option<String>,
 }
 
 impl AgentLoopBuilder {
     pub fn new() -> Self {
-        Self { context: None, planner: None, reflector: None, governance: None, swarm: Some(None), blackboard: None, checkpoint_mgr: None, memory: Some(None) }
+        Self { context: None, planner: None, reflector: None, governance: None, swarm: Some(None), blackboard: None, checkpoint_mgr: None, memory: Some(None), provider_id: None }
     }
     pub fn with_context(mut self, ctx: AgentContext) -> Self { self.context = Some(ctx); self }
     pub fn with_planner(mut self, p: Arc<Mutex<dyn Planner>>) -> Self { self.planner = Some(p); self }
@@ -32,6 +33,7 @@ impl AgentLoopBuilder {
     pub fn with_blackboard(mut self, bb: Arc<Blackboard>) -> Self { self.blackboard = Some(bb); self }
     pub fn with_checkpoint_mgr(mut self, cp: Arc<CheckpointManager>) -> Self { self.checkpoint_mgr = Some(cp); self }
     pub fn with_memory(mut self, m: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>) -> Self { self.memory = Some(m); self }
+    pub fn with_provider_id(mut self, id: Option<String>) -> Self { self.provider_id = id; self }
 
     pub fn build(self) -> Result<AgentLoop, AgentError> {
         let context = self.context.unwrap_or_else(AgentContext::new);
@@ -44,7 +46,7 @@ impl AgentLoopBuilder {
         let memory = self.memory.flatten();
         let _iteration_count = Arc::new(Mutex::new(0));
         let _current_state = Arc::new(Mutex::new(crate::agent_loop::LoopState::Idle));
-        Ok(AgentLoop::from_components(context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory))
+        Ok(AgentLoop::from_components(context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, self.provider_id))
     }
 }
 
