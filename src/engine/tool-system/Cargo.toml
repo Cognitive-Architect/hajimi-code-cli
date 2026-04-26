@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["HAJIMI Team"]
 description = "Tool system engine for HAJIMI"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [dependencies]
 tokio = { version = "1.37", features = ["full"] }
