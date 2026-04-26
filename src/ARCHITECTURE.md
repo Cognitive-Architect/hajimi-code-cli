@@ -34,9 +34,9 @@
 │  │  (memory/)  │  │  (cloud/)   │  │  (agent-core/)      │ │
 │  │ 5层:Session │  │ 批次同步    │  │  7步循环+桥接 ⭐     │ │
 │  ├─────────────┤  ├─────────────┤  ├─────────────────────┤ │
-│  │  Integration│  │  pgvector   │  │                     │ │
-│  │(integration)│  │ (pgvector/) │  │                     │ │
-│  │ 第三方适配  │  │ PG向量存储  │  │                     │ │
+│  │  pgvector   │  │             │  │                     │ │
+│  │ (pgvector/) │  │             │  │                     │ │
+│  │ PG向量存储  │  │             │  │                     │ │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -118,9 +118,7 @@
 | `agent-core/` | 自主Agent系统 | 7步循环, Swarm, 可插拔治理, LLM桥接 ⭐ | ✅ 稳定 |
 | `chimera/` | REPL引擎 | ZeroTUI, EventLoop | ✅ 稳定 |
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
-| `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
-| `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
 | `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
 | `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud | ✅ 稳定 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
@@ -259,18 +257,16 @@ src/
 │   ├── search/          # Tantivy搜索
 │   ├── tool-system/     # 40+工具 (白名单参数化)
 │   └── worker/          # 工作线程
-├── foundation/          # 地基层 (17模块)
-│   ├── api/, bench/, compression/, db/, disk/
-│   ├── eventloop/, format/, hash/, middleware/, migration/
-│   ├── network/, scripts/, security/, storage/
-│   ├── test/, tests/, utils/, wasm/
+├── foundation/          # 地基层 (7模块)
+│   ├── eventloop/, format/, hash/
+│   ├── network/, security/, storage/
+│   ├── wasm/
 │   └── ...
-├── intelligence/        # 智能层 (8模块)
+├── intelligence/        # 智能层 (7模块)
 │   ├── agent-core/      # 自主Agent系统 (7步循环/Swarm/治理/LLM桥接) ⭐
 │   ├── chimera/         # REPL引擎
 │   ├── cloud/           # 云端同步
 │   ├── codex-twist/     # AI内存 (双轨清理完成)
-│   ├── integration/     # 集成模块
 │   ├── knowledge/       # 知识图谱
 │   ├── memory/          # 5层记忆
 │   └── pgvector/        # PG向量
@@ -278,6 +274,10 @@ src/
     ├── mcp-server/      # MCP服务器 (真实RPC)
     ├── web/             # Web界面 (Tauri v2 前端)
     └── desktop/         # 桌面后端 (Tauri v2 Rust 后端)
+
+patches/                 # 构建依赖补丁（非功能模块）
+└── zstd-sys/            # zstd-safe 6.x API 兼容性补丁
+    # 本地覆盖 [patch.crates-io]，修复上游 API 不匹配
 ```
 
 ---

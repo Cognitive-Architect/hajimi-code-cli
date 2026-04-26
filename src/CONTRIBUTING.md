@@ -67,7 +67,7 @@ foundation/     # 地基层 - 零依赖
 |:---:|:---|:---:|:---|
 | Foundation | `foundation/*/` | 7 | 基础设施模块 |
 | Engine | `engine/*/` | 4 | 核心引擎模块 |
-| Intelligence | `intelligence/*/` | 8 | 智能模块 |
+| Intelligence | `intelligence/*/` | 7 | 智能模块 |
 | Interface | `interface/*/` | 3 | 界面模块 |
 
 #### 文件命名规范

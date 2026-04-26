@@ -15,6 +15,9 @@ src/
 ├── crates/              # 保留的 Rust Crates
 │   └── hajimi-codex-twist/  # AI内存核心 (Rust workspace兼容)
 │
+├── patches/             # 构建依赖补丁（非功能模块）
+│   └── zstd-sys/        # zstd-safe 6.x API 兼容性补丁
+│
 ├── foundation/          # 地基层 - 零依赖（7模块）
 │   ├── eventloop/       # 异步事件循环 (Rust)
 │   ├── format/          # 数据格式（.hctx/BLAKE3）
@@ -30,16 +33,15 @@ src/
 │   ├── tool-system/     # 工具系统（40+工具/白名单参数化）⭐
 │   └── worker/          # 工作线程池
 │
-├── intelligence/        # 智能层 - 依赖foundation+engine（8模块）
+├── intelligence/        # 智能层 - 依赖foundation+engine（7模块）
 │   ├── agent-core/      # 自主Agent系统（7步循环/Swarm/可插拔治理/LLM桥接）⭐
 │   │   └── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐
-│   ├── integration/     # 集成模块
 │   ├── knowledge/       # 知识图谱（ADR/GNN/知识库）⭐
 │   ├── memory/          # 5层记忆系统⭐
-│   ├── pgvector/        # PostgreSQL向量扩展
+│   └── pgvector/        # PostgreSQL向量扩展
 │
 └── interface/           # 界面层 - 依赖全下层（3模块）
     ├── mcp-server/      # MCP服务器（真实RPC桥接）⭐
@@ -405,6 +407,12 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 
 ### src/ 根目录其他目录
 
+#### patches/ - 构建依赖补丁
+**功能**: Cargo `[patch.crates-io]` 本地覆盖  
+**来源**: zstd-sys 2.0.15+zstd.1.5.7 修改版  
+**原因**: 修复 zstd-safe 6.x experimental API 与 zstd-sys 2.0.15+ 的不匹配  
+**依赖链**: tantivy-sstable 0.2.0 → zstd 0.12.4 → zstd-safe 6.0.5 + experimental
+
 #### meta/ - 项目元数据
 **功能**: ADR 工具与项目元数据管理  
 **文件**: `adr.rs` (~153行)
@@ -419,11 +427,11 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 
 | 分层 | 模块数 | 主要语言 | 状态 |
 |:---|:---:|:---|:---|
-| Foundation | 18 | TS/JS/Rust | 稳定 ✅ |
+| Foundation | 7 | TS/JS/Rust | 稳定 ✅ |
 | Engine | 4 | TS/Rust | P0安全 ✅ |
-| Intelligence | 8 | Rust/TS | 稳定 ✅ |
+| Intelligence | 7 | Rust/TS | 稳定 ✅ |
 | Interface | 3 | TS/Rust | 稳定 ✅ |
-| **总计** | **33** | - | **v3.8** |
+| **总计** | **22** | - | **v3.8** |
 
 **按语言统计**:
 | 语言 | 文件数 | 行数 | 主要分布 |
@@ -529,6 +537,7 @@ interface/mcp-server/
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
 
+| **zstd-sys 补丁** | `src/patches/zstd-sys/` |
 | **技术约束文档** | `docs/debt/DEBT-P0-001.md` |
 | **技术约束文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
 | **历史约束记录** | `docs/debt/agent-core-debt-history.md` |
