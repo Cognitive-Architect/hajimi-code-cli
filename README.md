@@ -64,7 +64,6 @@ Hajimi IDE 是一款基于 **Tauri v2** 的桌面端 AI 智能体 IDE，采用 *
 │  ├── knowledge/    ADR + 知识图谱        │
 │  ├── codex-twist/  AI 内存管理           │
 │  ├── cloud/        云端同步              │
-│  ├── integration/  第三方适配            │
 │  └── pgvector/     PG 向量存储           │
 ├─────────────────────────────────────────┤
 │  Engine 层（引擎层）                      │
@@ -78,19 +77,9 @@ Hajimi IDE 是一款基于 **Tauri v2** 的桌面端 AI 智能体 IDE，采用 *
 │  ├── network/      WebSocket 服务器      │
 │  ├── wasm/         HNSW WASM 加速        │
 │  ├── security/     限流 + 审计日志       │
-│  ├── compression/  上下文压缩            │
-│  ├── api/          REST API 服务器       │
-│  ├── db/           PostgreSQL 连接池     │
 │  ├── eventloop/    异步事件循环          │
 │  ├── format/       .hctx 数据格式        │
-│  ├── hash/         SimHash64             │
-│  ├── middleware/   Express/Koa 中间件    │
-│  ├── migration/    数据库迁移            │
-│  ├── scripts/      构建/安装脚本         │
-│  ├── test/         单元测试辅助          │
-│  ├── tests/        集成/E2E 测试         │
-│  ├── utils/        通用工具              │
-│  └── disk/         磁盘管理              │
+│  └── hash/         SimHash64             │
 └─────────────────────────────────────────┘
 ```
 
@@ -147,14 +136,14 @@ node --check src/interface/web/app.js
 
 ```
 src/
-├── foundation/     # 地基层 - 18模块
+├── foundation/     # 地基层 - 7模块
 ├── engine/         # 引擎层 - 4模块
 ├── intelligence/   # 智能层 - 8模块
 ├── interface/      # 界面层 - 3模块
 │   ├── desktop/    # Tauri v2 Rust 后端
 │   ├── web/        # 纯 HTML/CSS/JS 前端
 │   └── mcp-server/ # MCP 真实 RPC
-├── crates/         # 保留 Rust Crates
+├── crates/         # 保留 Rust Crate (hajimi-codex-twist)
 ├── integration/    # 集成测试 crate
 ├── meta/           # 项目元数据
 └── lib.rs          # 根 lib
@@ -164,10 +153,10 @@ src/
 
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 193 | ~20,906 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 82 | ~17,899 | foundation/, interface/ |
-| TypeScript | 42 | ~3,295 | foundation/, interface/ |
-| **总计** | **317** | **~42,100** | - |
+| Rust | 181 | ~22,368 | engine/, intelligence/, foundation/wasm/ |
+| JavaScript | 39 | ~12,946 | interface/ |
+| TypeScript | 48 | ~7,634 | interface/ |
+| **总计** | **268** | **~42,948** | - |
 
 ## 关键文档
 
@@ -191,4 +180,4 @@ Apache-2.0
 
 ---
 
-*最后更新: 2026-04-23*
+*最后更新: 2026-04-26*
