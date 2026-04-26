@@ -138,11 +138,12 @@ node --check src/interface/web/app.js
 src/
 ├── foundation/     # 地基层 - 7模块
 ├── engine/         # 引擎层 - 4模块
-├── intelligence/   # 智能层 - 8模块
+├── intelligence/   # 智能层 - 7模块
 ├── interface/      # 界面层 - 3模块
 │   ├── desktop/    # Tauri v2 Rust 后端
 │   ├── web/        # 纯 HTML/CSS/JS 前端
 │   └── mcp-server/ # MCP 真实 RPC
+├── patches/        # 构建依赖补丁 (zstd-sys)
 ├── crates/         # 保留 Rust Crate (hajimi-codex-twist)
 ├── integration/    # 集成测试 crate
 ├── meta/           # 项目元数据
