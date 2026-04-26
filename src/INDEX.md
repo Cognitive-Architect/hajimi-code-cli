@@ -1,8 +1,8 @@
 # HAJIMI V3 源代码索引
 
 > **文档版本**: v3.8.0  
-> **最后更新**: 2026-04-23  
-> **代码总行数**: ~42,100行自有代码（不含依赖，含agent-core ~2,540行源文件 / ~2,920行总计）  
+> **最后更新**: 2026-04-26  
+> **代码总行数**: ~42,948行自有代码（不含依赖，含agent-core ~2,540行源文件 / ~2,920行总计）  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
 > **当前状态**: ✅ Agent Core 55测试通过，0编译error，unsafe SAFETY 100%覆盖
 
@@ -12,28 +12,16 @@
 
 ```
 src/
-├── crates/              # 保留的 Rust Crates（根目录）
-│   ├── evm-bench-adapter/   # EVM检测适配器
+├── crates/              # 保留的 Rust Crates
 │   └── hajimi-codex-twist/  # AI内存核心 (Rust workspace兼容)
 │
-├── foundation/          # 地基层 - 零依赖（18模块）
-│   ├── api/             # REST API 服务器
-│   ├── bench/           # 性能基准测试
-│   ├── compression/     # 上下文压缩（micro/auto/compact/mod）
-│   ├── db/              # PostgreSQL连接池
-│   ├── disk/            # 磁盘管理（ENOSPC处理）
+├── foundation/          # 地基层 - 零依赖（7模块）
 │   ├── eventloop/       # 异步事件循环 (Rust)
 │   ├── format/          # 数据格式（.hctx/BLAKE3）
 │   ├── hash/            # 哈希算法（SimHash64）
-│   ├── middleware/      # Express/Koa中间件
-│   ├── migration/       # 数据库迁移工具
-│   ├── network/         # WebSocket服务器（PSK认证）⭐
-│   ├── scripts/         # 构建/安装脚本（SHA256校验）⭐
+│   ├── network/         # WebSocket服务器 ⭐
 │   ├── security/        # 安全与限流控制
 │   ├── storage/         # 存储层（16分片SQLite）⭐
-│   ├── test/            # 单元测试辅助
-│   ├── tests/           # 测试套件（E2E/集成）
-│   ├── utils/           # 通用工具（SimHash64）
 │   └── wasm/            # WASM运行时（HNSW）⭐
 │
 ├── engine/              # 引擎层 - 仅依赖foundation（4模块）
@@ -440,11 +428,10 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 **按语言统计**:
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 193 | ~20,906 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 82 | ~17,899 | foundation/, interface/ |
-| TypeScript | 42 | ~3,295 | foundation/, interface/ |
-| TSX | 0 | 0 | - |
-| **总计** | **317** | **~42,100** | - |
+| Rust | 181 | ~22,368 | engine/, intelligence/, foundation/wasm/ |
+| JavaScript | 39 | ~12,946 | interface/ |
+| TypeScript | 48 | ~7,634 | interface/ |
+| **总计** | **268** | **~42,948** | - |
 
 **TODO统计**:
 | 范围 | 当前数量 | 说明 |
@@ -496,7 +483,6 @@ interface/mcp-server/
 2. `foundation/wasm/src/lib.rs` - WASM HNSW
 3. `foundation/security/rate-limiter-sqlite-luxury.js` - 限流器
 4. `foundation/network/src/lib.rs` - WebSocket 服务器
-5. `foundation/compression/mod.rs` - 压缩模块
 
 **2. Engine 层（核心引擎）**:
 1. `engine/tool-system/src/mod.rs` - Tool Trait 定义
@@ -542,7 +528,7 @@ interface/mcp-server/
 | **Agent Core E2E** | `src/intelligence/agent-core/tests/agent_core_e2e.rs` |
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
-| **E2E回归** | `tests/e2e/phase1-5-regression/full_chain.test.js` |
+
 | **技术约束文档** | `docs/debt/DEBT-P0-001.md` |
 | **技术约束文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
 | **历史约束记录** | `docs/debt/agent-core-debt-history.md` |
@@ -555,9 +541,6 @@ interface/mcp-server/
 
 | 原路径 | 新路径 | 层级 |
 |:---|:---|:---:|
-| `api/` | `foundation/api/` | Foundation |
-| `compression/` | `foundation/compression/` | Foundation |
-| `db/` | `foundation/db/` | Foundation |
 | `network/` | `foundation/network/` | Foundation |
 | `wasm/` | `foundation/wasm/` | Foundation |
 | `llm-core/` | `engine/llm-core/` | Engine |
@@ -582,7 +565,7 @@ interface/mcp-server/
 | 技术约束文档 | `docs/debt/DEBT-P0-001.md` | PSK长期管理 |
 | 技术约束文档 | `docs/debt/SHELL-FEATURE-DEBT-002.md` | Shell功能限制 |
 
-| E2E回归套件 | `tests/e2e/phase1-5-regression/` | 18个月全周期测试 |
+
 
 ---
 
@@ -597,4 +580,4 @@ interface/mcp-server/
 
 ---
 
-*本索引文档与代码同步维护，最后更新于 2026-04-23*
+*本索引文档与代码同步维护，最后更新于 2026-04-26*

@@ -3,7 +3,8 @@
 > **文档版本**: v3.8.0
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
-> **当前状态**: ✅ Agent Core 55测试全部通过，0编译error，unsafe SAFETY注释100%覆盖
+> **当前状态**: ✅ Agent Core 55测试全部通过，0编译error，unsafe SAFETY注释100%覆盖  
+> **最后更新**: 2026-04-26
 
 ---
 
@@ -70,24 +71,15 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          FOUNDATION 层（地基层）                              │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────┐  │
-│  │   Storage  │ │   Network  │ │     DB     │ │  Security  │ │   Event   │  │
-│  │ (storage/) │ │(network/)  │ │   (db/)    │ │(security/) │ │ Loop      │  │
-│  │ LevelDB    │ │ WebSocket  │ │PostgreSQL  │ │限流/日志   │ │(eventloop)│  │
+│  │   Storage  │ │   Network  │ │  Security  │ │   Format   │ │   Event   │  │
+│  │ (storage/) │ │(network/)  │ │(security/) │ │ (format/)  │ │ Loop      │  │
+│  │ 16分片SQLite│ │ WebSocket  │ │限流/日志   │ │ .hctx格式  │ │(eventloop)│  │
 │  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └───────────┘  │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌───────────┐  │
-│  │   Disk     │ │  Format    │ │    WASM    │ │   Tests    │ │   Utils   │  │
-│  │  (disk/)   │ │ (format/)  │ │  (wasm/)   │ │(test/tests)│ │ (utils/)  │  │
-│  │ 磁盘管理   │ │ .hctx格式  │ │ HNSW WASM  │ │ 单元/集成  │ │ 通用工具  │  │
-│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └───────────┘  │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │
-│  │   Bench    │ │ Middleware │ │ Migration  │ │    API     │ │ Compression │  │
-│  │ (bench/)   │ │(middleware)│ │(migration/)│ │  (api/)    │ │(compression)│  │
-│  │ 性能基准   │ │ 限流中间件 │ │ 数据迁移   │ │ REST API   │ │  压缩算法   │  │
-│  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │
-│  ┌─ scripts ─┐ ┌─ hash ────┐                                                │
-│  │(scripts/) │ │  (hash/)  │                                                │
-│  │ 工具脚本   │ │ SimHash64 │                                                │
-│  └───────────┘ └───────────┘                                                │
+│  ┌────────────┐ ┌────────────┐                                               │
+│  │    WASM    │ │   Hash     │                                               │
+│  │  (wasm/)   │ │  (hash/)   │                                               │
+│  │ HNSW WASM  │ │ SimHash64  │                                               │
+│  └────────────┘ └────────────┘                                               │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,23 +92,12 @@
 
 | 目录 | 功能 | 关键技术 | 状态 |
 |:---|:---|:---|:---:|
-| `api/` | REST API 服务器 | Express.js, WebSocket | ✅ 稳定 |
-| `bench/` | 性能基准测试 | EVM检测流水线, 压力测试 | ✅ 稳定 |
-| `compression/` | 上下文压缩 | micro/auto/compact/mod (Rust) | ✅ 稳定 |
-| `db/` | 数据库连接池 | PostgreSQL | ✅ 稳定 |
-| `disk/` | 磁盘管理 | ENOSPC处理, 块缓存 | ✅ 稳定 |
 | `eventloop/` | 事件循环 | Rust异步运行时 | ✅ 稳定 |
 | `format/` | 数据格式 | .hctx 格式, BLAKE3校验 | ✅ 稳定 |
 | `hash/` | 哈希算法 | SimHash64, 指纹去重 | ✅ 稳定 |
-| `middleware/` | 中间件 | 限流, 错误处理 | ✅ 稳定 |
-| `migration/` | 数据迁移 | 版本检测, 迁移脚本 | ✅ 稳定 |
-| `network/` | 网络服务 | WebSocket服务器 (原ws_server) | ✅ PSK认证 |
-| `scripts/` | 工具脚本 | 构建, 安装, 迁移 | ✅ 安全改造 |
+| `network/` | 网络服务 | WebSocket服务器 | ✅ 稳定 |
 | `security/` | 安全组件 | 限流器, 安全审计与日志 | ✅ 稳定 |
-| `storage/` | 存储系统 | LevelDB, 16分片SQLite | ✅ 稳定 |
-| `test/` | 单元测试 | 测试工具, Mock | ✅ 稳定 |
-| `tests/` | 集成/E2E测试 | WASM, EVM测试 | ✅ 稳定 |
-| `utils/` | 通用工具 | SimHash64, Logger | ✅ 8处引用 |
+| `storage/` | 存储系统 | 16分片SQLite | ✅ 稳定 |
 | `wasm/` | WASM运行时 | HNSW向量计算 | ✅ 稳定 |
 
 ### 2. Engine 层（引擎层）
@@ -137,6 +118,7 @@
 | `agent-core/` | 自主Agent系统 | 7步循环, Swarm, 可插拔治理, LLM桥接 ⭐ | ✅ 稳定 |
 | `chimera/` | REPL引擎 | ZeroTUI, EventLoop | ✅ 稳定 |
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
+| `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
 | `integration/` | 集成模块 | 第三方适配 | ✅ 稳定 |
 | `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
@@ -312,7 +294,7 @@ src/
 | ADR-006 | Tool Trait 标准接口 (5方法) | ✅ | engine/tool-system/ |
 | ADR-007 | Git历史完整保留 (git mv) | ✅ | v2.0重构 |
 | ADR-008 | SimHash-64统一分片 | ⚠️ | foundation 8处引用 |
-| ADR-009 | 数据验证机制 (ID-261验证器) | ✅ | tools/data-validator.js |
+
 | ADR-010 | Shell参数化白名单 (消除bash -c) | ✅ | engine/tool-system/shell.rs |
 | ADR-011 | Tauri v2 桌面应用架构 | ✅ | src/interface/desktop/ |
 | ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
@@ -325,10 +307,8 @@ src/
 |:---|:---|:---|
 | 源代码索引 | `src/INDEX.md` | 详细文件索引 |
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发指南 |
-| 质量保障报告 | `audit report/8week/` | 历史质量确认 |
 | 技术文档 | `docs/debt/` | 技术约束与限制说明 |
-| E2E回归 | `tests/e2e/phase1-5-regression/` | 18个月全周期测试 |
 
 ---
 
-*本架构文档与代码同步维护，最后更新于 2026-04-23*
+*本架构文档与代码同步维护，最后更新于 2026-04-26*

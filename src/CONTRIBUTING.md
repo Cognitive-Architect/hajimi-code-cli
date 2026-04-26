@@ -3,7 +3,7 @@
 > **目标**: 帮助开发者快速理解代码结构并参与开发  
 > **适用对象**: 核心开发者、代码审查员、功能扩展者  
 > **架构版本**: v3.8.0（四层分层架构）  
-> **最后更新**: 2026-04-23
+> **最后更新**: 2026-04-26
 
 ---
 
@@ -17,8 +17,6 @@ node --version  # >= 18.x
 # Rust
 cargo --version  # >= 1.75
 
-# P0安全: WebRTC Signaling PSK（如使用P2P功能）
-export HAJIMI_SIGNALING_PSK="your-secure-psk-min-16-chars"
 ```
 
 ### 安装依赖
@@ -32,20 +30,14 @@ cargo fetch
 
 ### 运行测试
 ```bash
-# TypeScript 编译检查
-npx tsc --noEmit
-
 # Rust 编译检查（workspace）
 cargo check --workspace
-
-# 单元测试
-npm run test:unit
 
 # Agent Core单元测试
 cargo test -p intelligence-agent-core --lib  # 55 tests passed, 0 failed
 
-# E2E回归测试
-node tests/e2e/phase1-5-regression/full_chain.test.js
+# Agent Core E2E测试
+cargo test -p intelligence-agent-core
 
 # Shell安全测试 (白名单校验)
 cargo test -p engine-tool-system -- test_allow_list
@@ -73,7 +65,7 @@ foundation/     # 地基层 - 零依赖
 #### 分层目录（固定）
 | 层级 | 目录 | 模块数 | 说明 |
 |:---:|:---|:---:|:---|
-| Foundation | `foundation/*/` | 18 | 基础设施模块 |
+| Foundation | `foundation/*/` | 7 | 基础设施模块 |
 | Engine | `engine/*/` | 4 | 核心引擎模块 |
 | Intelligence | `intelligence/*/` | 8 | 智能模块 |
 | Interface | `interface/*/` | 3 | 界面模块 |
@@ -253,8 +245,7 @@ security(engine/tool-system): harden shell with allow-list ⭐
 2. `foundation/wasm/src/lib.rs` - WASM HNSW（Rust/JS 边界）
 3. `foundation/security/rate-limiter-sqlite-luxury.js` - 限流器（安全）
 4. `foundation/network/src/lib.rs` - WebSocket 服务器（网络）
-5. `foundation/compression/mod.rs` - 压缩模块（Rust）
-6. `foundation/eventloop/src/lib.rs` - 事件循环（Rust）
+5. `foundation/eventloop/src/lib.rs` - 事件循环（Rust）
 
 **2. Engine 层（核心引擎）**:
 1. `engine/tool-system/src/mod.rs` - Tool Trait（核心接口）
@@ -384,14 +375,7 @@ node tests/e2e/phase1-5-regression/full_chain.test.js
 **问题 3**: `error: no matching package named 'hajimi-core'`
 - **解决**: `hajimi-core` 已拆分，改用 `engine-tool-system` 或 `intelligence-chimera`
 
-**问题 4**: TypeScript 编译错误
-- **解决**: `npm run test:unit` 先确保基础功能正常
 
-**问题 5**: WebRTC Signaling 启动失败
-- **解决**: 确保设置 `HAJIMI_SIGNALING_PSK` 环境变量（长度>=16）
-```bash
-export HAJIMI_SIGNALING_PSK="your-secure-psk-min-16-chars"
-```
 
 **问题 6**: Shell工具执行被拒绝
 - **解决**: 检查命令是否在白名单中（见 `engine/tool-system/src/shell.rs:18-22`）
@@ -594,11 +578,11 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 
 | 指标 | 值 | 状态 |
 |:---|:---:|:---:|
-| 代码总行数 | ~56,648 | ✅ |
-| Rust文件数 | 227 | ✅ |
+| 代码总行数 | ~42,948 | ✅ |
+| Rust文件数 | 181 | ✅ |
 | src目录TODO | 10 | ✅ |
 | unsafe SAFETY覆盖率 | 100% (13/13) | ✅ |
-| E2E测试 | 6个Phase + Agent Core | ✅ |
+| E2E测试 | Agent Core | ✅ |
 | Agent Core测试 (lib) | 55 passed | ✅ |
 | Agent Core测试 (E2E) | 90 passed | ✅ |
 | Agent Core编译 | 0 warnings | ✅ |
@@ -608,7 +592,7 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 - ✅ TODO从 1,292 降至 10
 - ✅ setTimeout模拟延迟已移除
 - ✅ 硬编码返回值已移除
-- ✅ WebRTC PSK认证 完成
+
 - ✅ Shell白名单参数化 完成
 - ✅ Agent Core单元测试 完成（55测试/0failed）
 - ✅ engine-tool-system warning清零 完成
@@ -629,4 +613,4 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 
 ---
 
-*本指南与代码同步维护，最后更新于 2026-04-23*
+*本指南与代码同步维护，最后更新于 2026-04-26*
