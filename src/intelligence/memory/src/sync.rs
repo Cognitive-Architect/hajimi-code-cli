@@ -72,8 +72,8 @@ impl MemorySyncEngine {
             let to_transfer: Vec<MemoryEntry> = entries
                 .iter()
                 .filter(|e| e.layer == policy.source)
-                .cloned()
                 .take(policy.batch_size)
+                .cloned()
                 .collect();
             if to_transfer.is_empty() {
                 results.push(SyncResult::Skipped {
@@ -99,8 +99,8 @@ impl MemorySyncEngine {
             let to_transfer: Vec<MemoryEntry> = entries
                 .iter()
                 .filter(|e| e.layer == policy.target)
-                .cloned()
                 .take(policy.batch_size)
+                .cloned()
                 .collect();
             if to_transfer.is_empty() {
                 results.push(SyncResult::Skipped {

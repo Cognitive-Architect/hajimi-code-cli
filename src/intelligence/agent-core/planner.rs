@@ -1,4 +1,5 @@
 //! Hierarchical Planner: Goal → SubGoal → Task with GraphMemory integration.
+use crate::blackboard::Blackboard;
 use crate::AgentContext;
 use crate::governance::{AgentGovernance, ApprovalLevel, Decision, DefaultGovernance, GovernanceRequest};
 use async_trait::async_trait;
@@ -60,14 +61,30 @@ pub struct HierarchicalPlanner {
     llm: Option<Arc<dyn LlmClient>>, current_plan: Option<Plan>,
     #[allow(dead_code)] memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>,
     governance: Arc<dyn AgentGovernance>,
+    blackboard: Option<Arc<Blackboard>>,
 }
 
 impl HierarchicalPlanner {
     pub fn new(memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>, context: AgentContext) -> Self {
-        Self { context, llm: None, current_plan: None, memory, governance: Arc::new(DefaultGovernance::new()) }
+        Self { context, llm: None, current_plan: None, memory, governance: Arc::new(DefaultGovernance::new()), blackboard: None }
     }
     pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self { self.governance = gov; self }
     pub fn with_llm(mut self, llm: Arc<dyn LlmClient>) -> Self { self.llm = Some(llm); self }
+    pub fn with_blackboard(mut self, bb: Arc<Blackboard>) -> Self { self.blackboard = Some(bb); self }
+
+    /// Phase 4 Day 2: Create goal with optional AST context injection.
+    /// Extracts symbol candidates from description and writes them to blackboard
+    /// for MemoryRetriever to pick up during retrieval.
+    pub async fn plan_with_ast(&mut self, description: &str, priority: Priority) -> ReplResult<GoalId> {
+        let goal_id = self.create_goal(description, priority).await?;
+        if let Some(ref bb) = self.blackboard {
+            let candidates = extract_symbol_candidates(description);
+            for name in candidates {
+                bb.write(&format!("ast_query_{}", goal_id), &name, "planner").await;
+            }
+        }
+        Ok(goal_id)
+    }
     pub async fn request_approval(&self, goal: &Goal) -> ReplResult<bool> {
         let req = GovernanceRequest { requester: "planner".to_string(), action_type: "create_goal".to_string(), risk_score: goal.priority as u8 as f32 / 10.0, description: goal.description.clone(), level: ApprovalLevel::Auto };
         Ok(matches!(self.governance.approve(&self.context, &req).await?, Decision::Approved | Decision::Escalated(_)))
@@ -150,6 +167,25 @@ impl Planner for HierarchicalPlanner {
         }
         Err(ReplError::Session(format!("Plan {} not found in Graph/Session", goal_id)))
     }
+}
+
+/// Extract potential symbol names (PascalCase / camelCase / snake_case) from a goal description.
+/// Used by plan_with_ast() to inject AST query hints into the blackboard.
+fn extract_symbol_candidates(description: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let words: Vec<&str> = description.split_whitespace().collect();
+    for word in words {
+        let cleaned: String = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_').to_string();
+        if cleaned.is_empty() { continue; }
+        // Heuristic: PascalCase (starts with uppercase, contains lowercase) or camelCase (mixed case)
+        let has_upper = cleaned.chars().any(|c| c.is_uppercase());
+        let has_lower = cleaned.chars().any(|c| c.is_lowercase());
+        let is_snake = cleaned.contains('_') && cleaned.chars().all(|c| c.is_alphanumeric() || c == '_');
+        if (has_upper && has_lower) || is_snake {
+            candidates.push(cleaned);
+        }
+    }
+    candidates
 }
 
 #[cfg(test)]

@@ -13,6 +13,10 @@ serde_json = "1.0"
 thiserror = "1.0"
 async-trait = "0.1"
 futures = "0.3"
+tracing = "0.1"
+
+# Internal: tool system for real tool execution
+engine-tool-system = { path = "../tool-system" }
 
 [lib]
 name = "engine_worker"

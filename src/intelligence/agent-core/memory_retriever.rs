@@ -1,0 +1,135 @@
+//! DEBT-LINES-B0301A: Extracted from agent_loop.rs.
+//! Phase 4 Day 2: Added optional AST context injection via ASTContextProvider.
+use crate::blackboard::Blackboard;
+use crate::checkpoint::CheckpointManager;
+use chimera_repl::traits::ReplResult;
+use engine_tool_system::lsp_integration::ASTContextProvider;
+use memory::sync_gateway::MemoryTier;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+use tracing::{info, warn};
+
+const RETRIEVAL_CACHE_TTL_SECS: u64 = 30;
+const MAX_RETRIEVAL_TOKENS: usize = 4096;
+
+#[derive(Debug)]
+pub enum RetrieveOutcome {
+    CacheHit(String),
+    Retrieved { summary: String },
+    Error(String),
+}
+
+pub struct MemoryRetriever {
+    blackboard: Arc<Blackboard>,
+    sync_gateway: Option<memory::sync_gateway::SyncGatewayHandle>,
+    memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
+    cache: Arc<Mutex<HashMap<String, (String, Instant)>>>,
+    ast_provider: Option<Arc<dyn ASTContextProvider>>,
+}
+
+impl MemoryRetriever {
+    pub fn new(blackboard: Arc<Blackboard>, sync_gateway: Option<memory::sync_gateway::SyncGatewayHandle>, memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>) -> Self {
+        Self { blackboard, sync_gateway, memory, cache: Arc::new(Mutex::new(HashMap::new())), ast_provider: None }
+    }
+
+    pub fn with_ast_provider(mut self, provider: Arc<dyn ASTContextProvider>) -> Self {
+        self.ast_provider = Some(provider);
+        self
+    }
+
+    pub async fn retrieve(&self, agent_id: &str) -> RetrieveOutcome {
+        self.retrieve_with_ast(agent_id, None).await
+    }
+
+    pub async fn retrieve_with_ast(&self, agent_id: &str, ast_query: Option<&str>) -> RetrieveOutcome {
+        // Phase 4 Day 2: Optional AST-enhanced retrieval
+        if let Some(query) = ast_query {
+            if let Some(ref provider) = self.ast_provider {
+                match provider.enhance_retrieve_with_ast(query).await {
+                    Ok(ctx) => {
+                        self.blackboard.write(&format!("ast_context_{}", agent_id), &ctx, agent_id).await;
+                        info!("AST-enhanced retrieval: {}", ctx);
+                        return RetrieveOutcome::Retrieved { summary: format!("AST-enhanced: {}", ctx) };
+                    }
+                    Err(e) => {
+                        warn!("AST enhancement failed (falling back to text): {}", e);
+                    }
+                }
+            }
+        }
+
+        // Also check blackboard for ast_query set by planner
+        let bb = self.blackboard.snapshot().await;
+        let bb_ast_query = bb.get(&format!("ast_query_{}", agent_id)).map(|e| e.value.clone());
+        if let Some(query) = bb_ast_query {
+            if let Some(ref provider) = self.ast_provider {
+                match provider.enhance_retrieve_with_ast(&query).await {
+                    Ok(ctx) => {
+                        self.blackboard.write(&format!("ast_context_{}", agent_id), &ctx, agent_id).await;
+                        info!("AST-enhanced retrieval (from blackboard): {}", ctx);
+                        return RetrieveOutcome::Retrieved { summary: format!("AST-enhanced: {}", ctx) };
+                    }
+                    Err(e) => {
+                        warn!("AST enhancement from blackboard failed (falling back): {}", e);
+                    }
+                }
+            }
+        }
+
+        // Standard text-based retrieval
+        let query = format!("agent:{} keys:{:?}", agent_id, self.blackboard.snapshot().await.keys().cloned().collect::<Vec<_>>());
+        if let Some((summary, ts)) = self.cache.lock().await.get(&query) {
+            if ts.elapsed() < Duration::from_secs(RETRIEVAL_CACHE_TTL_SECS) { return RetrieveOutcome::CacheHit(summary.clone()); }
+        }
+        if let Some(ref sg) = self.sync_gateway {
+            let mut sg_guard = sg.lock().await;
+            match sg_guard.retrieve_multi(MemoryTier::fallback_order(), &query).await {
+                Ok(results) => {
+                    let total = results.iter().map(|(_, entries)| entries.len()).sum::<usize>();
+                    let mut tokens = 0usize;
+                    for (tier, entries) in &results {
+                        for entry in entries {
+                            if tokens + entry.tokens > MAX_RETRIEVAL_TOKENS { break; }
+                            self.blackboard.write(&format!("retrieved_{:?}_{}", tier, agent_id), &entry.content, agent_id).await;
+                            tokens += entry.tokens;
+                        }
+                    }
+                    let summary = format!("{} entries in {} tiers ({} tokens)", total, results.len(), tokens);
+                    self.cache.lock().await.insert(query, (summary.clone(), Instant::now()));
+                    info!("Retrieved: {}", summary);
+                    return RetrieveOutcome::Retrieved { summary };
+                }
+                Err(e) => return RetrieveOutcome::Error(e.to_string()),
+            }
+        }
+        RetrieveOutcome::Error("No sync_gateway".to_string())
+    }
+
+    pub async fn query_legacy(&self, agent_id: &str) {
+        if let Some(ref memory) = self.memory {
+            let mem = memory.lock().await;
+            if let Some(entry) = mem.session.get(&format!("ctx_{}", agent_id)) {
+                let content = format!("{:?}", entry);
+                self.blackboard.write(&format!("retrieved_legacy_{}", agent_id), &content, agent_id).await;
+                info!("Legacy query hit: {} bytes", content.len());
+            }
+        }
+    }
+
+    pub async fn store(&self, agent_id: &str, checkpoint_mgr: &CheckpointManager) -> ReplResult<()> {
+        let _ = checkpoint_mgr.save(&agent_id.to_string(), None, vec![], vec![], &self.blackboard).await?;
+        if let Some(ref sg) = self.sync_gateway {
+            let bb = self.blackboard.snapshot().await;
+            let snapshot = memory::sync_gateway::BlackboardSnapshot { entries: bb.into_iter().map(|(k, v)| (k, v.value)).collect() };
+            let mut sg_guard = sg.lock().await;
+            if let Err(e) = sg_guard.sync_with_blackboard(&snapshot).await { warn!("Blackboard sync failed: {}", e); }
+        }
+        if let Some(ref memory) = self.memory {
+            let mut mem = memory.lock().await;
+            if let Err(e) = mem.push_vector(&format!("plan_{}", agent_id), &format!("checkpoint_{}", agent_id)) { warn!("Memory persist failed: {}", e); }
+        }
+        Ok(())
+    }
+}

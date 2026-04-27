@@ -25,6 +25,9 @@ const app = {
   },
   chatContextFiles: [],
   mcpServers: [],
+  traceEvents: [],
+  tracePaused: false,
+  traceChannel: null,
   extensions: [
     { id: 'rust', name: 'Rust', desc: 'Rust 语言支持', version: '1.0.0', publisher: 'rust-lang', icon: 'R', iconColor: '#007acc', installed: true },
     { id: 'hajimi-agent', name: 'Hajimi 智能体', desc: 'AI 助手集成', version: '0.3.0', publisher: 'hajimi', icon: 'H', iconColor: '#d4a574', installed: true },
@@ -44,10 +47,14 @@ const app = {
     this.setupKeyboardShortcuts();
     this.setupStatusBar();
     this.setupTerminal();
+    this.setupTraceTabs();
+    this.setupSessionReplay();
     this.setupFileTreeToolbar();
     this.setupSearch();
     this.setupGit();
     this.setupOutputPanel();
+    this.setupAgentTrace();
+    this.setupInlineEditPanel();
     this.setupResizers();
     this.loadSettings();
     this.setupSystemThemeListener();
@@ -62,6 +69,9 @@ const app = {
     this.setupAuditLog();
     this.setupAgentProvider();
     this.setupMcpSettings();
+    this.setupGovernance();
+    this.setupSessionBrowser();
+    this.setupResourceDashboard();
     this.setupExtensions();
 
     // Open welcome tab by default
@@ -82,6 +92,13 @@ const app = {
       { id: 'chat.new', label: '对话: 新会话', key: '', action: () => this.newChatSession() },
       { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.showErrorToast('Git 提交（模拟）') },
       { id: 'providers.refresh', label: '模型: 刷新提供商列表', key: '', action: () => this.loadProviders() },
+      // Phase 4 Day 5: Agent Command Palette commands
+      { id: 'agent.refactor', label: '@agent refactor — 重构选中代码', key: '', action: () => this.runAgentCommand('@agent refactor selection') },
+      { id: 'agent.review-pr', label: '@agent review-pr — 审查 PR', key: '', action: () => this.runAgentCommand('@agent review-pr') },
+      { id: 'agent.continue', label: '@agent continue-background — 后台继续', key: '', action: () => this.runAgentCommand('@agent continue-background') },
+      { id: 'agent.pause', label: '@agent pause — 暂停 Agent', key: '', action: () => this.runAgentCommand('@agent pause') },
+      { id: 'agent.status', label: '@agent status — Agent 状态', key: '', action: () => this.runAgentCommand('@agent status') },
+      { id: 'edit.history', label: '编辑: 显示编辑历史', key: '', action: () => this.showEditHistoryTab() },
     ];
   },
 
@@ -1411,7 +1428,6 @@ const app = {
   // Output Panel
   // ============================================================
   setupOutputPanel() {
-    // Add clear button to panel header
     const panelActions = document.querySelector('.panel-actions');
     if (panelActions) {
       const clearBtn = document.createElement('button');
@@ -1421,6 +1437,83 @@ const app = {
       clearBtn.addEventListener('click', () => this.clearOutput());
       panelActions.insertBefore(clearBtn, panelActions.firstChild);
     }
+  },
+
+  setupAgentTrace() {
+    const clearBtn = document.getElementById('clearTraceBtn');
+    const pauseBtn = document.getElementById('pauseTraceBtn');
+    if (clearBtn) clearBtn.addEventListener('click', () => this.clearTraceCards());
+    if (pauseBtn) pauseBtn.addEventListener('click', () => this.toggleTracePause(pauseBtn));
+    this.startTraceSubscription();
+  },
+
+  startTraceSubscription() {
+    const tauri = window.__TAURI__;
+    if (!tauri || !tauri.core || !tauri.core.Channel) {
+      this.renderMockTraceCards();
+      return;
+    }
+    const invoke = tauri.core.invoke;
+    try {
+      const Channel = tauri.core.Channel;
+      const channel = new Channel();
+      channel.onmessage = (event) => {
+        if (!this.tracePaused) {
+          this.traceEvents.push(event);
+          if (this.traceEvents.length > 100) this.traceEvents.shift();
+          if (this.sidebarView === 'agent-trace') this.renderTraceCards();
+          if (event.step_type === 'EditProposed') this.onEditProposed(event);
+        }
+      };
+      invoke('subscribe_agent_trace', { onEvent: channel }).catch(() => {});
+    } catch (e) {
+      this.renderMockTraceCards();
+    }
+  },
+
+  renderTraceCards() {
+    const panel = document.getElementById('tracePanel');
+    if (!panel) return;
+    if (this.traceEvents.length === 0) {
+      panel.innerHTML = '<div class="trace-empty" style="color:var(--vscode-text-muted);text-align:center;padding:20px;">暂无思考过程</div>';
+      return;
+    }
+    const colors = { Observe: '#4ec9b0', Retrieve: '#9cdcfe', Plan: '#ce9178', Act: '#b5cea8', Reflect: '#c586c0', Store: '#dcdcaa', Decide: '#569cd6', Other: '#808080' };
+    panel.innerHTML = this.traceEvents.slice().reverse().map(ev => {
+      const color = colors[ev.step_type] || colors.Other;
+      const confidence = ev.confidence_score != null ? `<span style="color:#ce9178">(${ev.confidence_score.toFixed(2)})</span>` : '';
+      const plan = ev.plan_summary ? `<div style="margin-top:4px;color:var(--vscode-text-muted);font-size:11px;white-space:pre-wrap;">${ev.plan_summary.substring(0, 200)}</div>` : '';
+      return `<div class="trace-card" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--vscode-list-hoverBackground);border-radius:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:bold;color:${color};font-size:11px;">${ev.step} ${confidence}</span>
+          <span style="color:var(--vscode-text-muted);font-size:10px;">#${ev.iteration}</span>
+        </div>
+        <div style="color:var(--vscode-foreground);margin-top:2px;font-size:12px;">${ev.details}</div>
+        ${plan}
+      </div>`;
+    }).join('');
+  },
+
+  renderMockTraceCards() {
+    this.traceEvents = [
+      { step: 'Planning', details: 'Planning initial goal: 分析代码结构', iteration: 0, timestamp: new Date().toISOString(), step_type: 'Plan', plan_summary: null, reflection_key_points: [], confidence_score: 0.85 },
+      { step: 'Observing', details: 'Observed 12 blackboard keys', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Observe', plan_summary: null, reflection_key_points: [], confidence_score: null },
+      { step: 'Retrieving', details: 'Retrieved 3 entries in 2 tiers (120 tokens)', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Retrieve', plan_summary: null, reflection_key_points: [], confidence_score: null },
+      { step: 'Acting', details: 'Task t1 completed: success=true', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Act', plan_summary: '执行工具调用', reflection_key_points: [], confidence_score: 0.92 },
+    ];
+    this.renderTraceCards();
+  },
+
+  clearTraceCards() {
+    this.traceEvents = [];
+    this.renderTraceCards();
+  },
+
+  toggleTracePause(btn) {
+    this.tracePaused = !this.tracePaused;
+    btn.innerHTML = this.tracePaused
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
   },
 
   addOutput(text, type = 'info') {
@@ -2956,6 +3049,125 @@ const app = {
     }
   },
 
+  setupGovernance() {
+    const pauseBtn = document.getElementById('pauseLoopBtn');
+    const resumeBtn = document.getElementById('resumeLoopBtn');
+    const levelSelect = document.getElementById('approvalLevelSelect');
+    const injectBtn = document.getElementById('injectMemoryBtn');
+    const updateBtn = document.getElementById('updatePlanBtn');
+    if (pauseBtn) pauseBtn.addEventListener('click', () => this.invokeGovernance('pause_loop'));
+    if (resumeBtn) resumeBtn.addEventListener('click', () => this.invokeGovernance('resume_loop'));
+    if (levelSelect) levelSelect.addEventListener('change', (e) => this.invokeGovernance('set_approval_level', { level: e.target.value }));
+    if (injectBtn) injectBtn.addEventListener('click', () => {
+      const key = document.getElementById('injectMemoryKey').value.trim();
+      const value = document.getElementById('injectMemoryValue').value.trim();
+      if (!key || !value) { this.showErrorToast('请输入 key 和 value'); return; }
+      this.invokeGovernance('inject_memory', { key, value });
+    });
+    if (updateBtn) updateBtn.addEventListener('click', () => {
+      const plan = document.getElementById('updatePlanInput').value.trim();
+      if (!plan) { this.showErrorToast('请输入 plan 描述'); return; }
+      this.invokeGovernance('update_plan', { plan });
+    });
+  },
+
+  async invokeGovernance(cmd, args = {}) {
+    const tauri = window.__TAURI__;
+    if (!tauri) { this.showErrorToast('Desktop 未连接'); return; }
+    try {
+      await tauri.core.invoke(cmd, args);
+      this.showToast('操作成功');
+    } catch (e) {
+      this.showErrorToast(`操作失败: ${e}`);
+    }
+  },
+
+  setupSessionBrowser() {
+    const refreshBtn = document.getElementById('refreshCheckpointsBtn');
+    const exportAllBtn = document.getElementById('exportAllBtn');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => this.loadCheckpoints());
+    if (exportAllBtn) exportAllBtn.addEventListener('click', () => this.exportAllCheckpoints());
+    this.loadCheckpoints();
+  },
+
+  async loadCheckpoints() {
+    const list = document.getElementById('checkpointList');
+    if (!list) return;
+    const tauri = window.__TAURI__;
+    if (!tauri) { list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
+    try {
+      const checkpoints = await tauri.core.invoke('list_checkpoints');
+      if (!checkpoints || checkpoints.length === 0) {
+        list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">暂无检查点</div>';
+        return;
+      }
+      list.innerHTML = checkpoints.map((chk, idx) => `
+        <div style="border-bottom:1px solid var(--vscode-panel-border);padding:6px 0;">
+          <div style="display:flex;justify-content:space-between;">
+            <span style="font-weight:bold;">${chk.id || 'chk_' + idx}</span>
+            <span style="color:var(--vscode-text-muted);">${chk.timestamp || ''}</span>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:4px;">
+            <button class="modal-btn secondary" style="font-size:11px;padding:2px 6px;" onclick="app.restoreCheckpoint('${chk.id}')">恢复</button>
+            <button class="modal-btn secondary" style="font-size:11px;padding:2px 6px;" onclick="app.exportCheckpoint('${chk.id}')">导出</button>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">加载失败</div>';
+    }
+  },
+
+  async restoreCheckpoint(id) {
+    if (!confirm('确定要恢复此检查点吗？')) return;
+    const tauri = window.__TAURI__;
+    if (!tauri) return;
+    try { await tauri.core.invoke('restore_checkpoint', { id }); this.showToast('恢复成功'); }
+    catch (e) { this.showErrorToast(`恢复失败: ${e}`); }
+  },
+
+  async exportCheckpoint(id) {
+    const tauri = window.__TAURI__;
+    if (!tauri) return;
+    try {
+      const json = await tauri.core.invoke('export_checkpoint', { id });
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `checkpoint_${id}.json`; a.click(); URL.revokeObjectURL(url);
+    } catch (e) { this.showErrorToast(`导出失败: ${e}`); }
+  },
+
+  async exportAllCheckpoints() {
+    const tauri = window.__TAURI__;
+    if (!tauri) return;
+    try {
+      const json = await tauri.core.invoke('export_checkpoint', { id: 'all' });
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'checkpoints_all.json'; a.click(); URL.revokeObjectURL(url);
+    } catch (e) { this.showErrorToast(`导出失败: ${e}`); }
+  },
+
+  setupResourceDashboard() {
+    this.updateMetrics();
+    this.metricsInterval = setInterval(() => this.updateMetrics(), 3000);
+  },
+
+  async updateMetrics() {
+    const tauri = window.__TAURI__;
+    if (!tauri) {
+      document.getElementById('metricIteration').textContent = 'N/A';
+      return;
+    }
+    try {
+      const m = await tauri.core.invoke('get_resource_metrics');
+      document.getElementById('metricIteration').textContent = m.iteration_count != null ? m.iteration_count : 'N/A';
+      document.getElementById('metricBlackboard').textContent = m.blackboard_size != null ? m.blackboard_size : 'N/A';
+      document.getElementById('metricFailureRate').textContent = m.failure_rate_percent != null ? m.failure_rate_percent.toFixed(1) + '%' : 'N/A';
+      document.getElementById('metricLatency').textContent = m.callback_latency_ms != null ? m.callback_latency_ms + 'ms' : 'N/A';
+    } catch (e) {}
+  },
+
   showErrorToast(message) {
     let toast = document.getElementById('errorToast');
     if (!toast) {
@@ -3119,7 +3331,252 @@ const app = {
     const tab = this.tabs.find(t => t.id === this.activeTab);
     document.getElementById('statusLang').textContent = tab ? (tab.lang || '纯文本').toUpperCase() : '';
     document.getElementById('statusCursor').textContent = tab ? '行 1, 列 1' : '';
-  }
+  },
+
+  // ============================================================
+  // Phase 4 Day 3: Inline Edit Panel
+  // ============================================================
+  setupInlineEditPanel() {
+    document.getElementById('acceptAllEditsBtn')?.addEventListener('click', () => this.acceptAllEdits());
+    document.getElementById('rejectAllEditsBtn')?.addEventListener('click', () => this.rejectAllEdits());
+    document.getElementById('closeEditPanelBtn')?.addEventListener('click', () => this.hideEditPanel());
+    this.currentEditPayload = null;
+  },
+
+  onEditProposed(event) {
+    if (!event.edit_payload) return;
+    try {
+      const edit = JSON.parse(event.edit_payload);
+      this.currentEditPayload = edit;
+      this.showEditPanel(edit);
+    } catch (e) {
+      console.error('Failed to parse edit payload:', e);
+    }
+  },
+
+  showEditPanel(edit) {
+    const panel = document.getElementById('inlineEditPanel');
+    const summary = document.getElementById('inlineEditSummary');
+    const hunksContainer = document.getElementById('inlineEditHunks');
+    if (!panel || !summary || !hunksContainer) return;
+    summary.textContent = edit.summary || 'Agent 建议的修改';
+    hunksContainer.innerHTML = '';
+    const hunks = edit.hunks || [];
+    // If hunks is a number (from emit_edit_trace), skip rendering per-hunk diff
+    if (typeof hunks === 'number') {
+      hunksContainer.innerHTML = `<div style="padding:8px;color:var(--vscode-text-muted);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`;
+    } else {
+      hunks.forEach((hunk, i) => {
+        const hunkEl = document.createElement('div');
+        hunkEl.className = 'edit-hunk';
+        const filePath = hunk.file_path || 'unknown';
+        const startLine = hunk.start_line || 0;
+        const oldLines = Array.isArray(hunk.old_lines) ? hunk.old_lines : [];
+        const newLines = Array.isArray(hunk.new_lines) ? hunk.new_lines : [];
+        hunkEl.innerHTML = `
+          <div class="edit-hunk-header">
+            <span class="edit-hunk-file">${this.escapeHtml(filePath)}:${startLine}</span>
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" class="hunk-select" data-index="${i}" checked> Accept
+            </label>
+          </div>
+          <div class="edit-hunk-diff">
+            ${oldLines.map(l => `<div class="diff-del">-${this.escapeHtml(l)}</div>`).join('')}
+            ${newLines.map(l => `<div class="diff-add">+${this.escapeHtml(l)}</div>`).join('')}
+          </div>
+        `;
+        hunksContainer.appendChild(hunkEl);
+      });
+    }
+    panel.style.display = 'flex';
+  },
+
+  hideEditPanel() {
+    const panel = document.getElementById('inlineEditPanel');
+    if (panel) panel.style.display = 'none';
+    this.currentEditPayload = null;
+  },
+
+  async acceptAllEdits() {
+    const tauri = window.__TAURI__;
+    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
+    const invoke = tauri.core?.invoke || tauri.invoke;
+    const checked = document.querySelectorAll('.hunk-select:checked');
+    if (!checked.length || !this.currentEditPayload || typeof this.currentEditPayload.hunks === 'number') {
+      this.hideEditPanel();
+      return;
+    }
+    const edits = Array.from(checked).map(cb => {
+      const idx = parseInt(cb.dataset.index);
+      const hunk = this.currentEditPayload.hunks[idx];
+      return {
+        path: hunk.file_path,
+        old_string: (hunk.old_lines || []).join('\n'),
+        new_string: (hunk.new_lines || []).join('\n'),
+      };
+    });
+    try {
+      await invoke('apply_edits', { edits });
+      this.showErrorToast('修改已应用');
+      this.hideEditPanel();
+      // Refresh open file if affected
+      if (this.activeTab && this.activeTab !== 'welcome') {
+        this.openFile(this.activeTab);
+      }
+    } catch (e) {
+      this.showErrorToast('应用失败: ' + (e.message || e));
+    }
+  },
+
+  rejectAllEdits() {
+    this.hideEditPanel();
+  },
+
+  // ============================================================
+  // Phase 4 Day 5: Command Palette & Advanced Observability
+  // ============================================================
+  setupTraceTabs() {
+    document.querySelectorAll('.trace-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.trace-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const name = tab.dataset.tab;
+        document.getElementById('tracePanel').style.display = name === 'trace' ? 'block' : 'none';
+        document.getElementById('editHistoryPanel').style.display = name === 'edit-history' ? 'block' : 'none';
+        if (name === 'edit-history') this.loadEditHistory();
+      });
+    });
+  },
+
+  setupSessionReplay() {
+    document.getElementById('replayPrevBtn')?.addEventListener('click', () => this.replayStep(-1));
+    document.getElementById('replayNextBtn')?.addEventListener('click', () => this.replayStep(1));
+    document.getElementById('replayCloseBtn')?.addEventListener('click', () => this.closeSessionReplay());
+    this.replayIndex = -1;
+    this.replayEvents = [];
+  },
+
+  async runAgentCommand(cmd) {
+    const tauri = window.__TAURI__;
+    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
+    try {
+      const result = await tauri.core.invoke('run_agent_command', { cmd });
+      this.showErrorToast(result);
+    } catch (e) {
+      this.showErrorToast('命令失败: ' + (e.message || e));
+    }
+  },
+
+  showEditHistoryTab() {
+    this.showSidebar('agent-trace');
+    const tab = document.querySelector('.trace-tab[data-tab="edit-history"]');
+    if (tab) tab.click();
+  },
+
+  async loadEditHistory() {
+    const panel = document.getElementById('editHistoryPanel');
+    if (!panel) return;
+    const tauri = window.__TAURI__;
+    if (!tauri) {
+      panel.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:20px;">Tauri 不可用</div>';
+      return;
+    }
+    try {
+      const entries = await tauri.core.invoke('get_edit_history');
+      this.renderEditHistory(entries);
+    } catch (e) {
+      panel.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:20px;">加载失败</div>';
+    }
+  },
+
+  renderEditHistory(entries) {
+    const panel = document.getElementById('editHistoryPanel');
+    if (!panel) return;
+    if (!entries || entries.length === 0) {
+      panel.innerHTML = '<div class="edit-history-empty" style="color:var(--vscode-text-muted);text-align:center;padding:20px;">暂无编辑历史</div>';
+      return;
+    }
+    const colors = { EditProposed: '#ce9178', EditApplied: '#4ec9b0', EditRejected: '#f44336' };
+    panel.innerHTML = entries.slice().reverse().map((e, i) => {
+      const color = colors[e.step_type] || '#808080';
+      const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+      return `<div class="edit-history-item" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--vscode-list-hoverBackground);border-radius:4px;cursor:pointer;" data-index="${entries.length - 1 - i}">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:bold;font-size:11px;color:${color};">${e.step_type}</span>
+          <span style="font-size:10px;color:var(--vscode-text-muted);">${time}</span>
+        </div>
+        <div style="font-size:11px;color:var(--vscode-text-secondary);margin-top:2px;">${this.escapeHtml(e.summary || '').substring(0, 120)}</div>
+        ${e.confidence != null ? `<div style="font-size:10px;color:var(--vscode-text-muted);margin-top:2px;">confidence: ${e.confidence.toFixed(2)}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    panel.querySelectorAll('.edit-history-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.index);
+        this.startSessionReplay(entries, idx);
+      });
+    });
+  },
+
+  startSessionReplay(entries, startIndex) {
+    this.replayEvents = entries;
+    this.replayIndex = startIndex;
+    const bar = document.getElementById('sessionReplayBar');
+    if (bar) bar.style.display = 'flex';
+    this.updateReplayStatus();
+    // Switch to trace tab for replay context
+    const traceTab = document.querySelector('.trace-tab[data-tab="trace"]');
+    if (traceTab) traceTab.click();
+  },
+
+  replayStep(dir) {
+    const newIdx = this.replayIndex + dir;
+    if (newIdx < 0 || newIdx >= this.replayEvents.length) return;
+    this.replayIndex = newIdx;
+    this.updateReplayStatus();
+    const ev = this.replayEvents[this.replayIndex];
+    if (ev) {
+      const panel = document.getElementById('tracePanel');
+      if (panel) {
+        const entry = document.createElement('div');
+        entry.style.cssText = 'padding:4px 8px;margin:4px 0;background:var(--vscode-list-hoverBackground);border-radius:4px;font-size:11px;border-left:3px solid #ce9178;';
+        entry.innerHTML = `<strong>Replay [${this.replayIndex + 1}/${this.replayEvents.length}]</strong> ${this.escapeHtml(ev.step_type)}: ${this.escapeHtml(ev.summary || '').substring(0, 100)}`;
+        panel.insertBefore(entry, panel.firstChild);
+      }
+    }
+  },
+
+  closeSessionReplay() {
+    this.replayIndex = -1;
+    this.replayEvents = [];
+    const bar = document.getElementById('sessionReplayBar');
+    if (bar) bar.style.display = 'none';
+  },
+
+  updateReplayStatus() {
+    const el = document.getElementById('replayStatus');
+    if (el) el.textContent = `${this.replayIndex + 1} / ${this.replayEvents.length}`;
+  },
+
+  async updateMetrics() {
+    const tauri = window.__TAURI__;
+    if (!tauri) {
+      document.getElementById('metricIteration').textContent = 'N/A';
+      return;
+    }
+    try {
+      const m = await tauri.core.invoke('get_resource_metrics');
+      document.getElementById('metricIteration').textContent = m.iteration_count != null ? m.iteration_count : 'N/A';
+      document.getElementById('metricBlackboard').textContent = m.blackboard_size != null ? m.blackboard_size : 'N/A';
+      document.getElementById('metricFailureRate').textContent = m.failure_rate_percent != null ? m.failure_rate_percent.toFixed(1) + '%' : 'N/A';
+      document.getElementById('metricLatency').textContent = m.callback_latency_ms != null ? m.callback_latency_ms + 'ms' : 'N/A';
+      // Phase 4 Day 5: Edit metrics
+      const editCount = document.getElementById('metricEditCount');
+      if (editCount) editCount.textContent = m.edit_count != null ? m.edit_count : '0';
+      const appliedCount = document.getElementById('metricAppliedCount');
+      if (appliedCount) appliedCount.textContent = m.applied_count != null ? m.applied_count : '0';
+    } catch (e) {}
+  },
 };
 
 // Initialize

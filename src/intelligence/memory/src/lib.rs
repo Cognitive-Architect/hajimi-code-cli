@@ -5,6 +5,7 @@ pub mod dream;
 pub mod scheduler;
 pub mod sync;
 pub mod sync_wrapper;
+pub mod sync_gateway;
 // DEBT-HNSW-W34: HNSW模块临时禁用，Week 34重构
 // pub mod hnsw;
 pub mod cloud;
@@ -25,6 +26,10 @@ pub use auto::{AutoMemory, AutoEntry, AutoError};
 pub use session::{SessionMemory, SessionEntry, SessionError};
 pub use dream::{DreamMemory, DreamEntry, DreamError};
 pub use scheduler::{MemoryScheduler, SchedulerError};
+pub use sync_gateway::{
+    BlackboardSnapshot, GatewayEvent, MemoryTier, SyncGatewayError,
+    SyncMemoryGateway, TierHealth,
+};
 // pub use hnsw::{HnswIndex, Node, Neighbor, HnswError, EMBEDDING_DIM, M, EF_CONSTRUCTION};
 pub use graph::{GraphMemory, KnowledgeGraph, Entity, Node, Edge, extract_entities, NerError, GraphError};
 pub use graph_query::{KnowledgeGraph as QueryGraph, Path, GraphError as QueryGraphError, bfs_traverse, dfs_traverse, find_paths, MemoryGateway};

@@ -44,6 +44,9 @@ impl EpisodicMemory {
     /// Get episode count.
     pub fn len(&self) -> usize { self.episodes.lock().unwrap().len() }
 
+    /// Check if no episodes exist.
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
+
     /// Export all for checkpoint.
     pub fn export_all(&self) -> Vec<Episode> { self.episodes.lock().unwrap().iter().cloned().collect() }
 

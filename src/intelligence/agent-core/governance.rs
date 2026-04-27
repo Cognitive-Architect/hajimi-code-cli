@@ -85,6 +85,10 @@ pub trait AgentGovernance: Send + Sync {
     async fn escalate(&self, req: &GovernanceRequest, to_level: ApprovalLevel) -> ReplResult<GovernanceRequest>;
     async fn register_policy(&mut self, name: &str, policy: Arc<dyn GovernancePolicy>, caller: &str, required_level: PermissionLevel) -> ReplResult<()>;
     async fn record_feedback(&self, ctx: &AgentContext, feedback: &UserFeedback) -> ReplResult<()>;
+    async fn set_approval_level(&mut self, _level: ApprovalLevel) -> ReplResult<()> {
+        Err(ReplError::Session("set_approval_level not implemented".to_string()))
+    }
+    async fn current_approval_level(&self) -> ApprovalLevel { ApprovalLevel::Auto }
 }
 
 /// User-defined governance policy extension point.
@@ -112,6 +116,12 @@ impl DefaultGovernance {
         match required { PermissionLevel::User => !caller.is_empty(), PermissionLevel::Admin => caller.starts_with("admin_") || caller == "system", PermissionLevel::System => caller == "system" }
     }
     pub fn with_default_level(mut self, level: ApprovalLevel) -> Self { self.default_level = level; self }
+    pub async fn set_approval_level(&mut self, level: ApprovalLevel) -> ReplResult<()> {
+        self.default_level = level;
+        info!("Approval level changed to {:?}", level);
+        Ok(())
+    }
+    pub fn current_approval_level(&self) -> ApprovalLevel { self.default_level }
     fn audit_override(&self, req: &GovernanceRequest) { warn!("OVERRIDE AUDIT: {} by {} - {}", req.action_type, req.requester, req.description); }
 }
 
@@ -187,6 +197,14 @@ impl AgentGovernance for DefaultGovernance {
         info!("Feedback recorded: {} for query '{}'", feedback.choice, feedback.query);
         Ok(())
     }
+
+    async fn set_approval_level(&mut self, level: ApprovalLevel) -> ReplResult<()> {
+        self.set_approval_level(level).await
+    }
+
+    async fn current_approval_level(&self) -> ApprovalLevel {
+        self.current_approval_level()
+    }
 }
 
 impl Clone for DefaultGovernance {
@@ -204,7 +222,7 @@ pub struct FeedbackPolicy;
 
 #[async_trait]
 impl GovernancePolicy for FeedbackPolicy {
-    async fn evaluate(&self, ctx: &AgentContext, req: &GovernanceRequest) -> Option<Decision> {
+    async fn evaluate(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> Option<Decision> {
         None // Placeholder: actual evaluation uses feedback_history from DefaultGovernance
     }
 }

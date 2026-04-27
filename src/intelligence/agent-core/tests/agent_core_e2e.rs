@@ -209,7 +209,9 @@ fn test_memory() -> Arc<Mutex<MemoryGateway>> { Arc::new(Mutex::new(MemoryGatewa
     let cfg = AgentConfig::supervisor("recovery");
     let wid = sv.spawn_worker(AgentRole::Executor, cfg).await.unwrap();
     sv.handle_worker_crash(&wid).await;
-    let new_wid = sv.restart_worker(&wid).await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // handle_worker_crash now auto-restarts (<=3 times); verify a new worker exists
+    let new_wid = sv.find_idle_worker().await.expect("Worker should be restarted after crash");
     assert_ne!(wid, new_wid);
 }
 

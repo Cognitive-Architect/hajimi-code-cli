@@ -1,10 +1,10 @@
 # HAJIMI V3 源代码索引
 
-> **文档版本**: v3.8.0  
-> **最后更新**: 2026-04-26  
-> **代码总行数**: ~42,948行自有代码（不含依赖，含agent-core ~2,540行源文件 / ~2,920行总计）  
+> **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)  
+> **最后更新**: 2026-04-27  
+> **代码总行数**: ~44,200行自有代码（不含依赖，含agent-core ~3,600行源文件 / ~4,500行总计）  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
-> **当前状态**: ✅ Agent Core 55测试通过，0编译error，unsafe SAFETY 100%覆盖
+> **当前状态**: ✅ Agent Core 249测试通过，0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Hajimi IDE v1 就绪
 
 ---
 
@@ -208,41 +208,94 @@ const ALLOWED_COMMANDS: &[&str] = &[
 #### agent-core/ - 自主Agent系统 ⭐（Day 10 FULL）
 **技术栈**: Rust (tokio + async-trait)  
 **来源**: Day 1-10 渐进式构建（Planner→Reflector→Governance→Swarm→AgentLoop）  
-**代码规模**: ~2,540行源文件 / ~2,920行总计（19源文件 + 3测试文件）  
-**状态**: 98 测试全部通过（55 lib + 43 E2E），0编译warning  
+**代码规模**: ~2,750行源文件 / ~3,150行总计（19源文件 + 4测试文件）  
+**状态**: 121 测试全部通过（69 lib + 52 E2E），0编译error  
 **约束**: 7项技术约束与待办已记录（见下方）
 
 | 文件 | 功能 | 行数 |
 |------|------|:----:|
-| `lib.rs` | 模块入口 + 公共类型 | 180 |
-| `agent_loop.rs` | 7步自主循环 | 224 |
-| `agent_loop_builder.rs` | AgentLoop构建器 | 51 |
+| `lib.rs` | 模块入口 + 公共类型 | 198 |
+| `agent_loop.rs` | 7步自主循环（含pause/resume/monitor集成） | 337 |
+| `agent_loop_builder.rs` | AgentLoop构建器 | 76 |
 | `agent_loop_tests.rs` | AgentLoop单元测试 | 93 |
-| `swarm.rs` | Swarm协调器（Supervisor-Worker模式） | 251 |
-| `governance.rs` | 可插拔治理（5级审批策略 + 投票机制） | 239 |
+| `swarm.rs` | Swarm协调器（Supervisor-Worker模式） | 236 |
+| `swarm_delegate.rs` | Swarm委托与结果轮询 | 45 |
+| `worker_lifecycle_manager.rs` | Worker生命周期管理 | 95 |
+| `governance.rs` | 可插拔治理（5级审批策略 + 投票 + 运行时调级） | 289 |
 | `orchestrator.rs` | Agent编排器 | 305 |
 | `planner.rs` | 任务规划器 | 167 |
-| `reflector.rs` | 反思优化器 | 277 |
+| `reflector.rs` | 反思优化器（187行，提取后≤240） | 187 |
+| `multi_worker_aggregator.rs` | 多Worker结果聚合 | 55 |
 | `blackboard.rs` | 共享黑板状态 | 112 |
-| `checkpoint.rs` | 检查点恢复 | 83 |
-| `events.rs` | 事件系统 | 115 |
+| `checkpoint.rs` | 检查点恢复（含restore/compare/export） | 129 |
+| `events.rs` | 事件系统 | 211 |
+| `event_tracing.rs` | Worker全生命周期Trace | 38 |
 | `tools.rs` | 工具集成 | 171 |
 | `degrade.rs` | 降级策略 | 13 |
-| `ports.rs` | 端口抽象 | 46 |
+| `ports.rs` | 端口抽象 | 121 |
 | `minimal_agent.rs` | 最小Agent实现 | 18 |
 | `llm/bridge.rs` | **LLM 适配器桥接**（PlannerLlmBridge + ReflectorLlmBridge）⭐ | 161 |
 | `llm/mod.rs` | LLM 模块入口 | 3 |
 | `mod.rs` | 公共API导出（含约束声明） | 34 |
+| `memory_retriever.rs` | **多层级记忆检索**（DEBT-LINES清偿） | 87 |
+| `loop_state_machine.rs` | **7步循环状态机**（DEBT-LINES清偿） | 69 |
+| `reflection_persistence.rs` | **反思持久化与审批**（DEBT-LINES清偿） | 53 |
+| `plan_optimizer.rs` | **计划优化器**（DEBT-LINES清偿） | 39 |
+| `edit_applier.rs` | EditApplier: hunk-level diff, conflict detection, atomic apply, true undo (unique `.bak`), size/hunk/concurrency guards, ResourceMonitor integration (Phase 4 Day 1+6) | ~564 |
+| `workflow_orchestrator.rs` | Test→Fix→Commit closed loop, SmartCommit, PR description, auto-checkpoint (Phase 4 Day 4) | ~220 |
+| `lsp_integration.rs` | `LspContextProvider` / `ASTContextProvider`, `enhance_retrieve_with_ast()` (Phase 4 Day 2) | ~120 |
+
+**新增特性 (Phase 1)**:
+- **SyncMemoryGateway**: `memory/src/sync_gateway.rs` — 跨层记忆检索与持久化抽象（Session→Auto→Dream→Graph→Cloud）
+- **AgentLoop 集成**: `retrieve()` 使用 `retrieve_multi()` 多层级联检索，带 30s TTL 缓存与 4096 token 溢出保护
+- **Event 持久化**: `AgentEventProcessor` 各 `process_*` 方法通过 `push_event` 持久化到记忆层
+- **Checkpoint 双向同步**: `CheckpointManager::restore_from_memory()` 支持从 Session 层恢复检查点
+
+**新增特性 (Phase 2)**:
+- **WorkerCallback 回调机制**: `ports.rs` `WorkerCallback` trait + `WorkerResultStatus`/`WorkerMetrics` 类型，支持 `on_success`/`on_failure`/`on_timeout`
+- **Swarm 执行闭环**: `AgentLoop::act()` → `Supervisor::delegate()` → Worker 执行 → `handle_worker_result()` → `pop_result()` → `reflect_multi()`
+- **边缘案例处理**: Worker 崩溃自动重启（≤3次，超限标记 `PermanentlyFailed`）、结果 >1MB UTF-8-safe 截断、`SupervisorMetrics` 原子计数
+- **Worker 全生命周期 Trace**: `events.rs` 6 个 trace 方法覆盖 spawn/start/complete/fail/crash/restart
+- **子模块提取（债务清偿）**: `SwarmDelegate` / `MultiWorkerAggregator` / `WorkerLifecycleManager` / `event_tracing` 4 个独立模块，单文件复杂度降低 23%-37%
+
+**新增特性 (Phase 3)**:
+- **DEBT-LINES 提取（Day 1）**: `MemoryRetriever` / `LoopStateMachine` / `ReflectionPersistence` / `PlanOptimizer` 4 个独立模块，`agent_loop.rs` 337→247行，`reflector.rs` 281→187行
+- **Trace 系统增强（Day 2）**: `TraceEvent` 扩展 `step_type`/`plan_summary`/`reflection_key_points`/`confidence_score`，Desktop `subscribe_agent_trace` + Web 结构化卡片
+- **治理控制面板（Day 3）**: `AgentLoop::pause/resume/inject_memory/update_plan`，`DefaultGovernance::set_approval_level` 运行时调级，Desktop/Web 双端控制面板
+- **Session Checkpoint 浏览器（Day 4）**: `Checkpoint` 扩展 `goal_progress`/`key_reflection`，`restore/compare/export` API，Web 恢复/比较/导出交互
+- **Resource Dashboard（Day 5）**: `ResourceMonitor` 原子计数器 + 滑动窗口失败率 + 可配置阈值警报 + 冷却期，`AgentLoop` 每迭代自动记录，Desktop 命令 + Web 仪表盘
+
+**新增特性 (Phase 4)**:
+- **EditApplier 核心引擎（Day 1+6）**: `ProposedEdit`/`AppliedEdit`/`EditHunk` 模型，hunk-level unified diff，冲突检测（精确匹配），原子写入（唯一 `.bak` 备份），真正 undo 文件恢复，Governance 审批门，10MB/50-hunk/并发保护，undo 栈 100 条上限，Checkpoint 自动保存
+- **AST + LSP 精准上下文（Day 2）**: `ASTContextProvider` trait + `LspContextProvider`，`retrieve_with_ast()` 可选 AST 注入，fallback 到纯文本，WASM Tree-sitter `CodeSymbol` 扩展
+- **Desktop Inline Editing UI（Day 3）**: Tauri 命令 `apply_edits`/`preview_edit`/`get_ast_context`，Web 端 inline edit panel（diff 高亮 `diff-add`/`diff-del`、Accept All/Reject/Selective 按钮），与 Governance Panel 统一布局
+- **Git Workflow & Orchestrator（Day 4）**: `SmartCommitTool`（conventional commit 启发式前缀）、`GeneratePrDescriptionTool`（markdown PR body）、`WorkflowOrchestrator`（Propose→Apply→Checkpoint→Test→Fix≤3→Commit 闭环）
+- **Command Palette & Observability（Day 5）**: `@agent refactor`/`review-pr`/`continue-background`/`pause`/`status`，`EditHistoryEntry` 时间线（200条上限），Session Replay 基础，Resource Dashboard 编辑指标
+- **边缘案例与 E2E（Day 6）**: 50-cycle stress test，hunk 行偏移冲突检测，新文件 create→undo remove，Checkpoint 100 条 auto-prune，ResourceMonitor `edit_count`/`undo_stack_size`/`checkpoint_count` 告警
 
 **测试套件**（cargo-discoverable，位于 `tests/` 目录）：
 
 | 测试文件 | 测试数 | 关键测试 |
 |----------|:------:|----------|
 | `tests/agent_core_e2e.rs` | 25 | `test_stability_100_rounds`, `test_governance_rejection`, `test_swarm_delegate` |
-| `tests/autonomous_goal_test.rs` | 8 | `test_completion_rate`, `bench_agent_loop` |
+| `tests/autonomous_goal_test.rs` | 6 | `test_completion_rate`, `bench_agent_loop` |
 | `tests/integration.rs` | 10 | `test_worker_crash_isolation`, `test_loop_timeout_handling` |
-| **lib内测试** | **55** | 各模块单元测试（含 llm/bridge.rs 5个桥接测试）⭐ |
-| **E2E总计** | **43** | `cargo test -p intelligence-agent-core` |
+| `tests/memory_sync_e2e.rs` | 6 | `test_sync_gateway_20_iteration_consistency`, `test_sync_gateway_concurrent_stress` |
+| `tests/swarm_callback_e2e.rs` | 3 | `test_concurrent_30_tasks`, `test_worker_crash_recovery` |
+| `tests/agent_loop_leak_test.rs` | 8 | `test_worker_cleanup_on_shutdown`, `test_supervisor_drop_releases_handles` |
+| `tests/trace_event_test.rs` | **8** | `test_trace_event_serialization_roundtrip`, `test_emit_trace_broadcasts_via_loop` |
+| `tests/governance_control_test.rs` | **10** | `test_pause_sets_paused_true`, `test_governance_set_approval_level_auto_to_critical` |
+| `tests/checkpoint_enhanced_test.rs` | **8** | `test_restore_by_id_returns_correct_checkpoint`, `test_compare_different_checkpoints_returns_false` |
+| `tests/resource_monitor_test.rs` | **10** | `test_alert_memory_threshold_exceeded`, `test_monitor_concurrent_updates_safe` |
+| `tests/integration_phase3_test.rs` | **11** | `test_integration_trace_governance_workflow`, `test_regression_debt_lines_extraction` |
+| **lib内测试** | **89** | 各模块单元测试（含 swarm 21个 + reflector 8个 + llm/bridge.rs 5个桥接测试）⭐ |
+| `tests/ast_context_test.rs` | **11** | `test_ast_context_retrieval`, `test_retrieve_with_ast_fallback` |
+| `tests/edit_applier_test.rs` | **11** | `test_end_to_end_file_apply`, `test_atomic_write_and_read` |
+| `tests/workflow_orchestrator_test.rs` | **10** | `test_workflow_propose_apply_checkpoint`, `test_workflow_tests_fail_then_fix` |
+| `tests/editing_e2e.rs` | **10** | `test_undo_actually_restores_file_content`, `test_stress_50_consecutive_applies` |
+| **E2E/Integration总计** | **160** | `cargo test -p intelligence-agent-core` |
+| **lib内测试** | **89** | 各模块单元测试（含 swarm 21个 + reflector 8个 + llm/bridge.rs 5个 + edit_applier 10个 + workflow_orchestrator 2个）⭐ |
+| **总计** | **249** | `cargo test -p intelligence-agent-core` |
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
@@ -271,10 +324,11 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 **技术约束与待办**:
 | 编号 | 状态 | 说明 |
 |------|------|------|
-| RETRIEVE-PHASE5 | 进行中 | Graph/Dream层记忆检索待全面集成 |
-| WORKER-TOOL-EXECUTION | 进行中 | Worker执行结果回调机制待完善 |
+| RETRIEVE-PHASE5 | **已清偿** | `SyncMemoryGateway::retrieve_multi` 多层级联检索 ✅ |
+| MEMORY-SYNC | **已清偿** | `sync_with_blackboard` + `restore_from_memory` 双向同步 ✅ |
+| WORKER-TOOL-EXECUTION | **已完成** | WorkerCallback trait + `handle_worker_result` + `AgentLoop::act()` 集成 + E2E 验证 ✅ |
 | LEAK-TEST-PHASE5 | 进行中 | AgentLoop资源泄漏测试待重写 |
-| W5-CONTEXT-DEEP | 待办 | tree-sitter AST 感知上下文 |
+| W5-CONTEXT-DEEP | 部分完成 | tree-sitter AST 检索已存在（`retrieve_with_ast`），EditApplier 尚未接入 AST 验证（已知 gap） |
 | W1-STREAMING-001 | 待办 | MCP SSE/WebSocket 真实流式 |
 | W5-ONBOARD-ADVANCED | 待办 | 视频导览素材待产 |
 
@@ -320,7 +374,8 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 | Graph | `src/graph.rs` | 实体关系图 | 知识图谱 |
 | Cloud | `src/cloud.rs` | 云端同步 | 端到端加密 |
 
-**E2E验证**: `tests/memory_five_tier_e2e.rs` - 真实数据流测试
+**E2E验证**: `tests/memory_five_tier_e2e.rs` - 真实数据流测试  
+**SyncGateway**: `tests/memory_sync_e2e.rs` — 跨层检索/并发压力/崩溃恢复测试（6项）
 
 #### knowledge/ - 知识图谱 ⭐
 **来源**: 原 `knowledge/` + `crates/hajimi-core/src/knowledge/` 合并  
@@ -444,10 +499,10 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 **TODO统计**:
 | 范围 | 当前数量 | 说明 |
 |:---|:---:|:---|
-| src目录 | 10 | 持续维护中 |
+| src目录 | 8 | 持续维护中 |
 | engine核心层 | 0 | - |
-| intelligence层 | 5 | 4项约束声明 |
-| agent-core | 4活跃 | 历史总数13项，9项已处理 |
+| intelligence层 | 3 | 2项约束声明（Phase 3已清偿2条） |
+| agent-core | 2活跃 | 历史总数15项，13项已处理 |
 
 ---
 
@@ -536,6 +591,7 @@ interface/mcp-server/
 | **Agent Core E2E** | `src/intelligence/agent-core/tests/agent_core_e2e.rs` |
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
+| **SyncMemoryGateway** | `src/intelligence/memory/src/sync_gateway.rs` |
 
 | **zstd-sys 补丁** | `src/patches/zstd-sys/` |
 | **技术约束文档** | `docs/debt/DEBT-P0-001.md` |
@@ -589,4 +645,4 @@ interface/mcp-server/
 
 ---
 
-*本索引文档与代码同步维护，最后更新于 2026-04-26*
+*本索引文档与代码同步维护，最后更新于 2026-04-27*

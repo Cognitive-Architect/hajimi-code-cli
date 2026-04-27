@@ -1,10 +1,10 @@
 # HAJIMI V3 架构文档
 
-> **文档版本**: v3.8.0
+> **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
-> **当前状态**: ✅ Agent Core 55测试全部通过，0编译error，unsafe SAFETY注释100%覆盖  
-> **最后更新**: 2026-04-26
+> **当前状态**: ✅ Agent Core 249测试全部通过，0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成  
+> **最后更新**: 2026-04-27
 
 ---
 
@@ -115,7 +115,7 @@
 
 | 目录 | 功能 | 关键技术 | 状态 |
 |:---|:---|:---|:---:|
-| `agent-core/` | 自主Agent系统 | 7步循环, Swarm, 可插拔治理, LLM桥接 ⭐ | ✅ 稳定 |
+| `agent-core/` | 自主Agent系统 | 7步循环, Swarm, 可插拔治理, LLM桥接, Trace, Dashboard, **EditApplier, WorkflowOrchestrator** ⭐ | ✅ 稳定 |
 | `chimera/` | REPL引擎 | ZeroTUI, EventLoop | ✅ 稳定 |
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
@@ -165,9 +165,37 @@ RAG:   RAG Index      — HNSW 384-dim      O(log n) ~5ms
 `simhash64(text) -> u64`; `NUM_SHARDS = 16`; `get_shard_id(text) = simhash64(text) % 16`。
 
 ### 6. Agent Core 7步自主循环
-`AgentLoop { blackboard, planner, governance, swarm, tool_registry }`
+`AgentLoop { blackboard, planner, governance, swarm, tool_registry, sync_gateway }`
 循环: Observe → Retrieve → Plan → Act → Reflect → Store → Decide。
-治理: 5级审批（Auto/Advisory/Required/Critical/Override）。Swarm: Supervisor-Worker 模式。
+- **Retrieve**: 通过 `SyncMemoryGateway::retrieve_multi` 进行 Session→Auto→Dream→Graph 级联检索，带 30s TTL 缓存与 4096 token 溢出保护
+- **Act**: `AgentLoop::act()` → `SwarmDelegate::delegate_and_wait()` → `Supervisor::delegate(TaskAssignment)` → Worker 处理 → `WorkerResult` 入队 → `SwarmDelegate::pop_result()` 取出 → Blackboard 写入 → `Reflector::reflect_multi()` 聚合反思
+- **Reflect**: `Reflector::reflect_multi()` → `MultiWorkerAggregator::aggregate_results()` 计算 success_rate + severity → 生成优化子计划
+- **Store**: 通过 `SyncMemoryGateway::sync_with_blackboard` 双向同步 Blackboard ↔ Memory
+治理: 5级审批（Auto/Advisory/Required/Critical/Override），支持运行时 `set_approval_level()` 调级。
+Swarm: Supervisor-Worker 模式，`WorkerLifecycleManager` 管理 spawn/stop/restart/crash 生命周期，含崩溃自动重启（≤3次，超限 `PermanentlyFailed`）、结果截断（>1MB UTF-8-safe）、原子 metrics、`event_tracing` 全生命周期 trace。
+Trace 可观测性: `TraceEvent` 含 `step_type`/`plan_summary`/`reflection_key_points`/`confidence_score`，`emit_trace()` 在 7 步循环各阶段广播，Desktop/Web 双端实时展示。
+治理控制: `AgentLoop::pause/resume/inject_memory/update_plan` 支持运行时不中断干预。
+Checkpoint 增强: `restore(id)`/`compare(id_a,id_b)`/`export(id)`，Web 端支持浏览/恢复/比较/导出。
+资源监控: `ResourceMonitor` 原子计数器跟踪 iteration/blackboard/failure_rate/latency，可配置阈值警报（含冷却期），Web Dashboard 实时展示。
+
+**Swarm 回调闭环伪代码**:
+```rust
+// Act → Worker → Callback → Reflect 闭环
+pub async fn act(&self, agent_id: &AgentId, goal_id: &str) -> ReplResult<TaskResult> {
+    // SwarmDelegate 封装委托+轮询逻辑
+    let result = SwarmDelegate::delegate_and_wait(
+        &self.swarm, &self.blackboard, task_id, deadline: 30s
+    ).await?;
+    Ok(TaskResult { success: result.success, output: result.output, .. })
+}
+
+// Reflect 阶段使用 MultiWorkerAggregator 聚合多 Worker 结果
+pub async fn reflect(&self, goal: &Goal, results: &[WorkerResult]) -> ReplResult<Reflection> {
+    let aggregated = MultiWorkerAggregator::aggregate_results(results)?;
+    let reflection = self.reflector.reflect_multi(goal, &aggregated).await?;
+    Ok(reflection)
+}
+```
 
 ---
 
@@ -212,6 +240,18 @@ pub trait AgentGovernance: Send + Sync {
 }
 ```
 
+### 5. SyncMemoryGateway 接口（Intelligence层）
+```rust
+#[async_trait]
+pub trait SyncMemoryGateway: Send {
+    async fn retrieve_from_tier(&mut self, tier: MemoryTier, query: &str) -> Result<Vec<MemoryEntry>, SyncGatewayError>;
+    async fn retrieve_multi(&mut self, tiers: &[MemoryTier], query: &str) -> Result<Vec<(MemoryTier, Vec<MemoryEntry>)>, SyncGatewayError>;
+    async fn push_event(&mut self, event: GatewayEvent) -> Result<(), SyncGatewayError>;
+    async fn sync_with_blackboard(&mut self, snapshot: &BlackboardSnapshot) -> Result<(), SyncGatewayError>;
+    async fn tier_health(&mut self, tier: MemoryTier) -> Result<TierHealth, SyncGatewayError>;
+}
+```
+
 ---
 
 ## 🔄 数据流
@@ -241,8 +281,10 @@ pub trait AgentGovernance: Send + Sync {
 | HNSW 构建 | 7.7x 加速 | WASM | ✅ |
 | Tantivy 搜索 | 219行 | 16分片 | ✅ |
 | Memory Gateway | O(1) ~100ns | LRU Focus | ✅ |
-| Agent Core E2E | 90 passed | cargo-discoverable | ✅ |
-| Agent Core 编译 | 0 warnings | cargo check | ✅ |
+| Agent Core E2E | 194 passed | cargo-discoverable | ✅ |
+| Agent Core 编译 | 0 errors, pre-existing warnings 外 crate | cargo check | ✅ |
+| Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
+| Phase 3 测试 | 47 passed | Day 1-5 功能全覆盖 | ✅ |
 
 ---
 
@@ -294,8 +336,12 @@ patches/                 # 构建依赖补丁（非功能模块）
 | ADR-006 | Tool Trait 标准接口 (5方法) | ✅ | engine/tool-system/ |
 | ADR-007 | Git历史完整保留 (git mv) | ✅ | v2.0重构 |
 | ADR-008 | SimHash-64统一分片 | ⚠️ | foundation 8处引用 |
-
+| ADR-009 | TraceEvent 结构化扩展 | ✅ | agent-core/agent_loop.rs |
 | ADR-010 | Shell参数化白名单 (消除bash -c) | ✅ | engine/tool-system/shell.rs |
+| ADR-013 | DEBT-LINES 子模块提取 | ✅ | agent-core/memory_retriever.rs, loop_state_machine.rs, reflection_persistence.rs, plan_optimizer.rs |
+| ADR-014 | ResourceMonitor 原子监控 | ✅ | agent-core/resource_monitor.rs |
+| ADR-015 | Editing Pipeline（EditApplier 作为 Apply 唯一入口，Proposed→Review→Apply 状态机，原子写入 + 唯一备份） | ✅ | intelligence/agent-core/edit_applier.rs |
+| ADR-016 | AST-First Context Retrieval（Retrieve 阶段可选注入 AST 上下文，fallback 到纯文本，LspContextProvider 抽象） | ✅ | engine/tool-system/lsp_integration.rs, intelligence/agent-core/memory_retriever.rs |
 | ADR-011 | Tauri v2 桌面应用架构 | ✅ | src/interface/desktop/ |
 | ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
 
@@ -311,4 +357,4 @@ patches/                 # 构建依赖补丁（非功能模块）
 
 ---
 
-*本架构文档与代码同步维护，最后更新于 2026-04-26*
+*本架构文档与代码同步维护，最后更新于 2026-04-27*

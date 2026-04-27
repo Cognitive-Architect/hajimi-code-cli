@@ -42,6 +42,14 @@ pub enum ReplEvent {
     /// Plan update event - plan created or modified.
     /// Contains serialized plan structure and version.
     PlanUpdate { agent_id: String, plan_version: u32, description: String, subtasks: Vec<String> },
+
+    // === Phase 2 Day 1: Swarm Worker Events ===
+    /// A swarm task has been delegated to a worker.
+    SwarmTaskDelegated { agent_id: String, task_id: String, worker_id: String, priority: u8 },
+    /// A swarm task has completed (success or failure).
+    SwarmTaskCompleted { agent_id: String, task_id: String, worker_id: String, success: bool, output: String },
+    /// A tool execution has completed within a worker.
+    ToolExecutionCompleted { agent_id: String, tool_name: String, task_id: String, result: String, success: bool },
 }
 
 impl ReplEvent {
@@ -54,6 +62,9 @@ impl ReplEvent {
                 | ReplEvent::ToolResult { .. }
                 | ReplEvent::ReflectionComplete { .. }
                 | ReplEvent::PlanUpdate { .. }
+                | ReplEvent::SwarmTaskDelegated { .. }
+                | ReplEvent::SwarmTaskCompleted { .. }
+                | ReplEvent::ToolExecutionCompleted { .. }
                 | ReplEvent::ProtocolEvent(_)
         )
     }
@@ -66,6 +77,9 @@ impl ReplEvent {
             ReplEvent::ToolResult { agent_id, .. } => Some(agent_id),
             ReplEvent::ReflectionComplete { agent_id, .. } => Some(agent_id),
             ReplEvent::PlanUpdate { agent_id, .. } => Some(agent_id),
+            ReplEvent::SwarmTaskDelegated { agent_id, .. } => Some(agent_id),
+            ReplEvent::SwarmTaskCompleted { agent_id, .. } => Some(agent_id),
+            ReplEvent::ToolExecutionCompleted { agent_id, .. } => Some(agent_id),
             _ => None,
         }
     }

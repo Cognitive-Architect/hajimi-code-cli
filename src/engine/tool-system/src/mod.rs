@@ -136,6 +136,8 @@ pub mod build; // B-W12/04: Complexity analysis
 pub mod graph;   // B-W12/04: Dependency graph
 pub mod test;    // B-W13/05-07: Test tools cluster
 pub mod lsp;     // B-W13/08-11: LSP基础集群
+pub mod lsp_integration; // Phase 4 Day 2: AST Context Provider
+pub mod ast_provider;    // Phase 4 Day 2: Real AST parser (syn+walkdir)
 pub mod mcp;     // B-W13/12-13: MCP Protocol cluster
 pub mod security; // B-06: Security audit tool
 pub mod image_view;   // B-06: Image viewing tool
@@ -143,7 +145,7 @@ pub mod js_bundle_analyzer; // B-10/03: JS bundle analyzer
 pub mod rust_doc_generator; // B-10/03: Rust doc generator
 
 pub use directory::{GlobTool, ListDirectoryTool};
-pub use git::{GitLogTool, GitCommitTool, GitStatusTool, GitDiffTool};
+pub use git::{GitLogTool, GitCommitTool, GitStatusTool, GitDiffTool, SmartCommitTool, GeneratePrDescriptionTool};
 pub use edit::{EditFileTool, EditOperation, edit_file};
 pub use patch::{apply_patch, fuzzy_match, ConflictMarker, PatchFormat, PatchResult};
 pub use find::{FindArgs, FindResult, FindTool};
@@ -161,6 +163,8 @@ pub use build::{NpmRunTool, CargoBuildTool, MakeTool, CmakeTool};
 pub use graph::{GraphTool, DepGraph, generate_graph, graph_to_mermaid, graph_to_dot};
 pub use test::{RunTestsTool, CoverageReportTool, BenchmarkTool, TestsTool, CoverageTool};
 pub use lsp::{LspInitTool, LspDefinitionTool, LspReferencesTool, LspHoverTool, LspConnection, LspClient};
+pub use lsp_integration::{ASTContextProvider, LspContextProvider, SymbolContext, register_ast_provider};
+pub use ast_provider::{AstSymbolIndex, CodeSymbol};
 pub use mcp::{McpInitTool, McpInvokeTool, SpawnAgentTool, CloseAgentTool, SendInputTool, McpServer, confirm_permission};
 // Task 05 Clearance (Minimal Reuse per user confirmation): DEBT-MCP-PROXY-001 cleared by McpServer
 // using local ToolRegistry for tools/list & tools/call (zero reqwest in local path). DEBT-PERMISSION-FLOW-001

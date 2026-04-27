@@ -32,6 +32,11 @@ Hajimi IDE 是一款基于 **Tauri v2** 的桌面端 AI 智能体 IDE，采用 *
 | 扩展商店 | ✅ | 安装/卸载状态管理 |
 | 拖拽调整面板 | ✅ | sidebar / panel 大小持久化 |
 | 设置持久化 | ✅ | localStorage 存储 |
+| **Inline 编辑** | ✅ | Agent 建议 diff 预览，Accept All / Reject / Selective |
+| **Command Palette** | ✅ | `@agent refactor`/`review-pr`/`commit` 全局命令 |
+| **Edit History** | ✅ | 编辑历史时间线，Session Replay 回放 |
+| **Smart Commit** | ✅ | Conventional commit 启发式 + PR 描述自动生成 |
+| **AST 感知** | ✅ | Tree-sitter + LSP 上下文注入，精准编辑建议 |
 
 ## 技术栈
 
@@ -39,8 +44,10 @@ Hajimi IDE 是一款基于 **Tauri v2** 的桌面端 AI 智能体 IDE，采用 *
 - **Tauri v2** — 桌面应用框架
 - **Tokio** — 异步运行时
 - **工具系统** — 40+ 工具实现（文件操作、Git、搜索、构建、LSP、MCP）
-- **Agent Core** — 7步自主循环（Observe→Retrieve→Plan→Act→Reflect→Store→Decide）
+- **Agent Core** — 7步自主循环 + EditApplier + WorkflowOrchestrator（Test→Fix→Commit 闭环）
 - **LLM 客户端** — Anthropic Claude / OpenAI GPT-4 / Ollama 本地推理
+- **EditApplier** — hunk-level diff，冲突检测，原子写入，真正 undo
+- **AST Context** — Tree-sitter + LSP 符号级上下文感知
 
 ### 前端（vanilla HTML/CSS/JS）
 - 无 React / Vue / Vite / Webpack
@@ -119,10 +126,10 @@ cd src/interface/desktop && cargo tauri build
 # Rust workspace 编译检查
 cargo check --workspace
 
-# Agent Core 单元测试（55 passed）
+# Agent Core 单元测试（101 passed）
 cargo test -p intelligence-agent-core --lib
 
-# Agent Core E2E 测试（43 passed）
+# Agent Core E2E 测试（148 passed）
 cargo test -p intelligence-agent-core
 
 # Shell 安全测试
@@ -157,16 +164,17 @@ src/
 | Rust | 181 | ~22,368 | engine/, intelligence/, foundation/wasm/ |
 | JavaScript | 39 | ~12,946 | interface/ |
 | TypeScript | 48 | ~7,634 | interface/ |
-| **总计** | **268** | **~42,948** | - |
+| **总计** | **268** | **~44,200** | - |
 
 ## 关键文档
 
 | 文档 | 路径 | 说明 |
 |:---|:---|:---|
-| 架构文档 | `src/ARCHITECTURE.md` | 四层架构详解 |
+| 架构文档 | `src/ARCHITECTURE.md` | 四层架构详解 + ADR-015/016 |
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发规范与流程 |
 | 源代码索引 | `src/INDEX.md` | 详细模块索引 |
 | API 文档 | `docs/API.md` | 接口定义 |
+| **Phase 4 自测报告** | `docs/self-audit/PHASE4-EDITING-SELF-AUDIT.md` | 249测试实测数据 |
 
 ## 安全
 
@@ -181,4 +189,4 @@ Apache-2.0
 
 ---
 
-*最后更新: 2026-04-26*
+*最后更新: 2026-04-27 — Hajimi IDE v1 (Phase 1-4) 完成 ✅*

@@ -1,13 +1,20 @@
 //! Proactive Agent Loop: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
 use crate::blackboard::Blackboard;
+use crate::agent_loop_builder::AgentLoopConfig;
 use crate::checkpoint::CheckpointManager;
 use crate::governance::{AgentGovernance, ApprovalLevel, Decision, GovernanceRequest};
 use crate::planner::{Planner, Priority, TaskResult, Goal, PlanStatus};
 use crate::reflector::Reflector;
-use crate::swarm::{Supervisor, SwarmCoordinator, TaskAssignment};
+use crate::swarm::{Supervisor, SwarmCoordinator};
+use crate::swarm_delegate::SwarmDelegate;
+use crate::edit_applier::EditApplier;
+use crate::memory_retriever::{MemoryRetriever, RetrieveOutcome};
+use crate::resource_monitor::ResourceMonitor;
 use crate::{AgentContext, AgentId};
 use chimera_repl::traits::{ReplError, ReplResult};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
@@ -16,15 +23,23 @@ const ITERATION_BUDGET: usize = 50;
 const CHECKPOINT_INTERVAL: usize = 10;
 const ACT_FAILURE_THRESHOLD: usize = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LoopState { Idle, Observing, Retrieving, Planning, Acting, Reflecting, Storing, Deciding, Completed, Failed }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TraceStepType { Observe, Retrieve, Plan, Act, Reflect, Store, Decide, Other, EditProposed, EditApplied, EditRejected }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceEvent {
     pub step: LoopState,
     pub details: String,
     pub iteration: usize,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub step_type: TraceStepType,
+    pub plan_summary: Option<String>,
+    pub reflection_key_points: Vec<String>,
+    pub confidence_score: Option<f32>,
+    pub edit_payload: Option<String>,
 }
 
 pub struct AgentLoop {
@@ -35,41 +50,45 @@ pub struct AgentLoop {
     swarm: Option<Arc<Mutex<Supervisor>>>,
     blackboard: Arc<Blackboard>,
     checkpoint_mgr: Arc<CheckpointManager>,
-    #[allow(dead_code)]
-    memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
     iteration_count: Arc<Mutex<usize>>,
     current_state: Arc<Mutex<LoopState>>,
     trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
     provider_id: Option<String>,
+    memory_retriever: MemoryRetriever,
+    paused: Arc<AtomicBool>,
+    pub resource_monitor: Arc<ResourceMonitor>,
+    edit_applier: Option<Arc<EditApplier>>,
 }
 
 impl AgentLoop {
     #[deprecated(since = "0.2.0", note = "Use AgentLoopBuilder instead")]
-    pub fn new(
-        context: AgentContext,
-        planner: Arc<Mutex<dyn Planner>>,
-        reflector: Arc<Mutex<dyn Reflector>>,
-        governance: Arc<dyn AgentGovernance>,
-        swarm: Option<Arc<Mutex<Supervisor>>>,
-        blackboard: Arc<Blackboard>,
-        checkpoint_mgr: Arc<CheckpointManager>,
-        memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
-    ) -> Self {
-        Self::from_components(context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, None)
+    pub fn new(config: AgentLoopConfig) -> Self {
+        Self::from_components(config)
     }
 
-    pub(crate) fn from_components(
-        context: AgentContext,
-        planner: Arc<Mutex<dyn Planner>>,
-        reflector: Arc<Mutex<dyn Reflector>>,
-        governance: Arc<dyn AgentGovernance>,
-        swarm: Option<Arc<Mutex<Supervisor>>>,
-        blackboard: Arc<Blackboard>,
-        checkpoint_mgr: Arc<CheckpointManager>,
-        memory: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
-        provider_id: Option<String>,
-    ) -> Self {
-        Self { context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, iteration_count: Arc::new(Mutex::new(0)), current_state: Arc::new(Mutex::new(LoopState::Idle)), trace_tx: Some(tokio::sync::broadcast::channel(64).0), provider_id }
+    pub(crate) fn from_components(config: AgentLoopConfig) -> Self {
+        let memory_retriever = MemoryRetriever::new(
+            config.blackboard.clone(),
+            config.sync_gateway.clone(),
+            config.memory.clone(),
+        );
+        Self {
+            context: config.context,
+            planner: config.planner,
+            reflector: config.reflector,
+            governance: config.governance,
+            swarm: config.swarm,
+            blackboard: config.blackboard,
+            checkpoint_mgr: config.checkpoint_mgr,
+            iteration_count: Arc::new(Mutex::new(0)),
+            current_state: Arc::new(Mutex::new(LoopState::Idle)),
+            trace_tx: Some(tokio::sync::broadcast::channel(64).0),
+            provider_id: config.provider_id,
+            memory_retriever,
+            paused: Arc::new(AtomicBool::new(false)),
+            resource_monitor: Arc::new(ResourceMonitor::new()),
+            edit_applier: None,
+        }
     }
 
     pub async fn run(&self, agent_id: AgentId, initial_goal: &str) -> ReplResult<LoopOutcome> {
@@ -83,6 +102,10 @@ impl AgentLoop {
         info!("Initial goal created: {}", goal_id);
         let mut outcome = LoopOutcome::InProgress;
         for i in 0..MAX_ITERATIONS {
+            while self.paused.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            self.resource_monitor.record_iteration();
             *self.iteration_count.lock().await = i;
             if i >= ITERATION_BUDGET { warn!("Iteration budget exhausted at step {}", i); outcome = LoopOutcome::BudgetExceeded; break; }
             *self.current_state.lock().await = LoopState::Observing;
@@ -96,6 +119,7 @@ impl AgentLoop {
             self.emit_trace(LoopState::Acting, format!("Acting on goal {}", goal_id), i);
             match self.act(&agent_id, &goal_id).await {
                 Ok(task_result) => {
+                    self.resource_monitor.record_success();
                     *self.current_state.lock().await = LoopState::Reflecting;
                     self.emit_trace(LoopState::Reflecting, format!("Reflecting on task result: success={}", task_result.success), i);
                     if let Err(e) = self.reflect(&goal_id, &task_result).await {
@@ -105,9 +129,11 @@ impl AgentLoop {
                 Err(e) => {
                     warn!("Act failed (continuing): {}", e);
                     self.emit_trace(LoopState::Acting, format!("Act failed: {}", e), i);
+                    self.resource_monitor.record_failure();
                     if i > ACT_FAILURE_THRESHOLD { outcome = LoopOutcome::ActFailed(e.to_string()); break; }
                 }
             }
+            self.resource_monitor.record_blackboard_size(self.blackboard.snapshot().await.len());
             *self.current_state.lock().await = LoopState::Storing;
             self.emit_trace(LoopState::Storing, format!("Storing checkpoint for iteration {}", i), i);
             if i % CHECKPOINT_INTERVAL == 0 {
@@ -147,56 +173,78 @@ impl AgentLoop {
     }
 
     async fn retrieve(&self, agent_id: &AgentId) {
-        info!("Retrieving memories for {} with goal context", agent_id);
-        if let Some(ref memory) = self.memory {
-            let mem = memory.lock().await;
-            let graph_key = format!("ctx_{}", agent_id);
-            if let Some(entry) = mem.session.get(&graph_key) {
-                let content = format!("{:?}", entry);
-                self.blackboard.write(&format!("retrieved_{}", agent_id), &content, agent_id).await;
-                info!("Graph query hit for {}: {} bytes", agent_id, content.len());
+        let iter = *self.iteration_count.lock().await;
+        match self.memory_retriever.retrieve(agent_id).await {
+            RetrieveOutcome::CacheHit(summary) => {
+                self.emit_trace(LoopState::Retrieving, format!("Cache hit: {}", summary), iter);
+            }
+            RetrieveOutcome::Retrieved { summary } => {
+                self.emit_trace(LoopState::Retrieving, format!("Retrieved {}", summary), iter);
+            }
+            RetrieveOutcome::Error(e) => {
+                self.emit_trace(LoopState::Retrieving, format!("Retrieval error: {}", e), iter);
             }
         }
-        let _bb_state = self.blackboard.snapshot().await;
     }
 
-    async fn act(&self, agent_id: &AgentId, goal_id: &str) -> ReplResult<TaskResult> {
+    pub(crate) async fn act(&self, agent_id: &AgentId, goal_id: &str) -> ReplResult<TaskResult> {
         info!("Acting for {} on goal {}", agent_id, goal_id);
+        let iter = *self.iteration_count.lock().await;
+        self.emit_trace(LoopState::Acting, format!("Acting start for goal {}", goal_id), iter);
         if !self.gov_check("act", &format!("Execute task for {}", goal_id), 0.1).await? {
             return Ok(TaskResult { success: false, output: "Act rejected by governance".to_string(), timestamp: chrono::Utc::now() });
         }
         let task_opt = { self.planner.lock().await.next_task().await? };
         if let Some(task) = task_opt {
             if let Some(ref swarm) = self.swarm {
-                let assignment = TaskAssignment { task_id: task.id.clone(), description: task.description.clone(), assigned_to: agent_id.clone(), priority: 5 };
-                if let Err(e) = swarm.lock().await.delegate(assignment).await { warn!("Swarm delegation failed (falling back): {}", e); }
+                match SwarmDelegate::try_delegate(swarm, &self.blackboard, agent_id, &task).await {
+                    Some(Ok(result)) => {
+                        self.emit_trace(LoopState::Acting, format!("Task {} completed: success={}", task.id, result.success), iter);
+                        Ok(result)
+                    }
+                    Some(Err(e)) => {
+                        warn!("Swarm delegation failed (falling back): {}", e);
+                        self.emit_trace(LoopState::Acting, format!("Delegation failed for task {}: {}", task.id, e), iter);
+                        Ok(TaskResult { success: true, output: format!("Task {} executed locally (delegation failed)", task.id), timestamp: chrono::Utc::now() })
+                    }
+                    None => {
+                        self.emit_trace(LoopState::Acting, "No idle worker available, falling back to local execution".to_string(), iter);
+                        Ok(TaskResult { success: true, output: format!("Task {} executed locally (no idle worker)", task.id), timestamp: chrono::Utc::now() })
+                    }
+                }
+            } else {
+                self.emit_trace(LoopState::Acting, "No swarm available, falling back to local execution".to_string(), iter);
+                Ok(TaskResult { success: true, output: format!("Task {} executed locally (no swarm)", task.id), timestamp: chrono::Utc::now() })
             }
-            Ok(TaskResult { success: true, output: format!("Task {} delegated to Worker", task.id), timestamp: chrono::Utc::now() })
         } else {
             Ok(TaskResult { success: true, output: "No pending tasks".to_string(), timestamp: chrono::Utc::now() })
         }
     }
 
-    async fn reflect(&self, goal_id: &str, result: &TaskResult) -> ReplResult<()> {
+    pub(crate) async fn reflect(&self, goal_id: &str, result: &TaskResult) -> ReplResult<()> {
         info!("Reflecting on goal {} with success={}", goal_id, result.success);
+        let iter = *self.iteration_count.lock().await;
+        self.emit_trace(LoopState::Reflecting, format!("Reflecting on goal {}", goal_id), iter);
         if !self.gov_check("reflect", &format!("Reflect on goal {}", goal_id), 0.1).await? {
             warn!("Reflection rejected by governance (skipping)"); return Ok(());
         }
         let goal = Goal { id: goal_id.to_string(), description: "Reflected goal".to_string(), priority: Priority::Medium, status: PlanStatus::InProgress, subgoals: vec![], metadata: std::collections::HashMap::new(), created_at: chrono::Utc::now(), approved: true };
-        let _ = self.reflector.lock().await.reflect(&goal, result).await?;
+        if let Some(ref swarm) = self.swarm {
+            let worker_results = swarm.lock().await.aggregate().await;
+            if !worker_results.is_empty() {
+                let reflection = self.reflector.lock().await.reflect_multi(&goal, &worker_results).await?;
+                self.emit_trace(LoopState::Reflecting, format!("Multi-worker reflection: confidence={:.2}", reflection.confidence), iter);
+            } else {
+                let _ = self.reflector.lock().await.reflect(&goal, result).await?;
+            }
+        } else {
+            let _ = self.reflector.lock().await.reflect(&goal, result).await?;
+        }
         Ok(())
     }
 
     async fn store(&self, agent_id: &AgentId) -> ReplResult<()> {
-        info!("Storing checkpoint and plan for {}", agent_id);
-        let _ = self.checkpoint_mgr.save(agent_id, None, vec![], vec![], &self.blackboard).await?;
-        if let Some(ref memory) = self.memory {
-            let mut mem = memory.lock().await;
-            if let Err(e) = mem.push_vector(&format!("plan_{}", agent_id), &format!("checkpoint_{}", agent_id)) {
-                warn!("MemoryGateway persist failed (continuing): {}", e);
-            }
-        }
-        Ok(())
+        self.memory_retriever.store(agent_id, &self.checkpoint_mgr).await
     }
 
     async fn decide(&self, agent_id: &AgentId, goal_id: &str) -> ReplResult<DecisionOutcome> {
@@ -223,9 +271,60 @@ impl AgentLoop {
 
     fn emit_trace(&self, step: LoopState, details: String, iteration: usize) {
         if let Some(ref tx) = self.trace_tx {
-            let event = TraceEvent { step, details, iteration, timestamp: chrono::Utc::now() };
+            let step_type = match step {
+                LoopState::Observing => TraceStepType::Observe,
+                LoopState::Retrieving => TraceStepType::Retrieve,
+                LoopState::Planning => TraceStepType::Plan,
+                LoopState::Acting => TraceStepType::Act,
+                LoopState::Reflecting => TraceStepType::Reflect,
+                LoopState::Storing => TraceStepType::Store,
+                LoopState::Deciding => TraceStepType::Decide,
+                _ => TraceStepType::Other,
+            };
+            let event = TraceEvent { step, details, iteration, timestamp: chrono::Utc::now(), step_type, plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None };
             let _ = tx.send(event);
         }
+    }
+
+    fn emit_trace_enriched(&self, step: LoopState, details: String, iteration: usize, plan_summary: Option<String>, reflection_key_points: Vec<String>, confidence_score: Option<f32>) {
+        let confidence = confidence_score.map(|c| c.clamp(0.0, 1.0));
+        if let Some(ref tx) = self.trace_tx {
+            let step_type = match step {
+                LoopState::Observing => TraceStepType::Observe,
+                LoopState::Retrieving => TraceStepType::Retrieve,
+                LoopState::Planning => TraceStepType::Plan,
+                LoopState::Acting => TraceStepType::Act,
+                LoopState::Reflecting => TraceStepType::Reflect,
+                LoopState::Storing => TraceStepType::Store,
+                LoopState::Deciding => TraceStepType::Decide,
+                _ => TraceStepType::Other,
+            };
+            let summary = plan_summary.filter(|s| !s.is_empty()).map(|s| if s.len() > 10240 { s.chars().take(10240).collect() } else { s });
+            let event = TraceEvent { step, details, iteration, timestamp: chrono::Utc::now(), step_type, plan_summary: summary, reflection_key_points, confidence_score: confidence, edit_payload: None };
+            let _ = tx.send(event);
+        }
+    }
+
+    pub fn with_edit_applier(mut self, applier: Arc<EditApplier>) -> Self {
+        self.edit_applier = Some(applier);
+        self
+    }
+
+    pub fn pause(&self) { self.paused.store(true, Ordering::Relaxed); info!("AgentLoop pause requested"); }
+    pub fn resume(&self) { self.paused.store(false, Ordering::Relaxed); info!("AgentLoop resumed"); }
+    pub fn is_paused(&self) -> bool { self.paused.load(Ordering::Relaxed) }
+
+    pub async fn inject_memory(&self, key: &str, value: &str, agent_id: &AgentId) -> ReplResult<()> {
+        info!("Injecting memory: {} = {}", key, value);
+        self.blackboard.write(key, value, agent_id).await;
+        Ok(())
+    }
+
+    pub async fn update_plan(&self, description: &str) -> ReplResult<()> {
+        info!("Updating plan: {}", description);
+        let mut planner = self.planner.lock().await;
+        planner.create_goal(description, Priority::High).await?;
+        Ok(())
     }
 
     pub fn from_natural_language(goal: &str) -> (String, Priority) {

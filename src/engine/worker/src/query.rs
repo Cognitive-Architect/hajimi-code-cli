@@ -17,6 +17,8 @@ pub struct QueryResult {
     pub content: String,
     pub metadata: Option<serde_json::Value>,
     pub execution_time_ms: u64,
+    /// Whether the query execution succeeded.
+    pub success: bool,
 }
 
 /// Query context for execution
@@ -55,20 +57,29 @@ impl QueryResult {
             content: content.into(),
             metadata: None,
             execution_time_ms: 0,
+            success: true,
         }
     }
     
-    pub fn success(content: impl Into<String>, elapsed_ms: u64) -> Self {
+    /// Create a successful result (defaults success=true).
+    pub fn ok(content: impl Into<String>, elapsed_ms: u64) -> Self {
         Self {
             query_id: String::new(),
             content: content.into(),
             metadata: None,
             execution_time_ms: elapsed_ms,
+            success: true,
         }
     }
     
     pub fn with_query_id(mut self, query_id: impl Into<String>) -> Self {
         self.query_id = query_id.into();
+        self
+    }
+
+    /// Mark the result as failed.
+    pub fn with_failure(mut self) -> Self {
+        self.success = false;
         self
     }
 }

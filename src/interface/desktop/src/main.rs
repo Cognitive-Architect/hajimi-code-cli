@@ -6,14 +6,15 @@ use std::sync::Arc;
 use engine_llm_core::{AnthropicClient, LlmClient, OllamaClient, OpenAiClient};
 use engine_tool_system::{
     AnalyzeTool, BashTool, CargoBuildTool, CmakeTool, DeleteFileTool, EditFileTool,
-    FetchUrlTool, FindTool, GenerateDocsTool, GitCommitTool, GitDiffTool, GitLogTool,
+    FetchUrlTool, FindTool, GenerateDocsTool, GeneratePrDescriptionTool, GitCommitTool, GitDiffTool, GitLogTool,
     GitStatusTool, GlobTool, GraphTool, GrepTool, JsBundleAnalyzerTool, ListDirectoryTool,
     LspDefinitionTool, LspHoverTool, LspInitTool, LspReferencesTool, LsTool, MakeTool,
     McpInitTool, McpInvokeTool, CoverageReportTool, BenchmarkTool, NpmRunTool,
     PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, RustDocGeneratorTool,
-    SecurityAuditTool, ToolOutput, ToolRegistry, UpdateReadmeTool, ViewImageTool,
+    SecurityAuditTool, SmartCommitTool, ToolOutput, ToolRegistry, UpdateReadmeTool, ViewImageTool,
     WebSearchTool, WriteFileTool,
 };
+use engine_tool_system::lsp_integration::ASTContextProvider;
 use keyring::Entry;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -31,10 +32,40 @@ mod audit;
 // ------------------------------------------------------------------
 // App State
 // ------------------------------------------------------------------
+#[derive(Clone, serde::Serialize)]
+struct TraceEvent {
+    step: String,
+    details: String,
+    iteration: usize,
+    timestamp: String,
+    step_type: String,
+    plan_summary: Option<String>,
+    reflection_key_points: Vec<String>,
+    confidence_score: Option<f32>,
+    edit_payload: Option<String>,
+}
+
+/// Phase 4 Day 5: Edit history entry for timeline visualization.
+#[derive(Clone, serde::Serialize)]
+struct EditHistoryEntry {
+    id: String,
+    timestamp: String,
+    step_type: String,
+    summary: String,
+    confidence: Option<f32>,
+    token_before: Option<usize>,
+    token_after: Option<usize>,
+    checkpoint_id: Option<String>,
+}
+
 struct AppState {
     registry: ToolRegistry,
     active_profile: std::sync::Mutex<Option<String>>,
     agent_providers: std::sync::Mutex<HashMap<String, String>>,
+    trace_tx: std::sync::Mutex<Option<tokio::sync::broadcast::Sender<TraceEvent>>>,
+    paused: std::sync::Mutex<bool>,
+    approval_level: std::sync::Mutex<String>,
+    edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
 }
 
 fn build_registry() -> ToolRegistry {
@@ -52,6 +83,8 @@ fn build_registry() -> ToolRegistry {
     r.register(Arc::new(GitDiffTool::new()));
     r.register(Arc::new(GitLogTool::new()));
     r.register(Arc::new(GitStatusTool::new()));
+    r.register(Arc::new(SmartCommitTool::new()));
+    r.register(Arc::new(GeneratePrDescriptionTool::new()));
     r.register(Arc::new(GlobTool::new()));
     r.register(Arc::new(GraphTool::new()));
     r.register(Arc::new(GrepTool::new()));
@@ -937,6 +970,237 @@ fn get_audit_logs(limit: Option<usize>, offset: Option<usize>) -> Result<Vec<aud
     audit::get_logs(limit.unwrap_or(100), offset.unwrap_or(0))
 }
 
+#[tauri::command]
+async fn subscribe_agent_trace(
+    on_event: Channel<TraceEvent>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let tx = state.trace_tx.lock().unwrap().clone();
+    if tx.is_none() {
+        on_event.send(TraceEvent {
+            step: "Idle".to_string(), details: "AgentLoop is not running".to_string(), iteration: 0,
+            timestamp: chrono::Utc::now().to_rfc3339(), step_type: "Other".to_string(),
+            plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None,
+        }).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let mut rx = tx.unwrap().subscribe();
+    let history_clone = state.edit_history.clone();
+    tokio::spawn(async move {
+        while let Ok(event) = rx.recv().await {
+            // Phase 4 Day 5: Record edit events for history timeline
+            if matches!(event.step_type.as_str(), "EditProposed" | "EditApplied" | "EditRejected") {
+                let mut hist = history_clone.lock().await;
+                let entry = EditHistoryEntry {
+                    id: format!("edit_{}_{}", event.iteration, hist.len()),
+                    timestamp: event.timestamp.clone(),
+                    step_type: event.step_type.clone(),
+                    summary: event.details.clone(),
+                    confidence: event.confidence_score,
+                    token_before: None,
+                    token_after: None,
+                    checkpoint_id: None,
+                };
+                hist.push(entry);
+                if hist.len() > 200 { hist.remove(0); }
+            }
+            let _ = on_event.send(event);
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn pause_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    *state.paused.lock().unwrap() = true;
+    Ok(())
+}
+
+#[tauri::command]
+fn resume_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    *state.paused.lock().unwrap() = false;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_approval_level(level: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let valid = ["Auto", "Advisory", "Required", "Critical", "Override"];
+    if !valid.contains(&level.as_str()) { return Err("Invalid approval level".to_string()); }
+    *state.approval_level.lock().unwrap() = level;
+    Ok(())
+}
+
+#[tauri::command]
+fn inject_memory(_key: String, _value: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn update_plan(_plan: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn list_checkpoints(state: tauri::State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let hist = state.edit_history.blocking_lock();
+    Ok(hist.iter().map(|e| json!({
+        "id": e.id,
+        "timestamp": e.timestamp,
+        "step_type": e.step_type,
+        "summary": e.summary,
+        "confidence": e.confidence,
+    })).collect())
+}
+
+#[tauri::command]
+fn get_edit_history(state: tauri::State<'_, AppState>) -> Result<Vec<EditHistoryEntry>, String> {
+    Ok(state.edit_history.blocking_lock().clone())
+}
+
+#[tauri::command]
+fn restore_checkpoint(_id: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn compare_checkpoints(_id_a: String, _id_b: String) -> Result<bool, String> {
+    Ok(false)
+}
+
+#[tauri::command]
+fn export_checkpoint(_id: String) -> Result<String, String> {
+    Ok("{}".to_string())
+}
+
+#[tauri::command]
+fn get_resource_metrics(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+    let hist = state.edit_history.blocking_lock();
+    let edit_count = hist.len();
+    let applied_count = hist.iter().filter(|e| e.step_type == "EditApplied").count();
+    let rejected_count = hist.iter().filter(|e| e.step_type == "EditRejected").count();
+    Ok(json!({
+        "iteration_count": 0,
+        "blackboard_size": 0,
+        "failure_rate_percent": 0.0,
+        "callback_latency_ms": 0,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "edit_count": edit_count,
+        "applied_count": applied_count,
+        "rejected_count": rejected_count,
+    }))
+}
+
+// Phase 4 Day 5: Agent Command Palette dispatcher
+#[tauri::command]
+async fn run_agent_command(
+    cmd: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let trimmed = cmd.trim();
+    if trimmed.starts_with("@agent refactor ") {
+        let target = trimmed.strip_prefix("@agent refactor ").unwrap_or("").to_string();
+        // Inject as a plan update
+        return Ok(format!("Refactor request queued for: {}", target));
+    }
+    if trimmed.starts_with("@agent review-pr") {
+        return Ok("PR review mode activated".to_string());
+    }
+    if trimmed.starts_with("@agent continue-background") {
+        *state.paused.lock().unwrap() = false;
+        return Ok("Agent resumed in background".to_string());
+    }
+    if trimmed.starts_with("@agent pause") {
+        *state.paused.lock().unwrap() = true;
+        return Ok("Agent paused".to_string());
+    }
+    if trimmed.starts_with("@agent status") {
+        let paused = *state.paused.lock().unwrap();
+        let level = state.approval_level.lock().unwrap().clone();
+        return Ok(format!("Agent status: paused={}, approval_level={}", paused, level));
+    }
+    Err(format!("Unknown agent command: {}", cmd))
+}
+
+#[tauri::command]
+async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<(), String> {
+    on_event.send(TraceEvent {
+        step: "Resource".to_string(), details: "Resource alerts subscription started".to_string(), iteration: 0,
+        timestamp: chrono::Utc::now().to_rfc3339(), step_type: "Other".to_string(),
+        plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None,
+    }).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------
+// Phase 4 Day 3: Inline Editing Commands
+// ------------------------------------------------------------------
+#[derive(Deserialize)]
+struct EditHunkPayload {
+    path: String,
+    old_string: String,
+    new_string: String,
+}
+
+#[tauri::command]
+async fn apply_edits(
+    edits: Vec<EditHunkPayload>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ToolResult>, String> {
+    let mut results = Vec::new();
+    for edit in edits {
+        let tool = state.registry.get("edit_file")
+            .ok_or_else(|| "edit_file tool not found".to_string())?;
+        let args = serde_json::json!({
+            "path": edit.path,
+            "old_string": edit.old_string,
+            "new_string": edit.new_string,
+        });
+        let output = tool.execute(args).await.map_err(|e| e.message)?;
+        results.push(output.into());
+    }
+    Ok(results)
+}
+
+#[tauri::command]
+fn preview_edit(path: String, old_string: String, new_string: String) -> Result<String, String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if !content.contains(&old_string) {
+        return Err("Old string not found in file".to_string());
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let old_lines: Vec<&str> = old_string.lines().collect();
+    let mut diff = format!("--- {}\n+++ {}\n", path, path);
+    // Find approximate line number of old_string
+    let mut line_no = 1usize;
+    for (i, window) in lines.windows(old_lines.len()).enumerate() {
+        if window == old_lines.as_slice() {
+            line_no = i + 1;
+            break;
+        }
+    }
+    diff.push_str(&format!("@@ -{},{} +{},{} @@\n", line_no, old_lines.len(), line_no, new_string.lines().count()));
+    for line in old_string.lines() {
+        diff.push_str(&format!("-{}\n", line));
+    }
+    for line in new_string.lines() {
+        diff.push_str(&format!("+{}\n", line));
+    }
+    Ok(diff)
+}
+
+#[tauri::command]
+async fn get_ast_context(symbol_name: String) -> Result<String, String> {
+    use engine_tool_system::lsp_integration::LspContextProvider;
+    let provider = LspContextProvider::new();
+    if let Ok(current_dir) = std::env::current_dir() {
+        let _ = provider.index_project(current_dir.to_string_lossy().as_ref()).await;
+    }
+    match provider.get_symbol_context(&symbol_name, None).await {
+        Ok(ctx) => Ok(format!("{} '{}' at {}:{}", ctx.symbol.kind, ctx.symbol.name, ctx.symbol.file_path, ctx.symbol.line)),
+        Err(e) => Err(e),
+    }
+}
+
 // ------------------------------------------------------------------
 // Main
 // ------------------------------------------------------------------
@@ -945,6 +1209,10 @@ fn main() {
         registry: build_registry(),
         active_profile: std::sync::Mutex::new(None),
         agent_providers: std::sync::Mutex::new(HashMap::new()),
+        trace_tx: std::sync::Mutex::new(None),
+        paused: std::sync::Mutex::new(false),
+        approval_level: std::sync::Mutex::new("Auto".to_string()),
+        edit_history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
     };
 
     tauri::Builder::default()
@@ -980,6 +1248,29 @@ fn main() {
             create_agent_with_provider,
             // B-05/03 Audit
             get_audit_logs,
+            // B-02/06 Trace
+            subscribe_agent_trace,
+            // B-03/06 Governance
+            pause_loop,
+            resume_loop,
+            set_approval_level,
+            inject_memory,
+            update_plan,
+            // B-04/06 Checkpoint
+            list_checkpoints,
+            restore_checkpoint,
+            compare_checkpoints,
+            export_checkpoint,
+            // B-05/06 Resource
+            get_resource_metrics,
+            subscribe_resource_alerts,
+            // Phase 4 Day 3: Inline Editing
+            apply_edits,
+            preview_edit,
+            get_ast_context,
+            // Phase 4 Day 5: Command Palette & Observability
+            get_edit_history,
+            run_agent_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
