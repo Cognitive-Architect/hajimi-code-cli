@@ -2,6 +2,15 @@
 
 Autonomous multi-agent orchestration system for HAJIMI.
 
+## 职责
+
+- **7 步自主循环**：`AgentLoop` 实现 `Observe → Retrieve → Plan → Act → Reflect → Store → Decide` 的主动式执行循环，最大迭代 100 次，预算 50 次，每 10 次迭代自动 checkpoint
+- **Swarm 协调**：`Supervisor` 基于 Supervisor-Worker 模式管理多智能体协作，支持动态 spawn/stop/restart Worker、任务委托（`delegate`）、结果聚合（`aggregate`）、指数退避重试（最多 3 次）
+- **可插拔治理**：`DefaultGovernance` 实现 5 级审批策略（`Auto / Advisory / Required / Critical / Override`），基于风险评分自动升级；支持自定义 `GovernancePolicy` 注册、投票机制、用户反馈记录
+- **EditApplier**：可靠的 hunk 级编辑管线，实现 `ProposedEdit → Review → Apply/Reject`，包含冲突检测、原子写入（临时文件 + rename）、备份与撤销栈（最大 100 条）、并发编辑保护、文件大小限制（10MB）和 hunk 数量限制（50）
+- **资源监控**：`ResourceMonitor` 记录迭代次数、成功率、Blackboard 大小、编辑次数、撤销栈深度等指标
+- **Trace 可观测性**：`TraceEvent` 广播通道，覆盖全部 7 步状态转移与编辑事件（`EditProposed` / `EditApplied` / `EditRejected`），支持富化 trace（plan_summary、reflection_key_points、confidence_score）
+
 ## Quick Start
 
 ```rust
@@ -34,6 +43,27 @@ Add to your `Cargo.toml`:
 [dependencies]
 agent_core = { path = "../intelligence/agent-core" }
 tokio = { version = "1", features = ["full"] }
+```
+
+## 依赖
+
+```toml
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = "0.1"
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+
+# Internal dependencies
+chimera-repl = { path = "../chimera/chimera-repl" }
+memory = { path = "../memory" }
+engine-tool-system = { path = "../../engine/tool-system" }
+engine-llm-core = { path = "../../engine/llm-core" }
 ```
 
 ## Architecture
@@ -97,6 +127,7 @@ Optional fields default to `DefaultGovernance`, empty `Blackboard`, `CheckpointM
 | `swarm` | Multi-agent coordination |
 | `blackboard` | Shared inter-agent state |
 | `checkpoint` | State persistence and recovery |
+| `edit_applier` | Hunk-level edit pipeline with conflict detection and undo |
 
 ## Governance (Pluggable)
 
@@ -112,6 +143,22 @@ impl GovernancePolicy for MyPolicy {
 gov.register_policy("custom", Arc::new(MyPolicy), "admin_test", PermissionLevel::Admin).await?;
 ```
 
+## 测试
+
+运行 Agent Core 全部测试（含 E2E，约 249 个测试）：
+
+```bash
+cargo test -p intelligence-agent-core
+```
+
+稳定性测试（100 轮）：
+
+```bash
+cargo test -p intelligence-agent-core test_stability_100_rounds
+```
+
+预期：249+ 测试通过，0 编译错误。
+
 ## Advanced Usage
 
 Configure with Swarm and custom governance:
@@ -125,16 +172,6 @@ let agent = AgentLoopBuilder::new()
     .with_memory(Some(mem))
     .build()?;
 ```
-
-## Testing
-
-Run the full test suite:
-
-```bash
-cargo test -p intelligence-agent-core
-```
-
-Expected: 90+ tests passed, 0 compilation errors.
 
 ## DEBT Summary (Day 10)
 
