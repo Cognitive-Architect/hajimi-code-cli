@@ -24,6 +24,7 @@ lru = "0.12"
 
 [features]
 default = []
+napi = []
 
 [dev-dependencies]
 tokio-test = "0.4"

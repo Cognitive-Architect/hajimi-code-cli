@@ -25,18 +25,17 @@ pub trait ExecutionCallback: Send + Sync {
 }
 
 /// Executor trait for query execution.
-#[allow(async_fn_in_trait)]
 pub trait Executor: Send + Sync {
-    async fn execute(&self, query: Query) -> Result<QueryResult, EngineError>;
-    async fn execute_batch(&self, queries: Vec<Query>) -> Vec<Result<QueryResult, EngineError>>;
+    fn execute(&self, query: Query) -> impl std::future::Future<Output = Result<QueryResult, EngineError>> + Send;
+    fn execute_batch(&self, queries: Vec<Query>) -> impl std::future::Future<Output = Vec<Result<QueryResult, EngineError>>> + Send;
 }
 
 /// Extension trait for executing queries with a ToolRegistry.
 pub trait ToolExecutor {
     /// Execute a query by looking up and running a real tool from the registry.
-    async fn execute_with_registry(
+    fn execute_with_registry(
         &self,
         query: &Query,
         registry: &ToolRegistry,
-    ) -> Result<QueryResult, EngineError>;
+    ) -> impl std::future::Future<Output = Result<QueryResult, EngineError>> + Send;
 }
