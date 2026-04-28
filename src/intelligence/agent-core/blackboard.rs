@@ -57,7 +57,7 @@ impl Blackboard {
     /// Write entry with conflict resolution.
     pub async fn write(&self, key: &str, value: &str, agent_id: &str) {
         let mut c = self.counter.write().await; *c += 1; let v = *c;
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("system time before Unix epoch").as_millis() as u64;
         let new = BlackboardEntry { key: key.to_string(), value: value.to_string(), timestamp: ts, agent_id: agent_id.to_string(), version: v };
         let mut s = self.state.write().await;
         let evt = if let Some(e) = s.get(key) {

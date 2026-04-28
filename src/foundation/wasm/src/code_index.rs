@@ -79,7 +79,8 @@ impl CodeIndex {
             symbol_count: self.symbols.len(),
             errors: vec![],
         };
-        Ok(serde_wasm_bindgen::to_value(&result).unwrap())
+        serde_wasm_bindgen::to_value(&result)
+            .map_err(|e| JsValue::from_str(&format!("序列化失败: {}", e)))
     }
 
     fn parse_symbols(&self, file_path: &str, content: &str) -> Vec<CodeSymbol> {
@@ -162,7 +163,8 @@ impl CodeIndex {
             related_scopes: vec!["module".to_string(), "function".to_string(), "impl".to_string()],
             query_time_ms: start.elapsed().as_millis() as u32,
         };
-        Ok(serde_wasm_bindgen::to_value(&ctx).unwrap())
+        serde_wasm_bindgen::to_value(&ctx)
+            .map_err(|e| JsValue::from_str(&format!("序列化失败: {}", e)))
     }
 
     pub fn find_references_in_scope(&self, symbol_name: &str, scope: &str) -> Vec<CodeSymbol> {
@@ -182,8 +184,9 @@ impl CodeIndex {
             .map(|(i, s)| SearchResult { symbol: s.clone(), score: 1.0 - (i as f32 * 0.05) })
             .take(top_k)
             .collect();
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        Ok(serde_wasm_bindgen::to_value(&results).unwrap())
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        serde_wasm_bindgen::to_value(&results)
+            .map_err(|e| JsValue::from_str(&format!("序列化失败: {}", e)))
     }
 
     #[wasm_bindgen(js_name = isIndexed)]

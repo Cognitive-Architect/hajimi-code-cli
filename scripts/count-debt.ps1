@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 # HAJIMI 技术债务自动化计数脚本
 
-$files = Get-ChildItem -Recurse src\ -Include *.rs,*.js,*.ts |
-    Where-Object { $_.FullName -notmatch "\\target\\|\\node_modules\\|\\dist\\" }
+$paths = Get-ChildItem -Recurse src\ -Include *.rs,*.js,*.ts |
+    Select-Object -ExpandProperty FullName
 
-$debtCount = ($files | Select-String -Pattern "DEBT-" | Measure-Object).Count
-$todoCount = ($files | Select-String -Pattern "TODO|FIXME" | Measure-Object).Count
+$debtCount = (Select-String -Path $paths -Pattern "DEBT-" | Measure-Object).Count
+$todoCount = (Select-String -Path $paths -Pattern "TODO|FIXME" | Measure-Object).Count
 
 $total = $debtCount + $todoCount
 
