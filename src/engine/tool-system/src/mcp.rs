@@ -326,6 +326,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_agent_success() -> Result<(), Box<dyn std::error::Error>> {
+        // 运行时检查外部程序是否可用
+        if std::process::Command::new("echo").arg("--version").output().is_err() {
+            eprintln!("跳过测试: echo 在当前平台不可用");
+            return Ok(());
+        }
         let tool = SpawnAgentTool::new();
         let args = json!({"command": "echo hello"});
         let result = tool.execute(args).await?;
@@ -365,6 +370,11 @@ mod tests {
     
     #[tokio::test]
     async fn test_agent_lifecycle_full() -> Result<(), Box<dyn std::error::Error>> {
+        // 运行时检查外部程序是否可用
+        if std::process::Command::new("cat").arg("--version").output().is_err() {
+            eprintln!("跳过测试: cat 在当前平台不可用");
+            return Ok(());
+        }
         let spawn_tool = SpawnAgentTool::new();
         let spawn_result = spawn_tool.execute(json!({"command": "cat"})).await?;
         let agent_id: Value = serde_json::from_str(&spawn_result.stdout)?;
