@@ -17,10 +17,10 @@ pub mod session;
 pub mod state;
 pub mod traits;
 
-pub use clock::{Clock, MockClock, SystemTimeClock};
+pub use clock::{Clock, TestClock, SystemTimeClock};
 pub use engine::{EngineController, EngineState};
 pub use event::{ReplEvent, ReplEventSender};
-pub use io::{InputSource, MockInput, StdinInput};
+pub use io::{InputSource, TestInput, StdinInput};
 pub use repl::ChimeraRepl;
 pub use session::SessionState;
 pub use state::{ReplState, Role, SessionMeta, TurnItem};

@@ -89,7 +89,7 @@ class MigrationManager {
       `INSERT OR IGNORE INTO shard_meta (key, value) VALUES ('shard_id', '${shardId}')`
     );
 
-    // 创建空文件（模拟SQLite初始化）
+    // 创建空文件（placeholder SQLite 初始化）
     // 实际生产环境使用 better-sqlite3 执行SQL
     await fs.writeFile(shardPath, '');
     

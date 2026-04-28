@@ -32,21 +32,21 @@ impl InputSource for StdinInput {
     }
 }
 
-/// Mock input for testing with predefined inputs.
-pub struct MockInput {
+/// Test input for testing with predefined inputs.
+pub struct TestInput {
     inputs: Vec<String>,
     index: usize,
 }
 
-impl MockInput {
-    /// Create mock input with predefined lines.
+impl TestInput {
+    /// Create test input with predefined lines.
     pub fn with_input(inputs: Vec<String>) -> Self {
         Self { inputs, index: 0 }
     }
 }
 
 #[async_trait]
-impl InputSource for MockInput {
+impl InputSource for TestInput {
     async fn read_line(&mut self) -> Option<String> {
         if self.index < self.inputs.len() {
             let line = self.inputs[self.index].clone();

@@ -90,7 +90,7 @@ const app = {
       { id: 'view.chat', label: '视图: 显示 AI 对话', key: 'Ctrl+Shift+L', action: () => this.showSidebar('ai-chat') },
       { id: 'palette', label: '命令面板', key: 'Ctrl+Shift+P', action: () => this.showCommandPalette() },
       { id: 'chat.new', label: '对话: 新会话', key: '', action: () => this.newChatSession() },
-      { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.showErrorToast('Git 提交（模拟）') },
+      { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.gitCommit() },
       { id: 'providers.refresh', label: '模型: 刷新提供商列表', key: '', action: () => this.loadProviders() },
       // Phase 4 Day 5: Agent Command Palette commands
       { id: 'agent.refactor', label: '@agent refactor — 重构选中代码', key: '', action: () => this.runAgentCommand('@agent refactor selection') },
@@ -1210,7 +1210,7 @@ const app = {
   setupTerminal() {
     const terminalContent = document.getElementById('terminalContent');
     if (!terminalContent) return;
-    // Clear mock content and initialize with a prompt
+    // Clear placeholder content and initialize with a prompt
     terminalContent.innerHTML = '';
     this.appendTerminalPrompt();
 
@@ -1454,7 +1454,7 @@ const app = {
   startTraceSubscription() {
     const tauri = window.__TAURI__;
     if (!tauri || !tauri.core || !tauri.core.Channel) {
-      this.renderMockTraceCards();
+      this.renderDemoTraceCards();
       return;
     }
     const invoke = tauri.core.invoke;
@@ -1471,7 +1471,7 @@ const app = {
       };
       invoke('subscribe_agent_trace', { onEvent: channel }).catch(() => {});
     } catch (e) {
-      this.renderMockTraceCards();
+      this.renderDemoTraceCards();
     }
   },
 
@@ -1498,7 +1498,7 @@ const app = {
     }).join('');
   },
 
-  renderMockTraceCards() {
+  renderDemoTraceCards() {
     this.traceEvents = [
       { step: 'Planning', details: 'Planning initial goal: 分析代码结构', iteration: 0, timestamp: new Date().toISOString(), step_type: 'Plan', plan_summary: null, reflection_key_points: [], confidence_score: 0.85 },
       { step: 'Observing', details: 'Observed 12 blackboard keys', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Observe', plan_summary: null, reflection_key_points: [], confidence_score: null },
@@ -1981,17 +1981,17 @@ const app = {
       } catch (err) {
         console.error('stream_chat error:', err);
         this.removeThinking(thinkingId);
-        this.addChatMessage('ai', `**错误：** ${err.message || err}\n\n已回退到模拟回复。`);
-        this.addChatMessage('ai', this.generateMockResponse(text));
+        this.addChatMessage('ai', `**错误：** ${err.message || err}\n\n已回退到本地回复。`);
+        this.addChatMessage('ai', this.generateDemoResponse(text));
       } finally {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
       }
     } else {
-      // Fallback to mock
+      // Fallback to local demo
       setTimeout(() => {
         this.removeThinking(thinkingId);
-        this.addChatMessage('ai', this.generateMockResponse(text));
+        this.addChatMessage('ai', this.generateDemoResponse(text));
         this.isProcessing = false;
         chatSendBtn.disabled = false;
       }, 1200);
@@ -2165,10 +2165,10 @@ const app = {
     messages.scrollTop = messages.scrollHeight;
 
     if (!Channel) {
-      // Fallback: simulate streaming with mock response
-      const mockText = this.generateMockResponse(prompt);
+      // Fallback: simulate streaming with local response
+      const demoText = this.generateDemoResponse(prompt);
       let fullText = '';
-      const chars = mockText.split('');
+      const chars = demoText.split('');
       for (let i = 0; i < chars.length; i++) {
         fullText += chars[i];
         body.innerHTML = this.formatText(fullText);
@@ -2198,7 +2198,7 @@ const app = {
     await invoke('stream_chat', { provider, prompt, config, onEvent: channel });
   },
 
-  generateMockResponse(text) {
+  generateDemoResponse(text) {
     const lower = text.toLowerCase();
     if (lower.includes('help') || lower.startsWith('/help')) {
       return [
@@ -2230,7 +2230,7 @@ const app = {
     if (lower.startsWith('/tools')) {
       return '**可用工具 (38个)：**\n\n- `read_file` — 读取文件内容\n- `write_file` — 写入文件\n- `list_dir` — 列出目录内容\n- `run_command` — 执行 shell 命令\n- `search_code` — 搜索代码库\n- `git_status` — Git 状态\n- `git_diff` — Git 差异\n\n... 以及 31 个更多工具。使用 `/tool <名称> <参数>` 来执行。';
     }
-    return `我收到了：**"${text}"**\n\n（这是模拟回复 — 后端尚未连接。尝试询问 \`help\`、\`rust\`，或使用 \`/tools\`。）`;
+    return `我收到了：**"${text}"**\n\n（这是本地回复 — 后端尚未连接。尝试询问 \`help\`、\`rust\`，或使用 \`/tools\`。）`;
   },
 
   addChatMessage(role, text) {

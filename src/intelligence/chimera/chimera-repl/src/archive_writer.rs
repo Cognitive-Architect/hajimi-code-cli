@@ -110,7 +110,7 @@ impl ArchiveWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clock::MockClock;
+    use crate::clock::TestClock;
     use crate::state::{ReplState, Role, TurnItem};
     use crate::codex_bridge::CodexBridge;
     use serde_json::json;
@@ -120,7 +120,7 @@ mod tests {
     fn test_roundtrip_with_metadata() -> Result<(), ArchiveError> {
         let temp = TempDir::new()?;
         let writer = ArchiveWriter::new(temp.path().join("test.hctx"));
-        let state: ReplState<MockClock> = ReplState::default();
+        let state: ReplState<TestClock> = ReplState::default();
         let bridge = CodexBridge::new(state).map_err(|e| ArchiveError::Protocol(e.to_string()))?;
         let mut item = TurnItem::new("t1".to_string(), Role::User, "hello".to_string(), 1000);
         let mut meta = HashMap::new();
@@ -138,7 +138,7 @@ mod tests {
     fn test_checksum_integrity() -> Result<(), ArchiveError> {
         let temp = TempDir::new()?;
         let writer = ArchiveWriter::new(temp.path().join("chk.hctx"));
-        let state: ReplState<MockClock> = ReplState::default();
+        let state: ReplState<TestClock> = ReplState::default();
         let bridge = CodexBridge::new(state).map_err(|e| ArchiveError::Protocol(e.to_string()))?;
         let item = TurnItem::new("t2".to_string(), Role::Turn, "rsp".to_string(), 2000);
         writer.write_turn(&bridge.map_turn(&item).map_err(|e| ArchiveError::Protocol(e.to_string()))?)?;

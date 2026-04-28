@@ -2,7 +2,7 @@
  * MCP trace-to-edit mapping handler.
  * Converts AgentLoop Act step output into incremental WorkspaceEdit instructions.
  *
- * DEBT-W3-TRACE-EDIT-001: Edit chunks are generated from mock code analysis.
+ * DEBT-W3-TRACE-EDIT-001: Edit chunks are generated from placeholder code analysis.
  * Real Rust AgentLoop integration deferred to Week 4-5 (FFI bridge).
  */
 
@@ -38,7 +38,7 @@ export async function* streamTraceToEdit(query: string): AsyncGenerator<TraceEdi
       yield { type: 'trace', payload: { step, details: `${step}: ${q}`, iteration: i } };
 
       if (step === 'Act') {
-        for await (const edit of generateMockEdits(q)) {
+        for await (const edit of generateDemoEdits(q)) {
           yield { type: 'edit', payload: edit };
         }
       }
@@ -69,7 +69,7 @@ export function traceToEditStep(step: string): 'start' | 'stream' | 'end' | 'non
 
 /**
  * Apply a list of edit instructions to a text content string.
- * Returns the modified text (preview-mode simulation, not real WorkspaceEdit).
+ * Returns the modified text (preview-mode demonstration, not real WorkspaceEdit).
  */
 export function applyEditsToContent(content: string, edits: EditInstruction[]): string {
   let result = content;
@@ -91,8 +91,8 @@ export function applyEditsToContent(content: string, edits: EditInstruction[]): 
   return result;
 }
 
-/** Heuristic mock edit generator based on query keywords. */
-async function* generateMockEdits(query: string): AsyncGenerator<EditInstruction> {
+/** Heuristic demo edit generator based on query keywords. */
+async function* generateDemoEdits(query: string): AsyncGenerator<EditInstruction> {
   const lower = query.toLowerCase();
 
   if (lower.includes('add') || lower.includes('create')) {

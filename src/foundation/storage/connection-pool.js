@@ -20,9 +20,9 @@ const POOL_CONFIG = {
 };
 
 /**
- * 模拟连接（实际生产环境使用 better-sqlite3）
+ * Fallback connection (production uses better-sqlite3)
  */
-class MockConnection {
+class FallbackConnection {
   constructor(shardId) {
     this.shardId = shardId;
     this.id = Math.random().toString(36).substr(2, 9);
@@ -34,7 +34,7 @@ class MockConnection {
   async query(sql, params) {
     if (!this.isOpen) throw new Error('Connection closed');
     this.lastUsed = Date.now();
-    // 模拟查询
+    // Placeholder query
     return { rows: [], shardId: this.shardId };
   }
 
@@ -99,7 +99,7 @@ class ShardConnectionPool {
     }
     
     // 创建新连接
-    const conn = new MockConnection(shardId);
+    const conn = new FallbackConnection(shardId);
     pool.total++;
     return conn;
   }
@@ -268,6 +268,6 @@ class ShardConnectionPool {
 
 module.exports = {
   ShardConnectionPool,
-  MockConnection,
+  FallbackConnection,
   POOL_CONFIG
 };

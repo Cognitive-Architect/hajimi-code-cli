@@ -32,12 +32,12 @@ mod tests {
     use crate::{LspDefinitionTool, LspReferencesTool, LspHoverTool, McpInitTool, McpInvokeTool, CoverageReportTool, BenchmarkTool};
     use async_trait::async_trait;
 
-    struct MockTool;
+    struct TestTool;
 
     #[async_trait]
-    impl Tool for MockTool {
-        fn name(&self) -> &str { "mock" }
-        fn description(&self) -> &str { "Mock tool" }
+    impl Tool for TestTool {
+        fn name(&self) -> &str { "test" }
+        fn description(&self) -> &str { "Test tool" }
         fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
         async fn execute(&self, _args: ToolArgs) -> Result<ToolOutput, ToolError> {
             Ok(ToolOutput { stdout: "ok".to_string(), stderr: "".to_string(), exit_code: Some(0) })
@@ -47,9 +47,9 @@ mod tests {
     #[test]
     fn test_registry() {
         let mut registry = ToolRegistry::new();
-        registry.register(Arc::new(MockTool));
-        assert_eq!(registry.list(), vec!["mock"]);
-        assert!(registry.get("mock").is_some());
+        registry.register(Arc::new(TestTool));
+        assert_eq!(registry.list(), vec!["test"]);
+        assert!(registry.get("test").is_some());
     }
 
     /// Test registry with all tools including full local MCP server + permission flow - Task 05 Clearance (Minimal Reuse)

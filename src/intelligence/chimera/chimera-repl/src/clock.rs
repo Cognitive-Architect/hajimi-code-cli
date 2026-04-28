@@ -16,13 +16,13 @@ impl Clock for SystemTimeClock {
     }
 }
 
-/// Mock clock for testing with fixed timestamps.
+/// Test clock for testing with fixed timestamps.
 #[derive(Debug, Clone, Default)]
-pub struct MockClock {
+pub struct TestClock {
     time_ms: u64,
 }
 
-impl MockClock {
+impl TestClock {
     pub fn with_time(time_ms: u64) -> Self {
         Self { time_ms }
     }
@@ -31,7 +31,7 @@ impl MockClock {
     }
 }
 
-impl Clock for MockClock {
+impl Clock for TestClock {
     fn now_ms(&self) -> u64 {
         self.time_ms
     }

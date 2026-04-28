@@ -1,7 +1,7 @@
 //! Chimera REPL core traits.
 //!
 //! Defines the abstract interface for REPL engine operations,
-//! enabling pluggable implementations and test mocks.
+//! enabling pluggable implementations and test doubles.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

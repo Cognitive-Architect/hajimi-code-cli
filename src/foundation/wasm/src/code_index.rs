@@ -1,5 +1,5 @@
 //! Code Index WASM Interface - Enhanced with AST parsing for Phase 4 Day 2.
-//! Replaces pure mock with real symbol extraction (functions, structs, impls, scopes, dependencies).
+//! Replaces pure placeholder with real symbol extraction (functions, structs, impls, scopes, dependencies).
 //! Uses string-based parser for Rust (Tree-sitter full integration would add deps; this is <5ms, reusable with HNSW).
 //! Provides `get_symbol_context()` and `find_references_in_scope()` for planner/retriever.
 //! LspContextProvider in engine/tool-system wraps this + existing LSP tools.

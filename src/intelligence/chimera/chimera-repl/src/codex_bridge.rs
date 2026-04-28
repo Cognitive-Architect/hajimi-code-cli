@@ -69,18 +69,18 @@ impl<C: Clock> CodexBridge<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clock::MockClock;
+    use crate::clock::TestClock;
     use serde_json::json;
 
     #[test]
     fn test_role_mapping() {
-        assert_eq!(CodexBridge::<MockClock>::role_to_codex(Role::User), "user");
-        assert_eq!(CodexBridge::<MockClock>::role_to_codex(Role::Turn), "assistant");
+        assert_eq!(CodexBridge::<TestClock>::role_to_codex(Role::User), "user");
+        assert_eq!(CodexBridge::<TestClock>::role_to_codex(Role::Turn), "assistant");
     }
 
     #[test]
     fn test_turn_mapping() {
-        let state: ReplState<MockClock> = ReplState::default();
+        let state: ReplState<TestClock> = ReplState::default();
         let bridge = CodexBridge::new(state).unwrap();
         let item = TurnItem::new("t1".to_string(), Role::User, "hello".to_string(), 1000);
         let turn_meta = bridge.map_turn(&item).unwrap();
@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_metadata_extraction() {
-        let state: ReplState<MockClock> = ReplState::default();
+        let state: ReplState<TestClock> = ReplState::default();
         let bridge = CodexBridge::new(state).unwrap();
         let mut item = TurnItem::new("t2".to_string(), Role::User, "test".to_string(), 1000);
         let mut meta = HashMap::new();
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_empty_metadata() {
-        let state: ReplState<MockClock> = ReplState::default();
+        let state: ReplState<TestClock> = ReplState::default();
         let bridge = CodexBridge::new(state).unwrap();
         let item = TurnItem::new("t3".to_string(), Role::User, "test".to_string(), 1000);
         let turn_meta = bridge.map_turn(&item).unwrap();

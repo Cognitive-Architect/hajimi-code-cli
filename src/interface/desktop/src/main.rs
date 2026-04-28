@@ -24,8 +24,8 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
-use std::path::PathBuf;
-use tauri::ipc::Channel;
+use std::path::{Path, PathBuf};
+use tauri::{ipc::Channel, Manager};
 
 mod audit;
 
@@ -115,6 +115,18 @@ fn build_registry() -> ToolRegistry {
 }
 
 // ------------------------------------------------------------------
+// Security constants (B-01/04, B-02/04)
+// ------------------------------------------------------------------
+const ALLOWED_COMMANDS: &[&str] = &[
+    "git", "cargo", "npm", "node", "npx", "pnpm",
+    "rustc", "rustfmt", "clippy-driver",
+    "python", "python3", "pip", "pip3",
+    "code", "cursor",
+];
+
+const FORBIDDEN_CHARS: &[char] = &[';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>'];
+
+// ------------------------------------------------------------------
 // Legacy commands
 // ------------------------------------------------------------------
 #[tauri::command]
@@ -122,19 +134,70 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust.", name)
 }
 
-#[tauri::command]
-fn read_file(path: &str) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| e.to_string())
+/// 获取应用工作目录沙箱根路径
+fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let base = app_handle.path().document_dir()
+        .map_err(|e| format!("无法获取文档目录: {}", e))?;
+    let workspace = base.join("hajimi-workspace");
+    std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+    Ok(workspace)
+}
+
+/// 校验路径是否在工作目录沙箱内
+fn validate_path_within_workspace(path: &str, base_dir: &Path) -> Result<PathBuf, String> {
+    // 1. 拒绝显式包含 .. 的路径
+    if path.contains("..") {
+        return Err("路径包含非法 traversal: ..".to_string());
+    }
+
+    // 2. 解析绝对路径
+    let resolved = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        base_dir.join(path)
+    };
+
+    // 3. canonicalize（文件不存在时 fallback 到 resolved）
+    let canonical = resolved.canonicalize().unwrap_or(resolved);
+
+    // 4. 确认在 base_dir 内
+    let canonical_base = base_dir.canonicalize()
+        .map_err(|e| format!("无法解析工作目录: {}", e))?;
+
+    if !canonical.starts_with(&canonical_base) {
+        return Err(format!(
+            "路径越界: {} 不在工作目录 {} 内",
+            canonical.display(),
+            canonical_base.display()
+        ));
+    }
+
+    Ok(canonical)
 }
 
 #[tauri::command]
-fn write_file(path: &str, content: &str) -> Result<(), String> {
-    std::fs::write(path, content).map_err(|e| e.to_string())
+fn read_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    std::fs::read_to_string(&safe_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_dir(path: &str) -> Result<Vec<String>, String> {
-    let entries = std::fs::read_dir(path)
+fn write_file(path: &str, content: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    // 确保父目录存在
+    if let Some(parent) = safe_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&safe_path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_dir(path: &str, app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    let entries = std::fs::read_dir(&safe_path)
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
@@ -144,6 +207,18 @@ fn list_dir(path: &str) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn run_command(cmd: &str, args: Vec<String>) -> Result<String, String> {
+    // 1. 命令白名单校验
+    if !ALLOWED_COMMANDS.contains(&cmd) {
+        return Err(format!("命令 '{}' 不在白名单中", cmd));
+    }
+
+    // 2. 参数元字符过滤
+    for arg in &args {
+        if arg.contains("..") || arg.contains(FORBIDDEN_CHARS) {
+            return Err(format!("参数包含非法字符: {}", arg));
+        }
+    }
+
     let output = Command::new(cmd)
         .args(args)
         .output()
@@ -365,10 +440,14 @@ fn delete_api_key(id: &str) -> Result<(), String> {
     delete_api_key_with_profile(id, None)
 }
 
-fn delete_api_key_with_profile(_id: &str, _profile: Option<&str>) -> Result<(), String> {
-    // Optional: delete from OS keyring. API varies by platform/version; skipped for compatibility in v3.8.0
-    // Full impl: entry.delete_password().map_err(...)
-    Ok(())
+fn delete_api_key_with_profile(id: &str, profile: Option<&str>) -> Result<(), String> {
+    let entry = Entry::new("hajimi", &keyring_entry_id(id, profile))
+        .map_err(|e| format!("无法访问密钥存储: {}", e))?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()), // 已删除视为成功
+        Err(e) => Err(format!("删除密钥失败: {}", e)),
+    }
 }
 
 // Migration from plaintext to keyring (one-time on upgrade)
