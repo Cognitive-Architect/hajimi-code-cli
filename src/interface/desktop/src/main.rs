@@ -582,14 +582,14 @@ fn decrypt_backup(data: &[u8], password: &str) -> Result<String, String> {
 #[tauri::command]
 fn get_provider_configs(workspace_path: Option<String>, state: tauri::State<'_, AppState>) -> Vec<ProviderConfig> {
     // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     read_merged_configs(workspace_path.as_deref(), profile.as_deref())
 }
 
 #[tauri::command]
 fn add_provider_config(mut config: ProviderConfig, workspace_path: Option<String>, save_target: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
     // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if !config.api_key.trim().is_empty() {
         save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
     }
@@ -616,7 +616,7 @@ fn add_provider_config(mut config: ProviderConfig, workspace_path: Option<String
 
 #[tauri::command]
 fn update_provider_config(mut config: ProviderConfig, workspace_path: Option<String>, save_target: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if !config.api_key.trim().is_empty() {
         save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
     }
@@ -641,7 +641,7 @@ fn update_provider_config(mut config: ProviderConfig, workspace_path: Option<Str
 
 #[tauri::command]
 fn delete_provider_config(id: String, workspace_path: Option<String>, delete_target: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let _ = delete_api_key_with_profile(&id, profile.as_deref());
     let target = delete_target.as_deref().unwrap_or("global");
     if target == "workspace" {
@@ -664,7 +664,7 @@ fn delete_provider_config(id: String, workspace_path: Option<String>, delete_tar
 
 #[tauri::command]
 fn get_providers(workspace_path: Option<String>, state: tauri::State<'_, AppState>) -> Vec<ProviderInfo> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let mut providers = vec![
         ProviderInfo {
             name: "ollama".into(),
@@ -711,7 +711,7 @@ fn get_current_workspace() -> Option<String> {
 /// # Safety: API key from OS keyring, response validated via real HTTP before UI green status
 #[tauri::command]
 async fn validate_provider(config: ProviderConfig, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let key = if config.api_key.trim().is_empty() {
         get_api_key_with_profile(&config.id, profile.as_deref())?
     } else {
@@ -794,7 +794,7 @@ async fn stream_chat(
     on_event: Channel<StreamEvent>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
 
     // Audit: stream started (B-05/03)
@@ -848,7 +848,7 @@ async fn stream_chat(
 
 #[tauri::command]
 fn export_provider_backup(password: String, workspace_path: Option<String>, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let configs = read_merged_configs(workspace_path.as_deref(), profile.as_deref());
     let mut export_data = Vec::new();
     for cfg in configs {
@@ -867,7 +867,7 @@ fn export_provider_backup(password: String, workspace_path: Option<String>, stat
 
 #[tauri::command]
 fn import_provider_backup(password: String, file_path: String, state: tauri::State<'_, AppState>) -> Result<usize, String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let encrypted = std::fs::read(&file_path).map_err(|e| e.to_string())?;
     let plaintext = decrypt_backup(&encrypted, &password)?;
     let items: Vec<serde_json::Value> = serde_json::from_str(&plaintext).map_err(|e| e.to_string())?;
@@ -925,12 +925,12 @@ fn list_profiles() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn get_active_profile(state: tauri::State<'_, AppState>) -> Option<String> {
-    state.active_profile.lock().unwrap().clone()
+    state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 #[tauri::command]
 fn set_active_profile(name: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut profile = state.active_profile.lock().unwrap();
+    let mut profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner());
     *profile = name;
     Ok(())
 }
@@ -954,7 +954,7 @@ fn delete_profile(name: String, state: tauri::State<'_, AppState>) -> Result<(),
     let name = sanitize_profile_name(&name)?;
     // Clear active profile if deleting current
     {
-        let mut active = state.active_profile.lock().unwrap();
+        let mut active = state.active_profile.lock().unwrap_or_else(|e| e.into_inner());
         if active.as_deref() == Some(&name) {
             *active = None;
         }
@@ -982,14 +982,14 @@ fn delete_profile(name: String, state: tauri::State<'_, AppState>) -> Result<(),
 #[tauri::command]
 fn get_agent_providers(state: tauri::State<'_, AppState>) -> Result<HashMap<String, String>, String> {
     // SAFETY: Mutex held only for HashMap clone; poison unlikely in single-threaded Tauri command context
-    let map = state.agent_providers.lock().unwrap().clone();
+    let map = state.agent_providers.lock().unwrap_or_else(|e| e.into_inner()).clone();
     Ok(map)
 }
 
 #[tauri::command]
 fn set_agent_provider(agent_id: String, provider_id: Option<String>, state: tauri::State<'_, AppState>) -> Result<(), String> {
     // SAFETY: Mutex held only for HashMap insert/remove; poison unlikely in single-threaded Tauri command context
-    let mut map = state.agent_providers.lock().unwrap();
+    let mut map = state.agent_providers.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(pid) = provider_id {
         map.insert(agent_id, pid);
     } else {
@@ -1000,12 +1000,12 @@ fn set_agent_provider(agent_id: String, provider_id: Option<String>, state: taur
 
 #[tauri::command]
 async fn create_agent_with_provider(agent_id: String, goal: String, provider_id: Option<String>, state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let profile = state.active_profile.lock().unwrap().clone();
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
 
     // Store agent-provider mapping
     {
-        let mut map = state.agent_providers.lock().unwrap();
+        let mut map = state.agent_providers.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(pid) = provider_id.clone() {
             map.insert(agent_id.clone(), pid);
         } else {
@@ -1079,7 +1079,7 @@ async fn subscribe_agent_trace(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     // SAFETY: Mutex held only for Option clone; poison unlikely in single-threaded Tauri command context
-    let tx = state.trace_tx.lock().unwrap().clone();
+    let tx = state.trace_tx.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if tx.is_none() {
         on_event.send(TraceEvent {
             step: "Idle".to_string(), details: "AgentLoop is not running".to_string(), iteration: 0,
@@ -1117,14 +1117,14 @@ async fn subscribe_agent_trace(
 #[tauri::command]
 fn pause_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
     // SAFETY: Mutex held only for bool write; poison unlikely in single-threaded Tauri command context
-    *state.paused.lock().unwrap() = true;
+    *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = true;
     Ok(())
 }
 
 #[tauri::command]
 fn resume_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
     // SAFETY: Mutex held only for bool write; poison unlikely in single-threaded Tauri command context
-    *state.paused.lock().unwrap() = false;
+    *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = false;
     Ok(())
 }
 
@@ -1132,7 +1132,7 @@ fn resume_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
 fn set_approval_level(level: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let valid = ["Auto", "Advisory", "Required", "Critical", "Override"];
     if !valid.contains(&level.as_str()) { return Err("Invalid approval level".to_string()); }
-    *state.approval_level.lock().unwrap() = level;
+    *state.approval_level.lock().unwrap_or_else(|e| e.into_inner()) = level;
     Ok(())
 }
 
@@ -1212,16 +1212,16 @@ async fn run_agent_command(
         return Ok("PR review mode activated".to_string());
     }
     if trimmed.starts_with("@agent continue-background") {
-        *state.paused.lock().unwrap() = false;
+        *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = false;
         return Ok("Agent resumed in background".to_string());
     }
     if trimmed.starts_with("@agent pause") {
-        *state.paused.lock().unwrap() = true;
+        *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = true;
         return Ok("Agent paused".to_string());
     }
     if trimmed.starts_with("@agent status") {
-        let paused = *state.paused.lock().unwrap();
-        let level = state.approval_level.lock().unwrap().clone();
+        let paused = *state.paused.lock().unwrap_or_else(|e| e.into_inner());
+        let level = state.approval_level.lock().unwrap_or_else(|e| e.into_inner()).clone();
         return Ok(format!("Agent status: paused={}, approval_level={}", paused, level));
     }
     Err(format!("Unknown agent command: {}", cmd))

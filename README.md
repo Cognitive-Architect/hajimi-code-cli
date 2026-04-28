@@ -161,12 +161,14 @@ src/
 
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 220 | ~33,350 | engine/, intelligence/, foundation/ |
-| JavaScript | 18 | ~7,468 | interface/web/, foundation/ |
-| TypeScript | 28 | ~2,643 | tests/e2e/ |
-| HTML | 1 | ~634 | interface/web/ |
-| CSS | 1 | ~2,360 | interface/web/ |
-| **总计** | **268** | **~46,455** | - |
+| Rust | 220 | ~30,382 | engine/, intelligence/, foundation/ |
+| JavaScript | 18 | ~6,790 | interface/web/ |
+| TypeScript | 28 | ~2,301 | interface/mcp-server/, foundation/ |
+| HTML | 1 | ~614 | interface/web/ |
+| CSS | 1 | ~2,068 | interface/web/ |
+| **总计** | **268** | **~42,155** | - |
+
+> 统计口径：仅 `src/` 目录，排除 `target/`、`node_modules/`、`dist/`；含注释与空行；实测 2026-04-28。
 
 ## 关键文档
 
@@ -179,6 +181,40 @@ src/
 | **Phase 4 Remediation 报告** | `docs/audit/redteam/PHASE4-SELF-AUDIT.md` | 5D 修复自测报告 |
 | **Phase 4 债务记录** | `docs/debt/DEBT-P4-REMEDIATION.md` | 修复记录与验证 |
 | **Phase 4 编辑自测** | `docs/self-audit/PHASE4-EDITING-SELF-AUDIT.md` | 249测试实测数据 |
+
+## 配置模型（Providers Sidebar）
+
+HAJIMI IDE 通过 **Providers Sidebar** 管理 LLM 提供商配置，支持多 Provider 切换与自定义 OpenAI-Compatible 端点。
+
+### 打开 Providers Sidebar
+
+1. 点击左侧边栏 **⚙️ 设置** 图标，或按 `Ctrl+Shift+P` 打开 Command Palette 输入 `/providers`
+2. 在 Sidebar 中选择 **Providers** 标签页
+
+### 添加 Provider（3 步完成）
+
+1. **点击「+ 添加自定义 Provider」**
+2. **填写字段**：
+   - **名称**：自定义显示名称（如 `My-GPT-4`）
+   - **Base URL**：API 端点地址（如 `https://api.openai.com/v1`）
+   - **API Key**：从提供商后台获取的密钥
+   - **默认模型**：聊天时默认使用的模型 ID（如 `gpt-4`）
+3. **点击「验证」**按钮 — 后端将在 5 秒内尝试连通性检测，成功后会自动保存
+
+### 安全提示
+
+- **API Key 存储**：所有密钥通过操作系统钥匙串（Windows Credential Manager / macOS Keychain / Linux Secret Service）加密存储，明文不落磁盘
+- **配置文件隔离**：Workspace 级配置存储在 `<workspace>/.hajimi/providers.json`（仅元数据，无密钥），可覆盖全局设置
+- **权限要求**：首次保存 API Key 时，操作系统会弹出钥匙串访问授权，请点击「始终允许」
+
+### 内置 Provider
+
+| Provider | 类型 | 说明 |
+|:---|:---|:---|
+| `ollama` | 本地 | 本地 Ollama 推理，无需 API Key |
+| `anthropic` | 云端 | Claude 系列模型 |
+| `openai` | 云端 | GPT 系列模型 |
+| **自定义** | OpenAI-Compatible | 任意兼容 OpenAI API 格式的端点 |
 
 ## 安全
 

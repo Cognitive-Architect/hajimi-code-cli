@@ -491,10 +491,14 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 **按语言统计**:
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 181 | ~22,368 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 39 | ~12,946 | interface/ |
-| TypeScript | 48 | ~7,634 | interface/ |
-| **总计** | **268** | **~42,948** | - |
+| Rust | 220 | ~30,382 | engine/, intelligence/, foundation/wasm/ |
+| JavaScript | 18 | ~6,790 | interface/web/ |
+| TypeScript | 28 | ~2,301 | interface/mcp-server/, foundation/security/, foundation/storage/ |
+| HTML | 1 | ~614 | interface/web/ |
+| CSS | 1 | ~2,068 | interface/web/ |
+| **总计** | **268** | **~42,155** | - |
+
+> **统计口径**: 仅 `src/` 目录，排除 `target/`、`node_modules/`、`dist/`；含注释与空行；实测 2026-04-28。
 
 **TODO统计**:
 | 范围 | 当前数量 | 说明 |
@@ -502,7 +506,7 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 | .rs文件 | 242 | `find src -name "*.rs" | wc -l` (实测2026-04-27) |
 | 总源码行 | ~176k | 含rs/js/html/md (实测) |
 | 测试可执行 | ~25+ | cargo test --no-run (agent-core/tests/*为主) |
-| TODO/unwrap计数 | ~791 | grep实测 (D4已同步) |
+| TODO/unwrap计数 | ~630 | unwrap 431 / expect 184 / panic 15 (D4 实测)
 
 ---
 
