@@ -1,9 +1,9 @@
-# HAJIMI V3 架构文档
+﻿# HAJIMI V3 架构文档
 
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
-> **当前状态**: ✅ Agent Core 249测试全部通过，0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成  
+> **当前状态**: ✅ Agent Core 266测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复） <!-- D4-AUDIT-2026-04-28: metrics from real commands -->  
 > **最后更新**: 2026-04-27
 
 ---

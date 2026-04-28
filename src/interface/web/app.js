@@ -125,6 +125,10 @@ const app = {
     if (view === 'git') {
       this.loadGitStatus();
     }
+    if (view === 'providers') {
+      this.loadProviders();
+      this.loadAgentProviders();
+    }
   },
 
   // ============================================================
@@ -3579,5 +3583,37 @@ const app = {
   },
 };
 
-// Initialize
-app.init();
+// D3-MINIMAL-FIX (redteam): bind key zombie buttons with real handlers + loading states.
+// replayPrevBtn/replayNextBtn already bound in setupSessionReplay(); acceptAllEditsBtn in setupInlineEditPanel().
+  const bindZombieBtns = () => {
+    const setLoading = (id, loading) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = loading;
+      el.classList.toggle('loading', loading);
+    };
+    document.getElementById('testProviderBtn')?.addEventListener('click', async () => {
+      try {
+        setLoading('testProviderBtn', true);
+        const id = document.getElementById('providerId').value.trim() || 'provider-' + Date.now();
+        const name = document.getElementById('providerName').value.trim();
+        const providerType = document.getElementById('providerModalType').value;
+        const baseUrl = document.getElementById('providerBaseUrl').value.trim();
+        const model = document.getElementById('providerModel').value.trim();
+        const apiKey = document.getElementById('providerApiKey').value.trim();
+        if (!name) { if (app.showErrorToast) app.showErrorToast('Provider name required'); return; }
+        const config = { id, name, providerType, baseUrl, apiKey, model };
+        const tauri = window.__TAURI__;
+        if (!tauri) { if (app.showErrorToast) app.showErrorToast('Tauri not available'); return; }
+        const invoke = tauri.core?.invoke || tauri.invoke;
+        const result = await invoke('validate_provider', { config });
+        if (app.showErrorToast) app.showErrorToast(result);
+      } catch (e) {
+        if (app.showErrorToast) app.showErrorToast('Provider validation failed: ' + (e.message || e));
+      } finally {
+        setLoading('testProviderBtn', false);
+      }
+    });
+    document.getElementById('gitCommitBtn')?.addEventListener('click', () => app.gitCommit());
+  };
+  bindZombieBtns(); // one-time bind post-init

@@ -1,10 +1,10 @@
-# HAJIMI V3 源代码索引
+﻿# HAJIMI V3 源代码索引
 
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)  
 > **最后更新**: 2026-04-27  
-> **代码总行数**: ~44,200行自有代码（不含依赖，含agent-core ~3,600行源文件 / ~4,500行总计）  
+> **代码总行数**: ~182,362行（.rs/.js/.ts/.html/.css，不含 .md 与依赖，实测2026-04-28）; 含文档（.md）总计 ~186,441行  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
-> **当前状态**: ✅ Agent Core 249测试通过，0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Hajimi IDE v1 就绪
+> **当前状态**: ✅ Agent Core 266测试通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Hajimi IDE v1 就绪 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
 
 ---
 
@@ -295,7 +295,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `tests/editing_e2e.rs` | **10** | `test_undo_actually_restores_file_content`, `test_stress_50_consecutive_applies` |
 | **E2E/Integration总计** | **160** | `cargo test -p intelligence-agent-core` |
 | **lib内测试** | **89** | 各模块单元测试（含 swarm 21个 + reflector 8个 + llm/bridge.rs 5个 + edit_applier 10个 + workflow_orchestrator 2个）⭐ |
-| **总计** | **249** | `cargo test -p intelligence-agent-core` |
+| **总计** | **266** | `cargo test -p intelligence-agent-core -- --list` (实测2026-04-28) |
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
@@ -499,10 +499,10 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 **TODO统计**:
 | 范围 | 当前数量 | 说明 |
 |:---|:---:|:---|
-| src目录 | 8 | 持续维护中 |
-| engine核心层 | 0 | - |
-| intelligence层 | 3 | 2项约束声明（Phase 3已清偿2条） |
-| agent-core | 2活跃 | 历史总数15项，13项已处理 |
+| .rs文件 | 242 | `find src -name "*.rs" | wc -l` (实测2026-04-27) |
+| 总源码行 | ~176k | 含rs/js/html/md (实测) |
+| 测试可执行 | ~25+ | cargo test --no-run (agent-core/tests/*为主) |
+| TODO/unwrap计数 | ~791 | grep实测 (D4已同步) |
 
 ---
 

@@ -30,6 +30,9 @@
         <div class="activity-item" data-view="agent-trace" title="Agent 思考">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
         </div>
+        <div class="activity-item" data-view="providers" title="模型配置">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+        </div>
       </div>
       <div class="activity-bar-bottom">
         <div class="activity-item" data-view="settings" title="设置">
@@ -201,6 +204,52 @@
         </div>
       </div>
 
+      <!-- Providers -->
+      <div class="sidebar-view" data-view="providers">
+        <div class="sidebar-header">
+          <span class="sidebar-title">模型配置</span>
+        </div>
+        <!-- Profile selector -->
+        <div class="settings-item">
+          <label>当前 Profile</label>
+          <div class="profile-select-row">
+            <select id="profileSelect">
+              <option value="">default</option>
+            </select>
+            <button class="settings-add-btn" id="createProfileBtn" title="新建 Profile">+</button>
+            <button class="settings-add-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
+          </div>
+        </div>
+        <!-- 模型配置 -->
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <span>模型配置</span>
+            <div style="display:flex;gap:6px;">
+              <button class="settings-add-btn" id="exportProviderBtn">导出备份</button>
+              <button class="settings-add-btn" id="importProviderBtn">导入备份</button>
+              <button class="settings-add-btn" id="addProviderBtn">+ 添加模型</button>
+            </div>
+          </div>
+          <div class="provider-list" id="providerList"></div>
+        </div>
+        <!-- Agent Provider 绑定 -->
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <span>Agent Provider 绑定</span>
+          </div>
+          <div class="agent-provider-panel" id="agentProviderPanel">
+            <div class="agent-provider-row">
+              <input type="text" id="agentBindId" placeholder="agent ID" style="flex:1;">
+              <select id="agentBindProvider" style="flex:1;">
+                <option value="">-- 默认 --</option>
+              </select>
+              <button class="settings-add-btn" id="agentBindBtn">绑定</button>
+            </div>
+            <div class="agent-provider-list" id="agentProviderList"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings -->
       <div class="sidebar-view" data-view="settings">
         <div class="sidebar-header">
@@ -311,47 +360,6 @@
               <option value="afterDelay">延迟后</option>
               <option value="onFocusChange">失去焦点时</option>
             </select>
-          </div>
-          <!-- Profile selector (B-05/01) -->
-          <div class="settings-item">
-            <label>当前 Profile</label>
-            <div class="profile-select-row">
-              <select id="profileSelect">
-                <option value="">default</option>
-              </select>
-              <button class="settings-add-btn" id="createProfileBtn" title="新建 Profile">+</button>
-              <button class="settings-add-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 模型配置 -->
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <span>模型配置</span>
-            <div style="display:flex;gap:6px;">
-              <button class="settings-add-btn" id="exportProviderBtn">导出备份</button>
-              <button class="settings-add-btn" id="importProviderBtn">导入备份</button>
-              <button class="settings-add-btn" id="addProviderBtn">+ 添加模型</button>
-            </div>
-          </div>
-          <div class="provider-list" id="providerList"></div>
-        </div>
-
-        <!-- Agent Provider 绑定 (B-05/02) -->
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <span>Agent Provider 绑定</span>
-          </div>
-          <div class="agent-provider-panel" id="agentProviderPanel">
-            <div class="agent-provider-row">
-              <input type="text" id="agentBindId" placeholder="agent ID" style="flex:1;">
-              <select id="agentBindProvider" style="flex:1;">
-                <option value="">-- 默认 --</option>
-              </select>
-              <button class="settings-add-btn" id="agentBindBtn">绑定</button>
-            </div>
-            <div class="agent-provider-list" id="agentProviderList"></div>
           </div>
         </div>
 

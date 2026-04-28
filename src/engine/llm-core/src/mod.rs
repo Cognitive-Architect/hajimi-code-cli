@@ -148,3 +148,7 @@ pub mod openai;
 pub use anthropic::AnthropicClient;
 pub use ollama::OllamaClient;
 pub use openai::OpenAiClient;
+
+// Re-export reqwest::Client for downstream consumers (e.g. desktop validate_provider)
+/// # Safety: reqwest::Client is safe to clone and share across tasks
+pub use reqwest::Client;

@@ -1,8 +1,8 @@
-# HAJIMI V3 贡献指南
+﻿# HAJIMI V3 贡献指南
 
 > **目标**: 帮助开发者快速理解代码结构并参与开发  
 > **适用对象**: 核心开发者、代码审查员、功能扩展者  
-> **架构版本**: v3.8.0（四层分层架构）  
+> **架构版本**: v3.9.0（四层分层架构）  
 > **最后更新**: 2026-04-26
 
 ---
@@ -509,6 +509,7 @@ keyword_index.entry(keyword)
 
 提交 PR 前请确认：
 
+- [ ] **D4 数据诚实**: 所有文档 metric 与实测命令输出一致（`cargo test --no-run`、`find src -name "*.rs" | wc -l`、`grep unwrap|TODO`） <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
 - [ ] **分层合规**: 无下层依赖上层
 - [ ] **编译通过**: `cargo check --workspace` 0 errors
 - [ ] **测试通过**: 新增功能有测试覆盖
@@ -578,9 +579,9 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 
 | 指标 | 值 | 状态 |
 |:---|:---:|:---:|
-| 代码总行数 | ~42,948 | ✅ |
-| Rust文件数 | 181 | ✅ |
-| src目录TODO | 10 | ✅ |
+| 代码总行数 | ~182,362（实测 src/ 下 .rs/.js/.ts 总行数） | ✅ |
+| Rust文件数 | 242（实测 `find src -name "*.rs"`） | ✅ |
+| src目录债务项 | 762（455 unwrap + 184 expect + 123 TODO/DEBT，实测2026-04-28） | ✅ |
 | unsafe SAFETY覆盖率 | 100% (13/13) | ✅ |
 | E2E测试 | Agent Core | ✅ |
 | Agent Core测试 (lib) | 55 passed | ✅ |
@@ -600,6 +601,7 @@ cargo check -p intelligence-agent-core 2>&1 | grep -c "warning:"
 - ✅ VSCode Sidebar 56→7对齐 完成
 
 **已知限制与待办**:
+- dead_code 处理: main.rs 中 5 个未使用函数（save_api_key/get_api_key/delete_api_key/read_provider_configs/write_provider_configs）已添加 `#[allow(dead_code)]`，保留代码以备后续使用（Day 2）
 - WebRTC PSK长期管理（KMS/Vault/Rotation）
 - Shell复杂功能降级清单（管道/重定向/逻辑运算符）
 - Graph/Dream层记忆检索待集成

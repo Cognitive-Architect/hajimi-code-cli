@@ -494,7 +494,9 @@ mod tests {
 
         let agent_id: AgentId = "test-agent-001".to_string();
 
+        // SAFETY: test-only expect; applier is fresh and test data is valid
         let proposed = applier.propose(proposed, &agent_id).await.expect("propose should succeed");
+        // SAFETY: test-only expect; review follows successful propose
         let accepted = applier.review(true, &agent_id).await.expect("review should succeed");
         assert!(accepted);
         assert_eq!(applier.current_edit_state(), EditState::Reviewed);
@@ -516,11 +518,14 @@ mod tests {
             rationale: "".to_string(),
         };
 
+        // SAFETY: test-only unwrap; applier is fresh and test data is valid
         let _ = applier.propose(proposed, &agent_id).await.unwrap();
+        // SAFETY: test-only unwrap; review follows successful propose
         let accepted = applier.review(false, &agent_id).await.unwrap();
         assert!(!accepted);
         assert_eq!(applier.current_edit_state(), EditState::Rejected);
 
+        // SAFETY: test-only unwrap; undo follows review of proposed edit
         let undone = applier.undo_last(&agent_id).await.unwrap();
         assert!(undone.is_none());
     }
@@ -603,10 +608,13 @@ mod tests {
     #[tokio::test]
     async fn test_atomic_write_and_read() {
         let temp_path = std::env::temp_dir().join("hajimi_test_atomic_write.txt");
+        // SAFETY: temp_dir() always returns valid UTF-8 path on supported platforms
         let path_str = temp_path.to_str().unwrap();
         let content = "Hello, atomic world!";
 
+        // SAFETY: test-only expect; atomic write to temp file should succeed
         atomic_write_file(path_str, content).await.expect("atomic write should succeed");
+        // SAFETY: test-only expect; read immediately after successful write
         let read = tokio::fs::read_to_string(path_str).await.expect("read should succeed");
         assert_eq!(read, content);
 
