@@ -161,10 +161,12 @@ src/
 
 | 语言 | 文件数 | 行数 | 主要分布 |
 |:---|:---:|:---:|:---|
-| Rust | 181 | ~22,368 | engine/, intelligence/, foundation/wasm/ |
-| JavaScript | 39 | ~12,946 | interface/ |
-| TypeScript | 48 | ~7,634 | interface/ |
-| **总计** | **268** | **~44,200** | - |
+| Rust | 220 | ~33,350 | engine/, intelligence/, foundation/ |
+| JavaScript | 18 | ~7,468 | interface/web/, foundation/ |
+| TypeScript | 28 | ~2,643 | tests/e2e/ |
+| HTML | 1 | ~634 | interface/web/ |
+| CSS | 1 | ~2,360 | interface/web/ |
+| **总计** | **268** | **~46,455** | - |
 
 ## 关键文档
 
@@ -174,7 +176,9 @@ src/
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发规范与流程 |
 | 源代码索引 | `src/INDEX.md` | 详细模块索引 |
 | API 文档 | `docs/API.md` | 接口定义 |
-| **Phase 4 自测报告** | `docs/self-audit/PHASE4-EDITING-SELF-AUDIT.md` | 249测试实测数据 |
+| **Phase 4 Remediation 报告** | `docs/audit/redteam/PHASE4-SELF-AUDIT.md` | 5D 修复自测报告 |
+| **Phase 4 债务记录** | `docs/debt/DEBT-P4-REMEDIATION.md` | 修复记录与验证 |
+| **Phase 4 编辑自测** | `docs/self-audit/PHASE4-EDITING-SELF-AUDIT.md` | 249测试实测数据 |
 
 ## 安全
 
@@ -189,4 +193,4 @@ Apache-2.0
 
 ---
 
-*最后更新: 2026-04-27 — Hajimi IDE v1 (Phase 1-4) 完成 ✅*
+*最后更新: 2026-04-28 — Hajimi IDE v1 (Phase 1-4) 完成，Remediation 通过审计 ✅*
