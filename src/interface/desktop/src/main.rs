@@ -313,7 +313,7 @@ struct ProviderConfig {
     id: String,
     name: String,
     provider_type: String,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     api_key: String,
     base_url: String,
     model: String,
@@ -727,18 +727,52 @@ async fn validate_provider(config: ProviderConfig, state: tauri::State<'_, AppSt
         else if config.provider_type.contains("openai") { "https://api.openai.com".to_string() }
         else { return Err(format!("Provider '{}' requires a base_url for type '{}'", config.name, config.provider_type)); }
     } else { config.base_url.clone() };
-    let req = client.get(format!("{}/v1/models", base)).timeout(std::time::Duration::from_secs(5));
-    let req = if config.provider_type.contains("anthropic") { req.header("x-api-key", &key).header("anthropic-version", "2023-06-01") }
-        else if config.provider_type.contains("openai") { req.header("Authorization", format!("Bearer {}", key)) }
-        else { req };
+    // Normalize base URL: avoid double /v1 if base_url already ends with /v1
+    let base_trimmed = base.trim_end_matches('/');
+    let chat_url = if base_trimmed.ends_with("/v1") {
+        format!("{}/chat/completions", base_trimmed)
+    } else {
+        format!("{}/v1/chat/completions", base_trimmed)
+    };
+    let test_payload = serde_json::json!({
+        "model": config.model.as_str(),
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1
+    });
+    let req = client.post(&chat_url)
+        .timeout(std::time::Duration::from_secs(8))
+        .header("User-Agent", "hajimi/3.8.0")
+        .json(&test_payload);
+    let req = if config.provider_type.contains("anthropic") {
+        req.header("x-api-key", &key).header("anthropic-version", "2023-06-01")
+    } else {
+        req.header("Authorization", format!("Bearer {}", key))
+    };
     match req.send().await {
-        Ok(r) if r.status().is_success() => Ok(format!("✅ {} real HTTP validation passed.", config.name)),
-        Ok(r) => Err(format!("Provider test failed: HTTP {}", r.status())),
-        Err(_) => {
+        Ok(r) => {
+            let status = r.status();
+            if status.is_success() {
+                Ok(format!("✅ {} 连接测试通过", config.name))
+            } else if status.as_u16() == 401 || status.as_u16() == 403 {
+                Err(format!("API Key 认证失败 (HTTP {})，请检查 Key 是否正确，以及 Key 和 Base URL 是否属于同一平台", status))
+            } else if status.as_u16() == 404 {
+                Err(format!("API 端点不存在 (HTTP 404)，请检查 Base URL 是否正确。当前请求地址: {}", chat_url))
+            } else if status.as_u16() == 429 {
+                Err(format!("请求过于频繁 (HTTP 429)，请稍后再试"))
+            } else if status.as_u16() == 400 {
+                // 400 usually means auth passed but model name or params invalid
+                Ok(format!("✅ {} 认证通过 (模型名或参数可能需要调整)", config.name))
+            } else {
+                Err(format!("测试失败: HTTP {} - {}", status, r.text().await.unwrap_or_default().chars().take(200).collect::<String>()))
+            }
+        }
+        Err(e) => {
             // fallback to format check
-            if (config.provider_type.contains("anthropic") && (key.starts_with("sk-ant") || key.starts_with("sk-"))) || key.starts_with("sk-") || key.len() > 15 {
-                Ok(format!("⚠️ {} format check passed (network unreachable).", config.name))
-            } else { Err("Invalid key format".to_string()) }
+            if key.starts_with("sk-") || key.len() > 15 {
+                Ok(format!("⚠️ {} 网络无法到达，Key 格式检查通过", config.name))
+            } else {
+                Err(format!("连接失败: {}", e))
+            }
         }
     }
 }

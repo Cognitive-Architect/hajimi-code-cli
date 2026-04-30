@@ -2,7 +2,7 @@
 // Hajimi Code — VSCode-style IDE Frontend
 // ============================================================
 
-const app = {
+window.app = {
   // State
   tabs: [],
   activeTab: null,
@@ -12,13 +12,14 @@ const app = {
   isProcessing: false,
   commands: [],
   providerConfigs: [],
+  activeProviderId: null,
   editingProviderId: null,
   currentWorkspace: null,
   fileTree: null,
   commandHistory: [],
   commandHistoryIndex: -1,
   settings: {
-    theme: 'dark+',
+    theme: 'dark',
     fontSize: 14,
     wordWrap: true,
     autoSave: 'off',
@@ -29,33 +30,25 @@ const app = {
   tracePaused: false,
   traceChannel: null,
   extensions: [
-    { id: 'rust', name: 'Rust', desc: 'Rust 语言支持', version: '1.0.0', publisher: 'rust-lang', icon: 'R', iconColor: '#007acc', installed: true },
-    { id: 'hajimi-agent', name: 'Hajimi 智能体', desc: 'AI 助手集成', version: '0.3.0', publisher: 'hajimi', icon: 'H', iconColor: '#d4a574', installed: true },
-    { id: 'toml', name: 'TOML', desc: 'TOML 语言支持', version: '0.1.0', publisher: '应用市场', icon: 'T', iconColor: '#4ec9b0', installed: false },
-    { id: 'python', name: 'Python', desc: 'Python 语言支持', version: '1.2.0', publisher: 'microsoft', icon: 'P', iconColor: '#3572A5', installed: false },
-    { id: 'go', name: 'Go', desc: 'Go 语言支持', version: '0.5.0', publisher: 'golang', icon: 'G', iconColor: '#00ADD8', installed: false },
-    { id: 'docker', name: 'Docker', desc: 'Dockerfile 和 Compose 支持', version: '1.0.0', publisher: 'microsoft', icon: 'D', iconColor: '#2496ED', installed: false },
+    { id: 'rust', name: 'Rust', desc: 'Rust 语言支持', version: '1.0.0', publisher: 'rust-lang', icon: 'R', iconColor: 'var(--fg-cyan)', installed: true },
+    { id: 'hajimi-agent', name: 'Hajimi 智能体', desc: 'AI 助手集成', version: '0.3.0', publisher: 'hajimi', icon: 'H', iconColor: 'var(--fg-magenta)', installed: true },
+    { id: 'toml', name: 'TOML', desc: 'TOML 语言支持', version: '0.1.0', publisher: '应用市场', icon: 'T', iconColor: 'var(--fg-green)', installed: false },
+    { id: 'python', name: 'Python', desc: 'Python 语言支持', version: '1.2.0', publisher: 'microsoft', icon: 'P', iconColor: 'var(--fg-cyan)', installed: false },
+    { id: 'go', name: 'Go', desc: 'Go 语言支持', version: '0.5.0', publisher: 'golang', icon: 'G', iconColor: 'var(--fg-cyan)', installed: false },
+    { id: 'docker', name: 'Docker', desc: 'Dockerfile 和 Compose 支持', version: '1.0.0', publisher: 'microsoft', icon: 'D', iconColor: 'var(--fg-cyan)', installed: false },
   ],
   installedExtensions: [],
 
   init() {
     this.setupActivityBar();
-    this.setupTabs();
-    this.setupPanel();
     this.setupChat();
     this.setupCommandPalette();
     this.setupKeyboardShortcuts();
     this.setupStatusBar();
-    this.setupTerminal();
     this.setupTraceTabs();
     this.setupSessionReplay();
     this.setupFileTreeToolbar();
-    this.setupSearch();
-    this.setupGit();
-    this.setupOutputPanel();
     this.setupAgentTrace();
-    this.setupInlineEditPanel();
-    this.setupResizers();
     this.loadSettings();
     this.setupSystemThemeListener();
     this.loadLayoutSizes();
@@ -63,6 +56,7 @@ const app = {
       this.loadFileTree();
     });
     this.loadProviders();
+    this.setupModelPicker();
     this.setupProviderSettings();
     this.loadProfiles();
     this.setupProfileSettings();
@@ -72,22 +66,17 @@ const app = {
     this.setupGovernance();
     this.setupSessionBrowser();
     this.setupResourceDashboard();
-    this.setupExtensions();
-
-    // Open welcome tab by default
-    this.openTab('welcome', '欢迎', null, 'welcome');
 
     // Build command list
     this.commands = [
       { id: 'file.open', label: '文件: 打开文件', key: 'Ctrl+O', action: () => this.openFilePrompt() },
       { id: 'file.openFolder', label: '文件: 打开文件夹', key: 'Ctrl+K Ctrl+O', action: () => this.openFolder() },
-      { id: 'file.save', label: '文件: 保存', key: 'Ctrl+S', action: () => this.saveFile() },
-      { id: 'view.explorer', label: '视图: 显示资源管理器', key: 'Ctrl+Shift+E', action: () => this.showSidebar('explorer') },
-      { id: 'view.search', label: '视图: 显示搜索', key: 'Ctrl+Shift+F', action: () => this.showSidebar('search') },
-      { id: 'view.git', label: '视图: 显示源代码管理', key: 'Ctrl+Shift+G', action: () => this.showSidebar('git') },
-      { id: 'view.ai', label: '视图: 显示 AI 助手', key: 'Ctrl+Shift+A', action: () => this.showSidebar('ai') },
-      { id: 'view.terminal', label: '视图: 切换终端', key: 'Ctrl+\`', action: () => this.togglePanel('terminal') },
-      { id: 'view.chat', label: '视图: 显示 AI 对话', key: 'Ctrl+Shift+L', action: () => this.showSidebar('ai-chat') },
+      { id: 'view.chat-sessions', label: '视图: 显示会话列表', key: 'Ctrl+Shift+C', action: () => this.showSidebar('chat-sessions') },
+      { id: 'view.explorer', label: '视图: 显示文件', key: 'Ctrl+Shift+E', action: () => this.showSidebar('explorer') },
+      { id: 'view.models', label: '视图: 显示模型', key: 'Ctrl+Shift+M', action: () => this.showSidebar('models') },
+      { id: 'view.system', label: '视图: 显示系统', key: 'Ctrl+Shift+Y', action: () => this.showSidebar('system') },
+      { id: 'view.agent-trace', label: '视图: 显示 Agent Trace', key: 'Ctrl+Shift+A', action: () => this.showSidebar('agent-trace') },
+      { id: 'view.settings', label: '视图: 显示设置', key: 'Ctrl+Shift+S', action: () => this.showSidebar('settings') },
       { id: 'palette', label: '命令面板', key: 'Ctrl+Shift+P', action: () => this.showCommandPalette() },
       { id: 'chat.new', label: '对话: 新会话', key: '', action: () => this.newChatSession() },
       { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.gitCommit() },
@@ -119,15 +108,28 @@ const app = {
     document.querySelectorAll('.activity-item').forEach(el => {
       el.classList.toggle('active', el.dataset.view === view);
     });
-    document.querySelectorAll('.sidebar-view').forEach(el => {
-      el.classList.toggle('active', el.dataset.view === view);
+    document.querySelectorAll('.sidebar-panel').forEach(el => {
+      el.classList.toggle('active', el.dataset.panel === view);
     });
     if (view === 'git') {
       this.loadGitStatus();
     }
-    if (view === 'providers') {
+    if (view === 'settings') {
       this.loadProviders();
       this.loadAgentProviders();
+    }
+  },
+
+  toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const current = sidebar.style.width || getComputedStyle(sidebar).width;
+    if (current === '0px' || current === '0') {
+      sidebar.style.width = 'var(--sidebar-width)';
+      sidebar.style.display = '';
+    } else {
+      sidebar.style.width = '0px';
+      sidebar.style.display = 'none';
     }
   },
 
@@ -151,11 +153,11 @@ const app = {
     const pattern = searchInput.value.trim();
     if (!pattern) return;
 
-    searchResults.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);font-size:12px;">搜索中...</div>';
+    searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">搜索中...</div>';
 
     const tauri = window.__TAURI__;
     if (!tauri) {
-      searchResults.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);">Tauri 不可用</div>';
+      searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);">Tauri 不可用</div>';
       return;
     }
     const invoke = tauri.core?.invoke || tauri.invoke;
@@ -172,14 +174,14 @@ const app = {
       const output = result.stdout || result.result || '';
       this.renderSearchResults(output);
     } catch (e) {
-      searchResults.innerHTML = `<div style="padding:12px;color:var(--vscode-red);">搜索失败: ${this.escapeHtml(e.message || e)}</div>`;
+      searchResults.innerHTML = `<div style="padding:12px;color:var(--fg-red);">搜索失败: ${this.escapeHtml(e.message || e)}</div>`;
     }
   },
 
   renderSearchResults(output) {
     const searchResults = document.getElementById('searchResults');
     if (!output.trim()) {
-      searchResults.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);font-size:12px;">未找到匹配</div>';
+      searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>';
       return;
     }
 
@@ -199,7 +201,7 @@ const app = {
     }
 
     if (!results.length) {
-      searchResults.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);font-size:12px;">未找到匹配</div>';
+      searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>';
       return;
     }
 
@@ -275,7 +277,7 @@ const app = {
 
     const lines = output.trim().split('\n').filter(l => l.trim());
     if (!lines.length) {
-      fileList.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);font-size:12px;">没有更改</div>';
+      fileList.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">没有更改</div>';
       if (badge) badge.textContent = '0';
       return;
     }
@@ -376,7 +378,7 @@ const app = {
         const branch = (result.stdout || result).trim();
         const statusBranch = document.getElementById('statusBranch');
         if (statusBranch && branch) {
-          statusBranch.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M6 9v6"/><path d="M9 12h6a3 3 0 013 3v3"/></svg> ${this.escapeHtml(branch)}`;
+          statusBranch.innerHTML = `🌿 ${this.escapeHtml(branch)}`;
         }
       })
       .catch(() => {
@@ -508,7 +510,7 @@ const app = {
     const container = document.getElementById('fileTree');
     container.innerHTML = '';
     if (!this.fileTree) {
-      container.innerHTML = '<div style="padding:12px;color:var(--vscode-text-muted);font-size:12px;">加载中...</div>';
+      container.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">加载中...</div>';
       return;
     }
     this.renderTreeNode(this.fileTree, container, 0);
@@ -522,7 +524,7 @@ const app = {
       folderEl.innerHTML = `
         <span class="tree-toggle">▶</span>
         <span class="tree-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          📁
         </span>
         <span class="tree-label">${node.name}</span>
       `;
@@ -577,26 +579,21 @@ const app = {
   getFileIconColor(filename) {
     const ext = filename.split('.').pop();
     const colors = {
-      rs: '#dea584', toml: '#9c4ddb', md: '#519aba',
-      js: '#f7df1e', ts: '#3178c6', css: '#563d7c',
-      html: '#e34c26', json: '#f7df1e', py: '#3572A5'
+      rs: 'var(--fg-dim)', toml: 'var(--fg-dim)', md: 'var(--fg-dim)',
+      js: 'var(--fg-dim)', ts: 'var(--fg-dim)', css: 'var(--fg-dim)',
+      html: 'var(--fg-dim)', json: 'var(--fg-dim)', py: 'var(--fg-dim)'
     };
-    return colors[ext] || '#858585';
+    return colors[ext] || 'var(--fg-dim)';
   },
 
   getFileIconSvg(filename) {
     const ext = filename.split('.').pop();
     const icons = {
-      rs: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      toml: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      md: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      js: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      ts: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      css: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      html: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-      json: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+      rs: '🦀', toml: '⚙', md: '📝',
+      js: '𝕁', ts: '𝕋', css: '🎨',
+      html: '𝐇', json: '{ }'
     };
-    return icons[ext] || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    return icons[ext] || '📄';
   },
 
   // ============================================================
@@ -779,11 +776,11 @@ const app = {
 
   getTabIcon(id) {
     if (id === 'welcome') {
-      return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
+      return '⌂';
     }
     const ext = id.split('.').pop();
     const color = this.getFileIconColor(id);
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+    return '📄';
   },
 
   renderEditor() {
@@ -853,22 +850,22 @@ const app = {
             <div class="welcome-section">
               <h3>开始</h3>
               <div class="welcome-link" onclick="app.openFile('src/interface/desktop/src/main.rs')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                📄
                 打开 main.rs
               </div>
               <div class="welcome-link" onclick="app.openFolder()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                📁
                 打开文件夹
               </div>
               <div class="welcome-link" onclick="app.cloneRepo()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M6 9v6"/><path d="M9 12h6a3 3 0 013 3v3"/></svg>
+                🌿
                 克隆仓库
               </div>
             </div>
             <div class="welcome-section">
               <h3>最近</h3>
               <div class="welcome-link" onclick="app.openFile('Cargo.toml')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                ◷
                 hajimi-code-cli
               </div>
             </div>
@@ -1106,30 +1103,108 @@ const app = {
         return;
       }
     }
+    this.addFilePreviewMessage(path, content);
+  },
+
+  addFilePreviewMessage(path, content) {
     const label = path.split('/').pop();
-    this.openTab(path, label, content, 'code');
+    const messages = document.getElementById('aiChatMessages');
+    if (!messages) return;
+    const div = document.createElement('div');
+    div.className = 'chat-message ai';
+    const truncated = content.length > 3000 ? content.slice(0, 3000) + '\n...' : content;
+    div.innerHTML = `
+      <div class="file-preview-header" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:4px;font-size:12px;font-family:var(--font-mono);color:var(--fg-dim);">
+        <span>📄 ${this.escapeHtml(label)}</span>
+        <button class="copy-file-btn" style="background:transparent;border:none;color:var(--fg-dim);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px;">📋 Copy</button>
+      </div>
+      <pre style="margin:0;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-sm);padding:var(--space-2);overflow-x:auto;font-size:12px;line-height:1.5;"><code>${this.escapeHtml(truncated)}</code></pre>
+    `;
+    const copyBtn = div.querySelector('.copy-file-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(content);
+        copyBtn.textContent = '✓ Copied';
+        setTimeout(() => copyBtn.textContent = '📋 Copy', 2000);
+      });
+    }
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  },
+
+  addDiffMessageCard(filePath, oldLines, newLines) {
+    const messages = document.getElementById('aiChatMessages');
+    if (!messages) return;
+    const div = document.createElement('div');
+    div.className = 'chat-message ai diff-card';
+    const label = filePath.split('/').pop();
+    const cardId = 'diff-' + Date.now();
+    div.id = cardId;
+
+    // Build diff lines
+    let diffHtml = '';
+    const maxLines = Math.max(oldLines.length, newLines.length);
+    for (let i = 0; i < maxLines; i++) {
+      const oldLine = oldLines[i] !== undefined ? oldLines[i] : null;
+      const newLine = newLines[i] !== undefined ? newLines[i] : null;
+      if (oldLine === newLine && oldLine !== null) {
+        diffHtml += `<div class="diff-line"><span class="diff-line-num ctx">${i + 1}</span><span class="diff-gutter"> </span><span class="diff-line-code">${this.escapeHtml(oldLine)}</span></div>`;
+      } else if (oldLine !== null && newLine === null) {
+        diffHtml += `<div class="diff-line del"><span class="diff-line-num del">${i + 1}</span><span class="diff-gutter">-</span><span class="diff-line-code">${this.escapeHtml(oldLine)}</span></div>`;
+      } else if (newLine !== null && oldLine === null) {
+        diffHtml += `<div class="diff-line add"><span class="diff-line-num add">${i + 1}</span><span class="diff-gutter">+</span><span class="diff-line-code">${this.escapeHtml(newLine)}</span></div>`;
+      } else if (oldLine !== null && newLine !== null) {
+        diffHtml += `<div class="diff-line del"><span class="diff-line-num del">${i + 1}</span><span class="diff-gutter">-</span><span class="diff-line-code">${this.escapeHtml(oldLine)}</span></div>`;
+        diffHtml += `<div class="diff-line add"><span class="diff-line-num add">${i + 1}</span><span class="diff-gutter">+</span><span class="diff-line-code">${this.escapeHtml(newLine)}</span></div>`;
+      }
+    }
+
+    div.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:4px 0;font-size:12px;font-family:var(--font-mono);">
+        <span style="color:var(--fg-default);">📄 ${this.escapeHtml(label)}</span>
+        <div style="display:flex;gap:6px;">
+          <button class="diff-apply-btn" data-card="${cardId}" style="background:var(--diff-add-bg);border:1px solid var(--fg-green);color:var(--fg-green);cursor:pointer;padding:3px 10px;border-radius:4px;font-size:11px;">✓ Apply</button>
+          <button class="diff-reject-btn" data-card="${cardId}" style="background:transparent;border:1px solid var(--fg-dim);color:var(--fg-dim);cursor:pointer;padding:3px 10px;border-radius:4px;font-size:11px;">✗ Reject</button>
+        </div>
+      </div>
+      <div class="diff-view" style="max-height:300px;overflow-y:auto;">${diffHtml}</div>
+    `;
+
+    const applyBtn = div.querySelector('.diff-apply-btn');
+    const rejectBtn = div.querySelector('.diff-reject-btn');
+
+    applyBtn.addEventListener('click', async () => {
+      const tauri = window.__TAURI__;
+      if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
+      const invoke = tauri.core?.invoke || tauri.invoke;
+      try {
+        await invoke('apply_edits', {
+          edits: [{
+            path: filePath,
+            old_string: oldLines.join('\n'),
+            new_string: newLines.join('\n'),
+          }]
+        });
+        applyBtn.textContent = '✓ Applied';
+        applyBtn.disabled = true;
+        applyBtn.style.opacity = '0.6';
+        rejectBtn.style.display = 'none';
+        this.showErrorToast('修改已应用');
+      } catch (e) {
+        this.showErrorToast('应用失败: ' + (e.message || e));
+      }
+    });
+
+    rejectBtn.addEventListener('click', () => {
+      div.remove();
+    });
+
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
   },
 
   async saveFile() {
-    const tab = this.tabs.find(t => t.id === this.activeTab);
-    if (!tab || tab.type !== 'code' || !tab.dirty) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    const editorArea = document.getElementById('editorArea');
-    const editorContent = editorArea?.querySelector('.editor-content');
-    if (!editorContent) return;
-    const content = editorContent.innerText;
-    try {
-      await invoke('write_file', { path: tab.id, content });
-      tab.originalContent = content;
-      tab.dirty = false;
-      tab.content = content;
-      this.renderTabs();
-      this.showErrorToast('已保存: ' + tab.label);
-    } catch (e) {
-      this.showErrorToast('保存失败: ' + (e.message || e));
-    }
+    this.showErrorToast('保存功能在当前布局中不可用');
   },
 
   openFilePrompt() {
@@ -1437,7 +1512,7 @@ const app = {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'panel-action-btn';
       clearBtn.title = '清空输出';
-      clearBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
+      clearBtn.innerHTML = '🗑';
       clearBtn.addEventListener('click', () => this.clearOutput());
       panelActions.insertBefore(clearBtn, panelActions.firstChild);
     }
@@ -1479,20 +1554,20 @@ const app = {
     const panel = document.getElementById('tracePanel');
     if (!panel) return;
     if (this.traceEvents.length === 0) {
-      panel.innerHTML = '<div class="trace-empty" style="color:var(--vscode-text-muted);text-align:center;padding:20px;">暂无思考过程</div>';
+      panel.innerHTML = '<div class="trace-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无思考过程</div>';
       return;
     }
-    const colors = { Observe: '#4ec9b0', Retrieve: '#9cdcfe', Plan: '#ce9178', Act: '#b5cea8', Reflect: '#c586c0', Store: '#dcdcaa', Decide: '#569cd6', Other: '#808080' };
+    const colors = { Observe: 'var(--fg-green)', Retrieve: 'var(--fg-cyan)', Plan: 'var(--fg-red)', Act: 'var(--fg-dim)', Reflect: 'var(--fg-magenta)', Store: 'var(--fg-dim)', Decide: 'var(--fg-cyan)', Other: 'var(--fg-dim)' };
     panel.innerHTML = this.traceEvents.slice().reverse().map(ev => {
       const color = colors[ev.step_type] || colors.Other;
-      const confidence = ev.confidence_score != null ? `<span style="color:#ce9178">(${ev.confidence_score.toFixed(2)})</span>` : '';
-      const plan = ev.plan_summary ? `<div style="margin-top:4px;color:var(--vscode-text-muted);font-size:11px;white-space:pre-wrap;">${ev.plan_summary.substring(0, 200)}</div>` : '';
-      return `<div class="trace-card" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--vscode-list-hoverBackground);border-radius:4px;">
+      const confidence = ev.confidence_score != null ? `<span style="color:var(--fg-red)">(${ev.confidence_score.toFixed(2)})</span>` : '';
+      const plan = ev.plan_summary ? `<div style="margin-top:4px;color:var(--fg-dim);font-size:11px;white-space:pre-wrap;">${ev.plan_summary.substring(0, 200)}</div>` : '';
+      return `<div class="trace-card" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="font-weight:bold;color:${color};font-size:11px;">${ev.step} ${confidence}</span>
-          <span style="color:var(--vscode-text-muted);font-size:10px;">#${ev.iteration}</span>
+          <span style="color:var(--fg-dim);font-size:10px;">#${ev.iteration}</span>
         </div>
-        <div style="color:var(--vscode-foreground);margin-top:2px;font-size:12px;">${ev.details}</div>
+        <div style="color:var(--fg-default);margin-top:2px;font-size:12px;">${ev.details}</div>
         ${plan}
       </div>`;
     }).join('');
@@ -1516,8 +1591,8 @@ const app = {
   toggleTracePause(btn) {
     this.tracePaused = !this.tracePaused;
     btn.innerHTML = this.tracePaused
-      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
-      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+      ? '▶'
+      : '⏸';
   },
 
   addOutput(text, type = 'info') {
@@ -1547,43 +1622,22 @@ const app = {
   // ============================================================
   setupResizers() {
     const sidebar = document.querySelector('.sidebar');
-    const panelHeader = document.querySelector('.panel-header');
-
-    if (sidebar) {
-      sidebar.addEventListener('mousemove', (e) => {
-        const rect = sidebar.getBoundingClientRect();
-        const nearRightEdge = rect.right - e.clientX <= 4;
-        sidebar.style.cursor = nearRightEdge ? 'col-resize' : '';
-      });
-      sidebar.addEventListener('mouseleave', () => {
-        sidebar.style.cursor = '';
-      });
-      sidebar.addEventListener('mousedown', (e) => {
-        const rect = sidebar.getBoundingClientRect();
-        if (rect.right - e.clientX <= 4) {
-          e.preventDefault();
-          this.startSidebarResize(e);
-        }
-      });
-    }
-
-    if (panelHeader) {
-      panelHeader.addEventListener('mousemove', (e) => {
-        const rect = panelHeader.getBoundingClientRect();
-        const nearTopEdge = e.clientY - rect.top <= 4;
-        panelHeader.style.cursor = nearTopEdge ? 'row-resize' : '';
-      });
-      panelHeader.addEventListener('mouseleave', () => {
-        panelHeader.style.cursor = '';
-      });
-      panelHeader.addEventListener('mousedown', (e) => {
-        const rect = panelHeader.getBoundingClientRect();
-        if (e.clientY - rect.top <= 4) {
-          e.preventDefault();
-          this.startPanelResize(e);
-        }
-      });
-    }
+    if (!sidebar) return;
+    sidebar.addEventListener('mousemove', (e) => {
+      const rect = sidebar.getBoundingClientRect();
+      const nearRightEdge = rect.right - e.clientX <= 4;
+      sidebar.style.cursor = nearRightEdge ? 'col-resize' : '';
+    });
+    sidebar.addEventListener('mouseleave', () => {
+      sidebar.style.cursor = '';
+    });
+    sidebar.addEventListener('mousedown', (e) => {
+      const rect = sidebar.getBoundingClientRect();
+      if (rect.right - e.clientX <= 4) {
+        e.preventDefault();
+        this.startSidebarResize(e);
+      }
+    });
   },
 
   startSidebarResize(e) {
@@ -1633,10 +1687,8 @@ const app = {
 
   saveLayoutSizes() {
     const sidebarWidth = getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim();
-    const bottomPanel = document.getElementById('bottomPanel');
-    const panelHeight = bottomPanel ? bottomPanel.style.height : '';
     try {
-      localStorage.setItem('hajimi.layout', JSON.stringify({ sidebarWidth, panelHeight }));
+      localStorage.setItem('hajimi.layout', JSON.stringify({ sidebarWidth }));
     } catch (e) {
       console.error('saveLayoutSizes error:', e);
     }
@@ -1650,13 +1702,7 @@ const app = {
         if (saved.sidebarWidth) {
           document.documentElement.style.setProperty('--sidebar-width', saved.sidebarWidth);
         }
-        if (saved.panelHeight) {
-          const bottomPanel = document.getElementById('bottomPanel');
-          if (bottomPanel) {
-            bottomPanel.style.height = saved.panelHeight;
-            bottomPanel.style.flex = 'none';
-          }
-        }
+        // Panel height removed in chat-first layout
       }
     } catch (e) {
       console.error('loadLayoutSizes error:', e);
@@ -1714,37 +1760,11 @@ const app = {
     const root = document.documentElement;
     let effectiveTheme = theme;
     if (theme === 'system') {
-      effectiveTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark+';
+      effectiveTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } else if (theme === 'dark+' || theme === 'high-contrast') {
+      effectiveTheme = 'dark';
     }
-    if (effectiveTheme === 'light') {
-      root.style.setProperty('--vscode-bg', '#f3f3f3');
-      root.style.setProperty('--vscode-bg-light', '#e8e8e8');
-      root.style.setProperty('--vscode-bg-lighter', '#dcdcdc');
-      root.style.setProperty('--vscode-bg-hover', '#e0e0e0');
-      root.style.setProperty('--vscode-bg-active', '#d0d0d0');
-      root.style.setProperty('--vscode-border', '#c8c8c8');
-      root.style.setProperty('--vscode-text', '#333333');
-      root.style.setProperty('--vscode-text-muted', '#666666');
-    } else if (effectiveTheme === 'high-contrast') {
-      root.style.setProperty('--vscode-bg', '#000000');
-      root.style.setProperty('--vscode-bg-light', '#1a1a1a');
-      root.style.setProperty('--vscode-bg-lighter', '#2a2a2a');
-      root.style.setProperty('--vscode-bg-hover', '#1f1f1f');
-      root.style.setProperty('--vscode-bg-active', '#3a3a3a');
-      root.style.setProperty('--vscode-border', '#ffffff');
-      root.style.setProperty('--vscode-text', '#ffffff');
-      root.style.setProperty('--vscode-text-muted', '#cccccc');
-    } else {
-      // dark+ (default)
-      root.style.setProperty('--vscode-bg', '#1e1e1e');
-      root.style.setProperty('--vscode-bg-light', '#252526');
-      root.style.setProperty('--vscode-bg-lighter', '#2d2d2d');
-      root.style.setProperty('--vscode-bg-hover', '#2a2d2e');
-      root.style.setProperty('--vscode-bg-active', '#37373d');
-      root.style.setProperty('--vscode-border', '#3c3c3c');
-      root.style.setProperty('--vscode-text', '#cccccc');
-      root.style.setProperty('--vscode-text-muted', '#858585');
-    }
+    root.setAttribute('data-theme', effectiveTheme);
   },
 
   setupSystemThemeListener() {
@@ -1872,7 +1892,7 @@ const app = {
     });
 
     chatInput.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendChatMessage();
       }
@@ -1880,24 +1900,9 @@ const app = {
 
     chatSendBtn.addEventListener('click', () => this.sendChatMessage());
 
-    const modelSelect = document.getElementById('aiChatModelSelect');
-    if (modelSelect) {
-      modelSelect.addEventListener('change', () => {
-        const val = modelSelect.value;
-        let displayName = val;
-        if (val.startsWith('custom:')) {
-          const id = val.slice(7);
-          const cfg = this.providerConfigs.find(c => c.id === id);
-          if (cfg) displayName = cfg.name || id;
-        } else {
-          const names = { ollama: 'Ollama', anthropic: 'Claude', openai: 'GPT-4o' };
-          displayName = names[val] || val;
-        }
-        // Subtle status update instead of chat spam message (P1-5)
-        const statusModel = document.getElementById('statusModel');
-        if (statusModel) statusModel.textContent = displayName;
-        console.log(`Switched to model: ${displayName}`);
-      });
+    const modelSelectBtn = document.getElementById('modelSelectBtn');
+    if (modelSelectBtn) {
+      modelSelectBtn.addEventListener('click', () => this.openModelPicker());
     }
 
     document.getElementById('addContextBtn').addEventListener('click', () => {
@@ -1939,6 +1944,7 @@ const app = {
     chatInput.style.height = 'auto';
     this.isProcessing = true;
     chatSendBtn.disabled = true;
+    this.showStatusIndicator('working');
 
     // Handle slash commands
     if (text.startsWith('/')) {
@@ -1949,31 +1955,36 @@ const app = {
       } finally {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
+        this.hideStatusIndicator();
       }
       return;
     }
 
     const thinkingId = this.addThinking();
-    const selectedValue = modelSelect ? modelSelect.value : 'ollama';
+
+    // Check if a provider is selected
+    if (!this.activeProviderId) {
+      this.removeThinking(thinkingId);
+      this.addChatMessage('ai', '**未选择模型。** 请点击右上角「选择模型」按钮配置并选择一个模型。');
+      this.isProcessing = false;
+      chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      return;
+    }
 
     // Try real backend first
     const tauri = window.__TAURI__;
     if (tauri) {
-      const provider = selectedValue.startsWith('custom:') ? selectedValue.slice(7) : selectedValue;
-      let config = null;
-      if (selectedValue.startsWith('custom:')) {
-        const cfg = this.providerConfigs.find(c => c.id === provider);
-        if (cfg) {
-          config = {
-            id: cfg.id,
-            name: cfg.name,
-            providerType: cfg.providerType || 'openai-compatible',
-            baseUrl: cfg.baseUrl,
-            apiKey: cfg.apiKey,
-            model: cfg.model,
-          };
-        }
-      }
+      const cfg = this.providerConfigs.find(c => c.id === this.activeProviderId);
+      const provider = this.activeProviderId;
+      const config = cfg ? {
+        id: cfg.id,
+        name: cfg.name,
+        providerType: cfg.providerType || 'openai-compatible',
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+      } : null;
 
       try {
         await this.streamChat(provider, text, config);
@@ -1986,6 +1997,7 @@ const app = {
       } finally {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
+        this.hideStatusIndicator();
       }
     } else {
       // Fallback to local demo
@@ -1994,6 +2006,7 @@ const app = {
         this.addChatMessage('ai', this.generateDemoResponse(text));
         this.isProcessing = false;
         chatSendBtn.disabled = false;
+        this.hideStatusIndicator();
       }, 1200);
     }
   },
@@ -2145,8 +2158,95 @@ const app = {
       return;
     }
 
+    if (text === '/search' || text.startsWith('/search ')) {
+      if (!invoke) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
+      const pattern = text === '/search' ? '' : text.slice(8).trim();
+      if (!pattern) { this.addChatMessage('ai', '用法: `/search <pattern>`'); return; }
+      try {
+        const result = await invoke('execute_tool', {
+          name: 'grep',
+          args: { pattern, path: '.', recursive: true, caseSensitive: false, regex: false, wholeWord: false }
+        });
+        const output = result.stdout || result.result || '';
+        if (!output.trim()) {
+          this.addChatMessage('ai', `**搜索 \`${this.escapeHtml(pattern)}\`**：未找到匹配`);
+          return;
+        }
+        const lines = output.trim().split('\n').slice(0, 30);
+        let msg = `**搜索 \`${this.escapeHtml(pattern)}\`**：\n\n`;
+        lines.forEach(line => {
+          const m = line.match(/^(.+?):(\d+):(?:(\d+):)?(.+)$/);
+          if (m) msg += `\`${this.escapeHtml(m[1])}:${m[2]}\` — ${this.escapeHtml(m[4] || '')}\n`;
+          else msg += `${this.escapeHtml(line)}\n`;
+        });
+        if (output.trim().split('\n').length > 30) msg += '\n... (仅显示前 30 条)';
+        this.addChatMessage('ai', msg);
+      } catch (e) {
+        this.addChatMessage('ai', `搜索失败: ${e.message || e}`);
+      }
+      return;
+    }
+
+    if (text === '/git' || text.startsWith('/git ')) {
+      const rest = text === '/git' ? '' : text.slice(5).trim();
+      const parts = rest.split(/\s+/);
+      const subCmd = parts[0] || '';
+
+      if (subCmd === 'status' || subCmd === '') {
+        try {
+          const result = await invoke('execute_tool', { name: 'git_status', args: {} });
+          const output = result.stdout || result.result || '无更改';
+          this.addChatMessage('ai', `**Git 状态：**\n\n\`\`\`\n${output}\n\`\`\``);
+        } catch (e) {
+          this.addChatMessage('ai', `Git 状态获取失败: ${e.message || e}`);
+        }
+        return;
+      }
+
+      if (subCmd === 'diff') {
+        const file = parts.slice(1).join(' ');
+        try {
+          const result = await invoke('execute_tool', { name: 'git_diff', args: file ? { file } : {} });
+          const output = result.stdout || result.result || '无 diff';
+          this.addChatMessage('ai', `**Git Diff${file ? ' — ' + this.escapeHtml(file) : ''}：**\n\n\`\`\`diff\n${output}\n\`\`\``);
+        } catch (e) {
+          this.addChatMessage('ai', `Git diff 获取失败: ${e.message || e}`);
+        }
+        return;
+      }
+
+      if (subCmd === 'commit') {
+        const message = parts.slice(1).join(' ');
+        if (!message) { this.addChatMessage('ai', '用法: `/git commit <message>`'); return; }
+        try {
+          await invoke('execute_tool', { name: 'git_commit', args: { message } });
+          this.addChatMessage('ai', `✅ 已提交: ${this.escapeHtml(message)}`);
+        } catch (e) {
+          this.addChatMessage('ai', `提交失败: ${e.message || e}`);
+        }
+        return;
+      }
+
+      this.addChatMessage('ai', '未知 Git 命令。用法: `/git status`, `/git diff [file]`, `/git commit <message>`');
+      return;
+    }
+
+    if (text === '/extensions') {
+      if (!this.extensions.length && !this.installedExtensions.length) {
+        this.addChatMessage('ai', '**扩展列表：**\n\n暂无扩展。');
+        return;
+      }
+      let msg = '**可用扩展：**\n\n';
+      this.extensions.forEach(ext => {
+        const installed = this.installedExtensions.includes(ext.id);
+        msg += `- **${this.escapeHtml(ext.name)}** v${ext.version} — ${this.escapeHtml(ext.desc)} ${installed ? '✅ 已安装' : ''}\n`;
+      });
+      this.addChatMessage('ai', msg);
+      return;
+    }
+
     // Unknown command
-    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\``);
+    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\``);
   },
 
   async streamChat(provider, prompt, config) {
@@ -2240,6 +2340,24 @@ const app = {
     const avatar = role === 'user' ? 'You' : 'H';
     div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body">${this.formatText(text)}</div>`;
     container.appendChild(div);
+    // Inject copy buttons on code blocks
+    div.querySelectorAll('pre code').forEach(codeEl => {
+      const pre = codeEl.parentElement;
+      pre.style.position = 'relative';
+      const btn = document.createElement('button');
+      btn.className = 'code-copy-btn';
+      btn.textContent = '📋';
+      btn.title = 'Copy';
+      btn.style.cssText = 'position:absolute;top:4px;right:4px;background:var(--bg-hover);border:1px solid var(--border);border-radius:4px;color:var(--fg-dim);cursor:pointer;padding:2px 6px;font-size:11px;line-height:1;opacity:0;transition:opacity 150ms ease;';
+      btn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(codeEl.textContent);
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = '📋', 2000);
+      });
+      pre.addEventListener('mouseenter', () => btn.style.opacity = '1');
+      pre.addEventListener('mouseleave', () => btn.style.opacity = '0');
+      pre.appendChild(btn);
+    });
     container.scrollTop = container.scrollHeight;
   },
 
@@ -2294,50 +2412,108 @@ const app = {
     const invoke = tauri.core?.invoke || tauri.invoke;
 
     try {
-      const fixed = await invoke('get_providers', { workspacePath: this.currentWorkspace });
       const custom = await invoke('get_provider_configs', { workspacePath: this.currentWorkspace });
       this.providerConfigs = custom || [];
-      this.renderModelSelect(fixed || []);
+      this.renderModelButton();
       this.renderProviderList();
     } catch (e) {
       console.error('loadProviders error:', e);
     }
   },
 
-  renderModelSelect(providers) {
-    const select = document.getElementById('aiChatModelSelect');
-    if (!select) return;
-    const current = select.value;
+  renderModelButton() {
+    const btn = document.getElementById('modelSelectBtn');
+    if (!btn) return;
+    const active = this.providerConfigs.find(c => c.id === this.activeProviderId);
+    btn.textContent = active ? (active.name || active.model || '选择模型') : '选择模型';
+  },
 
-    let html = '';
-    const fixedNames = new Set(['ollama', 'anthropic', 'openai']);
-    const fixedLabels = { ollama: 'Ollama (本地)', anthropic: 'Claude', openai: 'GPT-4' };
+  // ============================================================
+  // Model Picker Modal
+  // ============================================================
+  setupModelPicker() {
+    const btn = document.getElementById('modelSelectBtn');
+    const closeBtn = document.getElementById('modelPickerClose');
+    const addBtn = document.getElementById('modelPickerAddBtn');
+    const modal = document.getElementById('modelPickerModal');
 
-    // Fixed providers first
-    providers.forEach(p => {
-      if (fixedNames.has(p.name)) {
-        html += `<option value="${p.name}">${fixedLabels[p.name] || p.name}</option>`;
-      }
-    });
-
-    // Custom providers
-    const customProviders = providers.filter(p => !fixedNames.has(p.name));
-    if (customProviders.length > 0) {
-      html += '<optgroup label="自定义">';
-      customProviders.forEach(p => {
-        const cfg = this.providerConfigs.find(c => c.id === p.name);
-        const label = cfg ? cfg.name : p.name;
-        html += `<option value="custom:${p.name}">${label}</option>`;
+    if (btn) btn.addEventListener('click', () => this.openModelPicker());
+    if (closeBtn) closeBtn.addEventListener('click', () => this.closeModelPicker());
+    if (addBtn) addBtn.addEventListener('click', () => { this.closeModelPicker(); this.openProviderModal(); });
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) this.closeModelPicker();
       });
-      html += '</optgroup>';
+    }
+  },
+
+  openModelPicker() {
+    this.renderModelPicker();
+    document.getElementById('modelPickerModal')?.classList.add('active');
+  },
+
+  closeModelPicker() {
+    document.getElementById('modelPickerModal')?.classList.remove('active');
+  },
+
+  renderModelPicker() {
+    const body = document.getElementById('modelPickerBody');
+    if (!body) return;
+
+    if (!this.providerConfigs.length) {
+      body.innerHTML = '<div class="model-picker-empty">暂无配置模型，点击下方按钮添加。</div>';
+      return;
     }
 
-    select.innerHTML = html;
+    let html = '<div class="model-picker-list">';
+    this.providerConfigs.forEach(cfg => {
+      const isActive = cfg.id === this.activeProviderId;
+      html += `
+        <div class="model-picker-item ${isActive ? 'active' : ''}">
+          <div class="model-picker-info">
+            <div class="model-picker-name">${this.escapeHtml(cfg.name || cfg.id)}</div>
+            <div class="model-picker-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.providerType || 'openai-compatible')}</div>
+          </div>
+          <div class="model-picker-actions">
+            <button class="model-picker-btn use" data-id="${this.escapeHtml(cfg.id)}">${isActive ? '当前' : '使用'}</button>
+            <button class="model-picker-btn" data-edit="${this.escapeHtml(cfg.id)}">编辑</button>
+            <button class="model-picker-btn" data-delete="${this.escapeHtml(cfg.id)}">删除</button>
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    body.innerHTML = html;
 
-    // Restore selection if possible
-    if (current && Array.from(select.options).some(o => o.value === current)) {
-      select.value = current;
-    }
+    // Bind actions
+    body.querySelectorAll('.model-picker-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id || btn.dataset.edit || btn.dataset.delete;
+        if (btn.dataset.id) {
+          this.selectProvider(id);
+          this.closeModelPicker();
+        } else if (btn.dataset.edit) {
+          this.closeModelPicker();
+          const cfg = this.providerConfigs.find(c => c.id === id);
+          if (cfg) this.openProviderModal(cfg);
+        } else if (btn.dataset.delete) {
+          if (confirm(`删除模型配置 "${id}"？`)) {
+            this.deleteProviderConfig(id);
+          }
+        }
+      });
+    });
+  },
+
+  selectProvider(id) {
+    this.activeProviderId = id;
+    this.renderModelButton();
+    const cfg = this.providerConfigs.find(c => c.id === id);
+    const displayName = cfg ? (cfg.name || cfg.model || id) : id;
+    const statusModel = document.getElementById('statusModel');
+    if (statusModel) statusModel.textContent = displayName;
+    console.log(`Switched to model: ${displayName}`);
   },
 
   renderProviderList() {
@@ -3098,18 +3274,18 @@ const app = {
     const list = document.getElementById('checkpointList');
     if (!list) return;
     const tauri = window.__TAURI__;
-    if (!tauri) { list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
+    if (!tauri) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
     try {
       const checkpoints = await tauri.core.invoke('list_checkpoints');
       if (!checkpoints || checkpoints.length === 0) {
-        list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">暂无检查点</div>';
+        list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>';
         return;
       }
       list.innerHTML = checkpoints.map((chk, idx) => `
-        <div style="border-bottom:1px solid var(--vscode-panel-border);padding:6px 0;">
+        <div style="border-bottom:1px solid var(--border);padding:6px 0;">
           <div style="display:flex;justify-content:space-between;">
             <span style="font-weight:bold;">${chk.id || 'chk_' + idx}</span>
-            <span style="color:var(--vscode-text-muted);">${chk.timestamp || ''}</span>
+            <span style="color:var(--fg-dim);">${chk.timestamp || ''}</span>
           </div>
           <div style="display:flex;gap:4px;margin-top:4px;">
             <button class="modal-btn secondary" style="font-size:11px;padding:2px 6px;" onclick="app.restoreCheckpoint('${chk.id}')">恢复</button>
@@ -3118,7 +3294,7 @@ const app = {
         </div>
       `).join('');
     } catch (e) {
-      list.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:12px;">加载失败</div>';
+      list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">加载失败</div>';
     }
   },
 
@@ -3302,20 +3478,30 @@ const app = {
         e.preventDefault();
         this.showSidebar('git');
       }
-      // Ctrl+Shift+A — AI
+      // Ctrl+Shift+A — Agent Trace
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault();
-        this.showSidebar('ai');
+        this.showSidebar('agent-trace');
       }
-      // Ctrl+` — Terminal
-      if (e.ctrlKey && e.key === '`') {
+      // Ctrl+Shift+X — Extensions
+      if (e.ctrlKey && e.shiftKey && e.key === 'X') {
         e.preventDefault();
-        this.togglePanel('terminal');
+        this.showSidebar('extensions');
       }
-      // Ctrl+Shift+L — Chat
-      if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+      // Ctrl+Shift+S — Settings
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
         e.preventDefault();
-        this.showSidebar('ai-chat');
+        this.showSidebar('settings');
+      }
+      // Ctrl+Shift+C — Chat Sessions
+      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        this.showSidebar('chat-sessions');
+      }
+      // Ctrl+B — Toggle Sidebar
+      if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault();
+        this.toggleSidebar();
       }
       // Escape — close palette
       if (e.key === 'Escape') {
@@ -3332,9 +3518,10 @@ const app = {
   },
 
   updateStatusBar() {
-    const tab = this.tabs.find(t => t.id === this.activeTab);
-    document.getElementById('statusLang').textContent = tab ? (tab.lang || '纯文本').toUpperCase() : '';
-    document.getElementById('statusCursor').textContent = tab ? '行 1, 列 1' : '';
+    const lang = document.getElementById('statusLang');
+    const cursor = document.getElementById('statusCursor');
+    if (lang) lang.textContent = 'Rust';
+    if (cursor) cursor.textContent = '';
   },
 
   // ============================================================
@@ -3368,7 +3555,7 @@ const app = {
     const hunks = edit.hunks || [];
     // If hunks is a number (from emit_edit_trace), skip rendering per-hunk diff
     if (typeof hunks === 'number') {
-      hunksContainer.innerHTML = `<div style="padding:8px;color:var(--vscode-text-muted);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`;
+      hunksContainer.innerHTML = `<div style="padding:8px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`;
     } else {
       hunks.forEach((hunk, i) => {
         const hunkEl = document.createElement('div');
@@ -3482,14 +3669,14 @@ const app = {
     if (!panel) return;
     const tauri = window.__TAURI__;
     if (!tauri) {
-      panel.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:20px;">Tauri 不可用</div>';
+      panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">Tauri 不可用</div>';
       return;
     }
     try {
       const entries = await tauri.core.invoke('get_edit_history');
       this.renderEditHistory(entries);
     } catch (e) {
-      panel.innerHTML = '<div style="color:var(--vscode-text-muted);text-align:center;padding:20px;">加载失败</div>';
+      panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">加载失败</div>';
     }
   },
 
@@ -3497,20 +3684,20 @@ const app = {
     const panel = document.getElementById('editHistoryPanel');
     if (!panel) return;
     if (!entries || entries.length === 0) {
-      panel.innerHTML = '<div class="edit-history-empty" style="color:var(--vscode-text-muted);text-align:center;padding:20px;">暂无编辑历史</div>';
+      panel.innerHTML = '<div class="edit-history-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无编辑历史</div>';
       return;
     }
-    const colors = { EditProposed: '#ce9178', EditApplied: '#4ec9b0', EditRejected: '#f44336' };
+    const colors = { EditProposed: 'var(--fg-red)', EditApplied: 'var(--fg-green)', EditRejected: 'var(--fg-red)' };
     panel.innerHTML = entries.slice().reverse().map((e, i) => {
-      const color = colors[e.step_type] || '#808080';
+      const color = colors[e.step_type] || 'var(--fg-dim)';
       const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
-      return `<div class="edit-history-item" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--vscode-list-hoverBackground);border-radius:4px;cursor:pointer;" data-index="${entries.length - 1 - i}">
+      return `<div class="edit-history-item" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;cursor:pointer;" data-index="${entries.length - 1 - i}">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="font-weight:bold;font-size:11px;color:${color};">${e.step_type}</span>
-          <span style="font-size:10px;color:var(--vscode-text-muted);">${time}</span>
+          <span style="font-size:10px;color:var(--fg-dim);">${time}</span>
         </div>
-        <div style="font-size:11px;color:var(--vscode-text-secondary);margin-top:2px;">${this.escapeHtml(e.summary || '').substring(0, 120)}</div>
-        ${e.confidence != null ? `<div style="font-size:10px;color:var(--vscode-text-muted);margin-top:2px;">confidence: ${e.confidence.toFixed(2)}</div>` : ''}
+        <div style="font-size:11px;color:var(--fg-dim);margin-top:2px;">${this.escapeHtml(e.summary || '').substring(0, 120)}</div>
+        ${e.confidence != null ? `<div style="font-size:10px;color:var(--fg-dim);margin-top:2px;">confidence: ${e.confidence.toFixed(2)}</div>` : ''}
       </div>`;
     }).join('');
 
@@ -3543,7 +3730,7 @@ const app = {
       const panel = document.getElementById('tracePanel');
       if (panel) {
         const entry = document.createElement('div');
-        entry.style.cssText = 'padding:4px 8px;margin:4px 0;background:var(--vscode-list-hoverBackground);border-radius:4px;font-size:11px;border-left:3px solid #ce9178;';
+        entry.style.cssText = 'padding:4px 8px;margin:4px 0;background:var(--bg-hover);border-radius:4px;font-size:11px;border-left:3px solid var(--fg-red);';
         entry.innerHTML = `<strong>Replay [${this.replayIndex + 1}/${this.replayEvents.length}]</strong> ${this.escapeHtml(ev.step_type)}: ${this.escapeHtml(ev.summary || '').substring(0, 100)}`;
         panel.insertBefore(entry, panel.firstChild);
       }
@@ -3581,6 +3768,94 @@ const app = {
       if (appliedCount) appliedCount.textContent = m.applied_count != null ? m.applied_count : '0';
     } catch (e) {}
   },
+
+  // ── Codex-style utilities ──
+  fmtElapsedCompact(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}m ${s.toString().padStart(2, '0')}s`;
+    }
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+  },
+
+  truncatePathMiddle(path, maxLen = 40) {
+    if (path.length <= maxLen) return path;
+    const half = Math.floor((maxLen - 1) / 2);
+    return path.slice(0, half) + '…' + path.slice(-half);
+  },
+
+  _spinnerInterval: null,
+  _spinnerEl: null,
+  startSpinner(el) {
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let idx = 0;
+    this.stopSpinner();
+    this._spinnerEl = el;
+    el.textContent = frames[0];
+    this._spinnerInterval = setInterval(() => {
+      idx = (idx + 1) % frames.length;
+      if (this._spinnerEl) this._spinnerEl.textContent = frames[idx];
+    }, 80);
+  },
+
+  stopSpinner() {
+    if (this._spinnerInterval) {
+      clearInterval(this._spinnerInterval);
+      this._spinnerInterval = null;
+    }
+    this._spinnerEl = null;
+  },
+
+  setShimmer(el, enabled) {
+    if (!el) return;
+    if (enabled) {
+      el.classList.add('shimmer-text');
+    } else {
+      el.classList.remove('shimmer-text');
+    }
+  },
+
+  _statusIndicatorTimer: null,
+  _statusIndicatorStart: null,
+
+  showStatusIndicator(header = 'working') {
+    const indicator = document.getElementById('statusIndicatorRow');
+    const spinner = document.getElementById('statusSpinner');
+    const headerEl = document.getElementById('statusHeader');
+    if (!indicator) return;
+    indicator.classList.remove('hidden');
+    if (headerEl) {
+      headerEl.textContent = header;
+      this.setShimmer(headerEl, true);
+    }
+    if (spinner) this.startSpinner(spinner);
+    this._statusIndicatorStart = Date.now();
+    this._statusIndicatorTimer = setInterval(() => {
+      const elapsed = document.getElementById('statusElapsed');
+      if (elapsed && this._statusIndicatorStart) {
+        const secs = Math.floor((Date.now() - this._statusIndicatorStart) / 1000);
+        elapsed.textContent = `(${this.fmtElapsedCompact(secs)} · esc to interrupt)`;
+      }
+    }, 1000);
+  },
+
+  hideStatusIndicator() {
+    const indicator = document.getElementById('statusIndicatorRow');
+    const headerEl = document.getElementById('statusHeader');
+    if (indicator) indicator.classList.add('hidden');
+    if (headerEl) this.setShimmer(headerEl, false);
+    this.stopSpinner();
+    if (this._statusIndicatorTimer) {
+      clearInterval(this._statusIndicatorTimer);
+      this._statusIndicatorTimer = null;
+    }
+    this._statusIndicatorStart = null;
+  },
 };
 
 // D3-MINIMAL-FIX (redteam): bind key zombie buttons with real handlers + loading states.
@@ -3617,3 +3892,4 @@ const app = {
     document.getElementById('gitCommitBtn')?.addEventListener('click', () => app.gitCommit());
   };
   bindZombieBtns(); // one-time bind post-init
+  app.init(); // Initialize the app
