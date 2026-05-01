@@ -758,6 +758,7 @@ dependencies = [
 name = "codex-twist"
 version = "0.1.0"
 dependencies = [
+ "engine-llm-core",
  "lru 0.12.5",
  "memmap2 0.9.10",
  "once_cell",
@@ -2173,6 +2174,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "chrono",
+ "codex-twist",
  "engine-llm-core",
  "engine-tool-system",
  "keyring",

@@ -649,4 +649,39 @@ interface/mcp-server/
 
 ---
 
-*本索引文档与代码同步维护，最后更新于 2026-04-27*
+## 🔴 P0-CONTEXT-REMEDIATION-2026-04-30
+
+基于代码审计的真实基线（Git `848a9b0`）：
+
+| 债务项 | 代码位置 | 实测证据 |
+|:---|:---|:---|
+| 单轮 LLM 接口 | `engine/llm-core/src/mod.rs:133` | `stream_chat(&self, prompt: String)` — 仅接收单 String |
+| 后端无 messages | `interface/desktop/src/main.rs:824` | `stream_chat` command 签名仅含 `prompt: String` |
+| MemoryGateway 孤岛 | `intelligence/codex-twist/src/memory/memory_gateway.rs` | 94 行完整实现，`grep` main.rs 返回 0 匹配（未使用/未引用） |
+| 前端无对话状态 | `interface/web/app.js` | 仅 `aiChatMessages` DOM 渲染，无 `chatMessages` 状态数组 |
+
+**根因分析**：`LlmClient` trait 设计为单轮 `stream_chat(String)`，所有 provider（Anthropic/OpenAI/Ollama）请求体仅含单条 `user` 消息。`codex-twist` MemoryGateway（Focus/Working/Archive 三层 + `optimize()`）已完整实现但完全未被 `main.rs` 引用。前端聊天历史仅渲染于 DOM，不维护状态数组。
+
+---
+
+### ✅ 清偿记录（B-02/09 ~ B-09/09）
+
+**P0 Context Debt Cleared**
+
+| 债务项 | 修复状态 | 修复后代码位置 | 验证 |
+|:---|:---:|:---|:---|
+| 单轮 LLM 接口 | ✅ | `engine/llm-core/src/mod.rs:L149` `stream_chat_with_context` | 3 Provider 全部实现 |
+| 后端无 messages | ✅ | `interface/desktop/src/main.rs:L833` `messages: Option<Vec<ChatMessage>>` | `cargo check` 通过 |
+| MemoryGateway 孤岛 | ✅ | `interface/desktop/src/main.rs:L70` `memory_gateway: Arc<MemoryGateway>` | `grep` 5 处匹配 |
+| 前端无对话状态 | ✅ | `interface/web/app.js:L28` `chatMessages: []` | 20+ 处引用 |
+
+**详细清偿记录**: `docs/debt/DEBT-P0-REMEDIATION.md`
+
+**关联文档**：
+- `src/MEMORY.md` — 数据诚实性规范与债务基线记录
+- `docs/roadmap/Hajimi Context/03-context-compaction.md` — 根因分析与修复验证
+- `docs/debt/DEBT-P0-REMEDIATION.md` — 完整债务清偿记录
+
+---
+
+*本索引文档与代码同步维护，最后更新于 2026-04-30*

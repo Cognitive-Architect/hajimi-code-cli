@@ -14,27 +14,41 @@ impl OllamaClient {
     pub fn default_local() -> Self { Self::new(LlmProvider::ollama_default()) }
     pub fn with_timeout(mut self, t: u64) -> Self { self.timeout_ms = t; self }
 }
-#[derive(Serialize)] struct GenReq { model: String, prompt: String, stream: bool }
-#[derive(Deserialize)] struct GenResp { response: Option<String>, done: bool }
+/// Ollama /api/chat request format.
+#[derive(Serialize)] struct ChatReq { model: String, messages: Vec<crate::ChatMessage>, stream: bool }
+#[derive(Deserialize)] struct ChatResp { message: Option<Msg>, done: bool }
+#[derive(Deserialize)] struct Msg { content: String }
 
 #[async_trait]
 impl LlmClient for OllamaClient {
     async fn stream_chat(&self, prompt: String) -> Result<ChannelStream, EngineError> {
+        self.stream_chat_with_context(
+            vec![crate::ChatMessage { role: "user".into(), content: prompt, timestamp: None }],
+            None,
+        ).await
+    }
+
+    async fn stream_chat_with_context(
+        &self,
+        messages: Vec<crate::ChatMessage>,
+        _system_prompt: Option<String>,
+    ) -> Result<ChannelStream, EngineError> {
         let (stream, tx) = ChannelStream::new(100);
         let LlmProvider::Ollama { base_url, model } = &self.provider else {
             return Err(EngineError::InvalidParameters("Invalid".into()));
         };
         let client = Client::new();
-        let url = format!("{}/api/generate", base_url);
-        let req = GenReq { model: model.clone(), prompt, stream: true };
+        let url = format!("{}/api/chat", base_url);
+        let req = ChatReq { model: model.clone(), messages, stream: true };
         tokio::spawn(async move {
             match client.post(&url).json(&req).send().await {
-                Ok(r) => { let mut s = r.bytes_stream();
+                Ok(r) => {
+                    let mut s = r.bytes_stream();
                     while let Some(Ok(d)) = s.next().await {
                         for l in String::from_utf8_lossy(&d).lines().filter(|l| !l.is_empty()) {
-                            if let Ok(r) = serde_json::from_str::<GenResp>(l) {
-                                if let Some(t) = r.response { tx.send(StreamChunk::Output(t)).await.ok(); }
-                                if r.done { tx.send(StreamChunk::Done).await.ok(); }
+                            if let Ok(resp) = serde_json::from_str::<ChatResp>(l) {
+                                if let Some(msg) = resp.message { tx.send(StreamChunk::Output(msg.content)).await.ok(); }
+                                if resp.done { tx.send(StreamChunk::Done).await.ok(); }
                             }
                         }
                     }
@@ -44,6 +58,7 @@ impl LlmClient for OllamaClient {
         });
         Ok(stream)
     }
+
     fn provider(&self) -> &LlmProvider { &self.provider }
     fn timeout_ms(&self) -> u64 { self.timeout_ms }
 }

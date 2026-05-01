@@ -25,6 +25,9 @@ window.app = {
     autoSave: 'off',
   },
   chatContextFiles: [],
+  chatMessages: [],
+  autoCompact: true,
+  isAutoCompacting: false,
   mcpServers: [],
   traceEvents: [],
   tracePaused: false,
@@ -1832,7 +1835,11 @@ window.app = {
 
   clearChatContext() {
     this.chatContextFiles = [];
+    this.chatMessages = [];
     this.renderChatContext();
+    const chatMsgContainer = document.getElementById('aiChatMessages');
+    if (chatMsgContainer) chatMsgContainer.innerHTML = '';
+    this.updateTokenDisplay();
   },
 
   renderChatContext() {
@@ -1859,6 +1866,73 @@ window.app = {
         this.removeChatContextFile(btn.dataset.path);
       });
     });
+  },
+
+  estimateTokens(text) {
+    if (!text) return 0;
+    const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
+    return Math.ceil(chineseChars + englishWords * 1.3);
+  },
+
+  updateTokenDisplay() {
+    const totalTokens = this.chatMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
+    const hintEl = document.querySelector('.composer-hint');
+    if (hintEl) {
+      const baseText = 'Enter 发送 · Shift+Enter 换行 · @ 引用文件';
+      hintEl.textContent = totalTokens > 0 ? `${baseText} · ${totalTokens} tokens` : baseText;
+    }
+  },
+
+  getActiveProviderConfig() {
+    const cfg = this.providerConfigs.find(c => c.id === this.activeProviderId);
+    if (!cfg) return null;
+    return {
+      id: cfg.id,
+      name: cfg.name,
+      providerType: cfg.providerType || 'openai-compatible',
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey,
+      model: cfg.model,
+      contextThreshold: cfg.contextThreshold || 6400,
+    };
+  },
+
+  checkAutoCompact() {
+    if (!this.autoCompact || this.isAutoCompacting || this.chatMessages.length <= 2) return;
+    const totalTokens = this.chatMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
+    const cfg = this.getActiveProviderConfig();
+    const threshold = cfg?.contextThreshold || 6400;
+    if (totalTokens > threshold * 0.8) {
+      this.autoCompactContext();
+    }
+  },
+
+  async autoCompactContext() {
+    if (this.isAutoCompacting) return;
+    this.isAutoCompacting = true;
+    const tauri = window.__TAURI__;
+    const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
+    if (!invoke) { this.isAutoCompacting = false; return; }
+    const provider = this.activeProviderId;
+    const config = this.getActiveProviderConfig();
+    const thinkingId = this.addThinking();
+    try {
+      const summary = await invoke('optimize_context', { messages: this.chatMessages, provider, config });
+      this.removeThinking(thinkingId);
+      const kept = this.chatMessages.slice(-2);
+      this.chatMessages = [
+        { role: 'system', content: `[上下文已压缩] ${summary}`, timestamp: Date.now() },
+        ...kept
+      ];
+      this.addChatMessage('ai', `**上下文自动压缩**\n\n摘要：${summary}`);
+      this.updateTokenDisplay();
+    } catch (e) {
+      this.removeThinking(thinkingId);
+      console.error('auto compact error:', e);
+    } finally {
+      this.isAutoCompacting = false;
+    }
   },
 
   async buildContextPrompt() {
@@ -1922,6 +1996,8 @@ window.app = {
     document.getElementById('newChatBtn').addEventListener('click', () => {
       this.newChatSession();
     });
+
+    this.updateTokenDisplay();
   },
 
   async sendChatMessage() {
@@ -1939,7 +2015,10 @@ window.app = {
       }
     }
 
-    this.addChatMessage('user', chatInput.value.trim());
+    const userContent = chatInput.value.trim();
+    this.chatMessages.push({ role: 'user', content: userContent, timestamp: Date.now() });
+    this.addChatMessage('user', userContent);
+    this.updateTokenDisplay();
     chatInput.value = '';
     chatInput.style.height = 'auto';
     this.isProcessing = true;
@@ -1984,29 +2063,39 @@ window.app = {
         baseUrl: cfg.baseUrl,
         apiKey: cfg.apiKey,
         model: cfg.model,
+        contextThreshold: cfg.contextThreshold || 6400,
       } : null;
 
       try {
-        await this.streamChat(provider, text, config);
+        const response = await this.streamChat(provider, text, config, this.chatMessages);
         this.removeThinking(thinkingId);
+        this.chatMessages.push({ role: 'assistant', content: response, timestamp: Date.now() });
       } catch (err) {
         console.error('stream_chat error:', err);
         this.removeThinking(thinkingId);
         this.addChatMessage('ai', `**错误：** ${err.message || err}\n\n已回退到本地回复。`);
-        this.addChatMessage('ai', this.generateDemoResponse(text));
+        const demoResponse = this.generateDemoResponse(text);
+        this.addChatMessage('ai', demoResponse);
+        this.chatMessages.push({ role: 'assistant', content: demoResponse, timestamp: Date.now() });
       } finally {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.updateTokenDisplay();
+        this.checkAutoCompact();
       }
     } else {
       // Fallback to local demo
       setTimeout(() => {
         this.removeThinking(thinkingId);
-        this.addChatMessage('ai', this.generateDemoResponse(text));
+        const demoResponse = this.generateDemoResponse(text);
+        this.addChatMessage('ai', demoResponse);
+        this.chatMessages.push({ role: 'assistant', content: demoResponse, timestamp: Date.now() });
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.updateTokenDisplay();
+        this.checkAutoCompact();
       }, 1200);
     }
   },
@@ -2245,24 +2334,50 @@ window.app = {
       return;
     }
 
+    if (text === '/compact') {
+      if (!invoke) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
+      if (this.chatMessages.length <= 2) {
+        this.addChatMessage('ai', '对话轮次不足，无需压缩。');
+        return;
+      }
+      const provider = this.activeProviderId;
+      const config = this.getActiveProviderConfig();
+      const thinkingId = this.addThinking();
+      try {
+        const summary = await invoke('optimize_context', { messages: this.chatMessages, provider, config });
+        this.removeThinking(thinkingId);
+        const kept = this.chatMessages.slice(-2);
+        this.chatMessages = [
+          { role: 'system', content: `[上下文已压缩] ${summary}`, timestamp: Date.now() },
+          ...kept
+        ];
+        this.addChatMessage('ai', `**上下文已压缩**\n\n摘要：${summary}`);
+        this.updateTokenDisplay();
+      } catch (e) {
+        this.removeThinking(thinkingId);
+        this.addChatMessage('ai', `压缩失败: ${e.message || e}`);
+      }
+      return;
+    }
+
     // Unknown command
-    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\``);
+    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\`, \`/compact\``);
   },
 
-  async streamChat(provider, prompt, config) {
+  async streamChat(provider, prompt, config, messages) {
     const tauri = window.__TAURI__;
     if (!tauri) throw new Error('Tauri not available');
 
     const invoke = tauri.core?.invoke || tauri.invoke;
     const Channel = tauri.core?.Channel;
 
-    const messages = document.getElementById('aiChatMessages');
+    const msgContainer = document.getElementById('aiChatMessages');
     const msgDiv = document.createElement('div');
     msgDiv.className = 'chat-message ai';
     msgDiv.innerHTML = '<div class="chat-message-avatar">H</div><div class="chat-message-body"></div>';
     const body = msgDiv.querySelector('.chat-message-body');
-    messages.appendChild(msgDiv);
-    messages.scrollTop = messages.scrollHeight;
+    msgContainer.appendChild(msgDiv);
+    msgContainer.scrollTop = msgContainer.scrollHeight;
 
     if (!Channel) {
       // Fallback: simulate streaming with local response
@@ -2272,7 +2387,7 @@ window.app = {
       for (let i = 0; i < chars.length; i++) {
         fullText += chars[i];
         body.innerHTML = this.formatText(fullText);
-        messages.scrollTop = messages.scrollHeight;
+        msgContainer.scrollTop = msgContainer.scrollHeight;
         await new Promise(r => setTimeout(r, 10));
       }
       return;
@@ -2284,7 +2399,7 @@ window.app = {
       if (event.chunk) {
         fullText += event.chunk;
         body.innerHTML = this.formatText(fullText);
-        messages.scrollTop = messages.scrollHeight;
+        msgContainer.scrollTop = msgContainer.scrollHeight;
       }
           if (event.error) {
         this.showErrorToast(event.error);
@@ -2295,7 +2410,9 @@ window.app = {
       }
     };
 
-    await invoke('stream_chat', { provider, prompt, config, onEvent: channel });
+    await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
+
+    return fullText;
   },
 
   generateDemoResponse(text) {
@@ -2399,8 +2516,10 @@ window.app = {
   },
 
   newChatSession() {
+    this.chatMessages = [];
     document.getElementById('aiChatMessages').innerHTML = '';
     this.addChatMessage('ai', '新会话已开始。有什么可以帮您的？');
+    this.updateTokenDisplay();
   },
 
   // ============================================================

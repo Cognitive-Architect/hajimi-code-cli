@@ -8,6 +8,8 @@ pub struct KeyUsageRecord {
     pub model: String,
     pub status: String,
     pub estimated_tokens: Option<u64>,
+    pub token_before: Option<u64>,
+    pub token_after: Option<u64>,
 }
 
 pub fn audit_log_path() -> PathBuf {

@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 engine-tool-system = { path = "../../engine/tool-system" }
 engine-llm-core = { path = "../../engine/llm-core" }
+codex-twist = { path = "../../intelligence/codex-twist" }
 tokio = { version = "1.37", features = ["full"] }
 keyring = { version = "3", features = ["windows-native", "linux-native", "apple-native"] }
 secrecy = "0.10"

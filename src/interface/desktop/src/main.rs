@@ -3,7 +3,8 @@
 use std::process::Command;
 use std::sync::Arc;
 
-use engine_llm_core::{AnthropicClient, Client, LlmClient, OllamaClient, OpenAiClient};
+use codex_twist::memory::{MemoryGateway, MemoryTier, TokenBudget};
+use engine_llm_core::{AnthropicClient, ChatMessage, Client, LlmClient, OllamaClient, OpenAiClient};
 use engine_tool_system::{
     AnalyzeTool, BashTool, CargoBuildTool, CmakeTool, DeleteFileTool, EditFileTool,
     FetchUrlTool, FindTool, GenerateDocsTool, GeneratePrDescriptionTool, GitCommitTool, GitDiffTool, GitLogTool,
@@ -66,6 +67,7 @@ struct AppState {
     paused: std::sync::Mutex<bool>,
     approval_level: std::sync::Mutex<String>,
     edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
+    memory_gateway: Arc<MemoryGateway>,
 }
 
 fn build_registry() -> ToolRegistry {
@@ -317,6 +319,10 @@ struct ProviderConfig {
     api_key: String,
     base_url: String,
     model: String,
+    #[serde(default)]
+    system_prompt: Option<String>,
+    #[serde(default)]
+    context_threshold: Option<usize>,
 }
 
 impl std::fmt::Debug for ProviderConfig {
@@ -824,27 +830,54 @@ fn create_llm_client(provider: &str, profile: Option<&str>, config: Option<Provi
 async fn stream_chat(
     provider: String,
     prompt: String,
+    messages: Option<Vec<ChatMessage>>,
     config: Option<ProviderConfig>,
     on_event: Channel<StreamEvent>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
+    let system_prompt = config.as_ref().and_then(|c| c.system_prompt.clone());
 
-    // Audit: stream started (B-05/03)
-    let _ = audit::log_usage(&audit::KeyUsageRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        provider_name: provider.clone(),
-        model: model.clone(),
-        status: "started".into(),
-        estimated_tokens: None,
-    });
+    let msg_count = messages.as_ref().map(|m| m.len()).unwrap_or(1);
 
     let chat_result = async {
         let client = create_llm_client(&provider, profile.as_deref(), config)?;
 
+        let msgs = if let Some(msgs) = messages.filter(|m| !m.is_empty()) {
+            msgs
+        } else {
+            vec![ChatMessage {
+                role: "user".into(),
+                content: prompt,
+                timestamp: None,
+            }]
+        };
+        let msgs_for_opt = msgs.clone();
+
+        let gateway = state.memory_gateway.clone();
+        let session_key = format!("chat:{}:{}", provider, chrono::Utc::now().timestamp());
+        let ctx_json = serde_json::to_string(&msgs).map_err(|e| e.to_string())?;
+
+        // SAFETY: MemoryGateway uses Arc<RwLock> internally; concurrent access is safe across Tauri commands
+        let _ = gateway.working().put(session_key.clone(), ctx_json).await;
+
+        let stats_before = gateway.stats().await;
+        let token_before = stats_before.working_tokens as u64;
+
+        // Audit: stream started (B-05/03)
+        let _ = audit::log_usage(&audit::KeyUsageRecord {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            provider_name: provider.clone(),
+            model: model.clone(),
+            status: "started".into(),
+            estimated_tokens: Some(msg_count as u64 * 50),
+            token_before: Some(token_before),
+            token_after: None,
+        });
+
         let mut stream = client
-            .stream_chat(prompt)
+            .stream_chat_with_context(msgs, system_prompt)
             .await
             .map_err(|e| format!("stream start failed: {}", e))?;
 
@@ -865,8 +898,22 @@ async fn stream_chat(
                 break;
             }
         }
-        Ok(())
+
+        // Trigger compression via LLM-driven summary
+        let _ = gateway.optimize(msgs_for_opt, client.as_ref()).await;
+        let stats_after = gateway.stats().await;
+        let token_after = stats_after.working_tokens as u64;
+
+        // Verify context is retrievable
+        let _retrieved = gateway.working().get(&session_key).await;
+
+        Ok((token_before, token_after))
     }.await;
+
+    let (chat_result, token_before_val, token_after_val) = match chat_result {
+        Ok((tb, ta)) => (Ok(()), tb, ta),
+        Err(e) => (Err(e), 0, 0),
+    };
 
     // Audit: completed or failed (B-05/03)
     let _ = audit::log_usage(&audit::KeyUsageRecord {
@@ -874,10 +921,36 @@ async fn stream_chat(
         provider_name: provider,
         model,
         status: if chat_result.is_ok() { "completed".into() } else { "failed".into() },
-        estimated_tokens: None,
+        estimated_tokens: Some(msg_count as u64 * 50),
+        token_before: Some(token_before_val),
+        token_after: Some(token_after_val),
     });
 
     chat_result
+}
+
+#[tauri::command]
+async fn compact_context(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let gateway = state.memory_gateway.clone();
+    gateway.working().compact().await;
+    let stats = gateway.stats().await;
+    Ok(format!(
+        "工作内存: {} 条目, {} tokens",
+        stats.working_entries, stats.working_tokens
+    ))
+}
+
+#[tauri::command]
+async fn optimize_context(
+    messages: Vec<ChatMessage>,
+    provider: String,
+    config: Option<ProviderConfig>,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let profile = state.active_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let client = create_llm_client(&provider, profile.as_deref(), config)?;
+    let gateway = state.memory_gateway.clone();
+    gateway.optimize(messages, client.as_ref()).await
 }
 
 #[tauri::command]
@@ -914,6 +987,8 @@ fn import_provider_backup(password: String, file_path: String, state: tauri::Sta
             base_url: item["base_url"].as_str().unwrap_or("").to_string(),
             model: item["model"].as_str().unwrap_or("").to_string(),
             api_key: item["api_key"].as_str().unwrap_or("").to_string(),
+            system_prompt: item.get("system_prompt").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            context_threshold: item.get("context_threshold").and_then(|v| v.as_u64()).map(|n| n as usize),
         };
         if !cfg.api_key.trim().is_empty() {
             save_api_key_with_profile(&cfg.id, &cfg.api_key, profile.as_deref())?;
@@ -1063,6 +1138,8 @@ async fn create_agent_with_provider(agent_id: String, goal: String, provider_id:
         model: model.clone(),
         status: "started".into(),
         estimated_tokens: None,
+        token_before: None,
+        token_after: None,
     });
 
     // Execute via LLM client (B-05/FIX-02: per-agent provider client switching)
@@ -1091,6 +1168,8 @@ async fn create_agent_with_provider(agent_id: String, goal: String, provider_id:
         model,
         status: if result.is_ok() { "completed".into() } else { "failed".into() },
         estimated_tokens: None,
+        token_before: None,
+        token_after: None,
     });
 
     match result {
@@ -1353,6 +1432,11 @@ fn main() {
         paused: std::sync::Mutex::new(false),
         approval_level: std::sync::Mutex::new("Auto".to_string()),
         edit_history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        memory_gateway: Arc::new(MemoryGateway::with_budget(TokenBudget {
+            focus_limit: 8000,
+            working_limit: 64000,
+            archive_limit: 2000000,
+        })),
     };
 
     tauri::Builder::default()
@@ -1376,6 +1460,8 @@ fn main() {
             export_provider_backup,
             import_provider_backup,
             stream_chat,
+            compact_context,
+            optimize_context,
             // B-05/01 Profile
             list_profiles,
             get_active_profile,

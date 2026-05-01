@@ -14,6 +14,7 @@ pub use streaming::channel_stream::ChannelStream;
 pub use streaming::StreamChunk;
 use async_trait::async_trait;
 use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
 use std::env;
 
 /// LLM provider enumeration
@@ -126,15 +127,34 @@ impl LlmProvider {
     }
 }
 
+/// Chat message for multi-turn conversations.
+/// Compatible with OpenAI/Anthropic/Ollama chat format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+    pub timestamp: Option<u64>,
+}
+
 /// Unified LLM client trait
 #[async_trait]
 pub trait LlmClient: Send + Sync {
-    /// Stream chat completion
+    /// Stream chat completion with a single prompt (backward compatible).
     async fn stream_chat(&self, prompt: String) -> Result<ChannelStream, EngineError>;
-    
+
+    /// Stream chat completion with multi-turn message context.
+    /// `messages` should include the full conversation history.
+    /// `system_prompt` is optional and will be sent as a system message
+    /// (prepended to messages for OpenAI, top-level system param for Anthropic).
+    async fn stream_chat_with_context(
+        &self,
+        messages: Vec<ChatMessage>,
+        system_prompt: Option<String>,
+    ) -> Result<ChannelStream, EngineError>;
+
     /// Get provider type
     fn provider(&self) -> &LlmProvider;
-    
+
     /// Get timeout configuration (default 30s)
     fn timeout_ms(&self) -> u64 {
         30_000

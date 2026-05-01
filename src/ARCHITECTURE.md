@@ -123,6 +123,16 @@
 | `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud | ✅ 稳定 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
 
+> <!-- P0-CONTEXT-REMEDIATION-2026-04-30 -->
+> **P0 Context Debt Cleared ✅**
+>
+> 基于 B-02/09 ~ B-09/09 工单已全部完成清偿：
+> - `engine/llm-core` 新增 `stream_chat_with_context(Vec<ChatMessage>, Option<String>)`，Anthropic/OpenAI/Ollama 三 Provider 全部实现
+> - `interface/desktop/src/main.rs` `stream_chat` command 接收 `messages: Option<Vec<ChatMessage>>`，`AppState` 注入 `memory_gateway: Arc<MemoryGateway>`
+> - `codex-twist` `MemoryGateway.optimize()` 重写为真实 LLM 驱动摘要（保留最近 2 轮），`codex-twist` 新增 `engine-llm-core` 依赖
+> - `interface/web/app.js` 引入 `chatMessages[]` 状态数组、`/compact` slash 命令、Token 估算 UI、80% 阈值自动压缩
+> 详见 `docs/debt/DEBT-P0-REMEDIATION.md` 完整清偿记录。
+
 ### 4. Interface 层（界面层）
 **原则**: 可依赖全下层
 

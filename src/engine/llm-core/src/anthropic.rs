@@ -30,15 +30,32 @@ impl AnthropicClient {
 #[async_trait]
 impl LlmClient for AnthropicClient {
     async fn stream_chat(&self, prompt: String) -> Result<ChannelStream, EngineError> {
+        self.stream_chat_with_context(
+            vec![crate::ChatMessage { role: "user".into(), content: prompt, timestamp: None }],
+            None,
+        ).await
+    }
+
+    async fn stream_chat_with_context(
+        &self,
+        messages: Vec<crate::ChatMessage>,
+        system_prompt: Option<String>,
+    ) -> Result<ChannelStream, EngineError> {
         let (stream, tx) = ChannelStream::new(100);
         let (api_key_secret, model, url) = match &self.provider {
             LlmProvider::Anthropic { api_key, model, base_url } => (api_key.clone(), model.clone(), base_url.clone()),
             _ => return Err(EngineError::InvalidParameters("bad provider".into())),
         };
-        let body = json!({"model": model, "messages": [{"role": "user", "content": prompt}], "stream": true, "max_tokens": 4096});
+        let msgs: Vec<serde_json::Value> = messages.into_iter()
+            .map(|m| json!({"role": m.role, "content": m.content}))
+            .collect();
+        let mut body = json!({"model": model, "messages": msgs, "stream": true, "max_tokens": 4096});
+        if let Some(system) = system_prompt {
+            body["system"] = json!(system);
+        }
         let client = self.client.clone();
         let timeout = std::time::Duration::from_millis(self.timeout_ms);
-        let key = api_key_secret.expose_secret().to_string();  // Expose only here for the request
+        let key = api_key_secret.expose_secret().to_string();
         tokio::spawn(async move {
             match client.post(format!("{}/v1/messages", url)).header("x-api-key", &key).header("anthropic-version", "2023-06-01").header(header::CONTENT_TYPE, "application/json").timeout(timeout).body(body.to_string()).send().await {
                 Ok(r) if r.status().is_success() => {
@@ -63,6 +80,7 @@ impl LlmClient for AnthropicClient {
         });
         Ok(stream)
     }
+
     fn provider(&self) -> &LlmProvider { &self.provider }
     fn timeout_ms(&self) -> u64 { self.timeout_ms }
 }

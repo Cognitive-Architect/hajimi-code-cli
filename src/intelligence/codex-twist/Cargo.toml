@@ -21,6 +21,7 @@ unicode-segmentation = "=1.11.0"
 zstd = "0.13"
 memmap2 = "0.9"
 lru = "0.12"
+engine-llm-core = { path = "../../engine/llm-core" }
 
 [features]
 default = []

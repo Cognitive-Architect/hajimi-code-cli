@@ -3,6 +3,7 @@ use super::{FocusMemory, WorkingMemory, ArchiveMemory, MemoryLevel, MemoryTier, 
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use engine_llm_core::{ChatMessage, LlmClient, StreamChunk};
 
 #[derive(Clone)]
 pub struct MemoryGateway {
@@ -58,7 +59,42 @@ impl MemoryGateway {
     pub async fn clear_focus(&self) { self.focus.clear().await; }
     pub async fn clear_working(&self) { self.working.clear().await; }
     pub async fn clear_archive(&self) { self.archive.clear().await; }
-    pub async fn optimize(&self, target: &str) -> String { format!("Optimized for {}", target) }
+    pub async fn optimize(
+        &self,
+        messages: Vec<ChatMessage>,
+        client: &dyn LlmClient,
+    ) -> Result<String, String> {
+        if messages.len() <= 2 {
+            return Ok("对话轮次不足，无需压缩".to_string());
+        }
+
+        let summary_msgs: Vec<ChatMessage> = messages[..messages.len() - 2]
+            .iter()
+            .map(|m| ChatMessage {
+                role: m.role.clone(),
+                content: m.content.clone(),
+                timestamp: m.timestamp,
+            })
+            .collect();
+
+        let system_prompt = "请将以下对话历史压缩为一段简洁的摘要（200字以内），保留关键决策、代码变更和上下文信息。只输出摘要内容，不要添加任何前缀或解释。".to_string();
+
+        let mut stream = client
+            .stream_chat_with_context(summary_msgs, Some(system_prompt))
+            .await
+            .map_err(|e| format!("摘要生成失败: {}", e))?;
+
+        let mut summary = String::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                StreamChunk::Output(text) => summary.push_str(&text),
+                StreamChunk::Error(err) => return Err(format!("LLM错误: {}", err)),
+                StreamChunk::Done => break,
+            }
+        }
+
+        Ok(summary.trim().to_string())
+    }
 }
 
 impl Default for MemoryGateway { fn default() -> Self { Self::new() } }
