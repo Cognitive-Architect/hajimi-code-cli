@@ -67,6 +67,7 @@ window.app = {
     this.loadProfiles();
     this.setupProfileSettings();
     this.setupAuditLog();
+    this.loadCumulativeFromBackend();
     this.setupAgentProvider();
     this.setupMcpSettings();
     this.setupGovernance();
@@ -1880,6 +1881,51 @@ window.app = {
     return Math.ceil(chineseChars + englishWords * 1.3);
   },
 
+  async loadCumulativeFromBackend() {
+    try {
+      const tauri = window.__TAURI__;
+      const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
+      if (!invoke) {
+        this.loadCumulativeFromLocalStorage();
+        return;
+      }
+      const stats = await invoke('get_cumulative_stats');
+      if (stats && stats.total) {
+        this.cumulativeStats = {
+          promptTokens: stats.total.prompt_tokens || 0,
+          completionTokens: stats.total.completion_tokens || 0,
+          requestCount: stats.total.request_count || 0
+        };
+        console.log('[Token] Loaded cumulative stats from backend:', this.cumulativeStats);
+      }
+    } catch (e) {
+      console.warn('[Token] Failed to load from backend, fallback to localStorage:', e);
+      this.loadCumulativeFromLocalStorage();
+    }
+    this.updateTokenDisplay();
+  },
+
+  loadCumulativeFromLocalStorage() {
+    const saved = localStorage.getItem('hajimi_cumulative_stats');
+    if (saved) {
+      try {
+        this.cumulativeStats = JSON.parse(saved);
+        console.log('[Token] Loaded cumulative stats from localStorage:', this.cumulativeStats);
+      } catch (e) {
+        console.warn('[Token] Failed to parse localStorage cumulative stats:', e);
+      }
+    }
+  },
+
+  saveCumulativeToLocalStorage() {
+    try {
+      localStorage.setItem('hajimi_cumulative_stats', JSON.stringify(this.cumulativeStats));
+      console.log('[Token] Saved cumulative stats to localStorage');
+    } catch (e) {
+      console.warn('[Token] Failed to save cumulative stats:', e);
+    }
+  },
+
   updateTokenDisplay() {
     const hintEl = document.querySelector('.composer-hint');
     if (hintEl) {
@@ -2112,6 +2158,7 @@ window.app = {
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
         this.updateTokenDisplay();
+        this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
       }
     } else {
@@ -2125,6 +2172,7 @@ window.app = {
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
         this.updateTokenDisplay();
+        this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
       }, 1200);
     }
