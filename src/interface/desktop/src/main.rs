@@ -3,7 +3,7 @@
 use std::process::Command;
 use std::sync::Arc;
 
-use codex_twist::memory::{MemoryGateway, MemoryTier, TokenBudget};
+use codex_twist::memory::{MemoryGateway, MemoryTier, TokenBudget, TokenUsageTracker};
 use engine_llm_core::{AnthropicClient, ChatMessage, Client, LlmClient, OllamaClient, OpenAiClient};
 use engine_tool_system::{
     AnalyzeTool, BashTool, CargoBuildTool, CmakeTool, DeleteFileTool, EditFileTool,
@@ -68,6 +68,7 @@ struct AppState {
     approval_level: std::sync::Mutex<String>,
     edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
     memory_gateway: Arc<MemoryGateway>,
+    token_tracker: Arc<TokenUsageTracker>,
 }
 
 fn build_registry() -> ToolRegistry {
@@ -858,6 +859,7 @@ async fn stream_chat(
         let msgs_for_opt = msgs.clone();
 
         let gateway = state.memory_gateway.clone();
+        let token_tracker = state.token_tracker.clone();
         let session_key = format!("chat:{}:{}", provider, chrono::Utc::now().timestamp());
         let ctx_json = serde_json::to_string(&msgs).map_err(|e| e.to_string())?;
 
@@ -908,6 +910,16 @@ async fn stream_chat(
         }
 
         let usage = client.last_usage();
+
+        // Record token usage for persistent cumulative tracking (P1-02/05)
+        if let Some(ref u) = usage {
+            token_tracker.record_usage(
+                &session_key,
+                &provider,
+                u.prompt_tokens,
+                u.completion_tokens,
+            ).await;
+        }
 
         // Trigger compression via LLM-driven summary
         let _ = gateway.optimize(msgs_for_opt, client.as_ref()).await;
@@ -1477,6 +1489,7 @@ fn main() {
             working_limit: 64000,
             archive_limit: 2000000,
         })),
+        token_tracker: Arc::new(TokenUsageTracker::new()),
     };
 
     tauri::Builder::default()
