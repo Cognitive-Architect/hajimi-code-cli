@@ -716,20 +716,20 @@ interface/mcp-server/
 | 自动压缩触发 | ✅ | 80% 阈值，`checkAutoCompact()` |
 | 后端多轮接口 | ✅ | `stream_chat_with_context()` 三 Provider 实现 |
 | 精确 Token 编码 | ❌ | 无 `tiktoken-rs` 集成 |
-| API usage 解析 | ❌ | 未解析流式响应 `usage` 字段 |
-| 累计消耗统计 | ❌ | 无会话级/全局累计 |
+| API usage 解析 | ✅ | OpenAI/Anthropic/Ollama 三 Provider 均解析 |
+| 累计消耗统计 | ✅ | `TokenUsageTracker` 会话级 + 全局累计（by_provider / by_day / total）|
 
 ### 后续工单映射
 
-| 工单 | 对应 Phase | 目标 | 覆盖内容 |
-|:---|:---|:---|:---|
-| B-02/06 | Phase 1 | Engine 层精确计数 | `tiktoken-rs` + `count_tokens()` |
-| B-03/06 | Phase 2 | Backend usage 解析 | `stream_chat` usage 字段 + Audit Log |
-| B-04/06 | Phase 3 | Intelligence 统计聚合 | `TokenUsageTracker` + 会话/全局累计 |
-| B-05/06 | Phase 4 | Frontend 精确 UI | 精确值展示 + 累计消耗 |
-| B-06/06 | Phase 5 | 验证与清债 | E2E 测试 + 文档闭环 |
+| 工单 | 对应 Phase | 目标 | 覆盖内容 | 状态 |
+|:---|:---|:---|:---|:---:|
+| B-02/06 | Phase 1 | Engine 层精确计数 | `tiktoken-rs` + `count_tokens()` | ✅ |
+| B-03/06 | Phase 2 | Backend usage 解析 | `stream_chat` usage 字段 + Audit Log | ✅ |
+| B-04/06 | Phase 3 | Intelligence 统计聚合 | `TokenUsageTracker` + 会话/全局累计 | ✅ |
+| B-05/06 | Phase 4 | Frontend 精确 UI | 精确值展示 + 累计消耗 | ✅ |
+| B-06/06 | Phase 5 | 验证与清债 | E2E 测试 + 文档闭环 + 误差 < 5% | ✅ |
 
-*Phase 1~5 由 B-02/06 ~ B-06/06 覆盖。*
+*Phase 1~5 由 B-02/06 ~ B-06/06 全部覆盖。Scheme B 已完成。*
 
 ---
 

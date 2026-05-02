@@ -295,7 +295,7 @@ pub trait SyncMemoryGateway: Send {
 | Agent Core 编译 | 0 errors, pre-existing warnings 外 crate | cargo check | ✅ |
 | Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
 | Phase 3 测试 | 47 passed | Day 1-5 功能全覆盖 | ✅ |
-| 精确 Token 统计 | 30/100 | 方案 A 估算模式（误差 ±10-20%） | ⏳ Scheme B 进行中 |
+| 精确 Token 统计 | 100/100 | 方案 B 精确模式（误差 0%，E2E 12 tests passed） | ✅ Scheme B 已完成 |
 
 <!-- Scheme B: Precise Token Pipeline -->
 **Scheme B 精确 Token 统计管线**（Engine → Intelligence → Interface）：
@@ -363,8 +363,8 @@ patches/                 # 构建依赖补丁（非功能模块）
 | ADR-016 | AST-First Context Retrieval（Retrieve 阶段可选注入 AST 上下文，fallback 到纯文本，LspContextProvider 抽象） | ✅ | engine/tool-system/lsp_integration.rs, intelligence/agent-core/memory_retriever.rs |
 | ADR-011 | Tauri v2 桌面应用架构 | ✅ | src/interface/desktop/ |
 | ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
-| ADR-SB-01 | Precise Token Pipeline | 📝 | engine/llm-core/ → intelligence/codex-twist/ → interface/web/ |
-| ADR-SB-02 | Tiktoken Integration（feature flag） | 📝 | engine/llm-core/ |
+| ADR-SB-01 | Precise Token Pipeline | ✅ | engine/llm-core/ → intelligence/codex-twist/ → interface/web/ |
+| ADR-SB-02 | Tiktoken Integration（feature flag） | ✅ | engine/llm-core/ |
 
 ---
 
