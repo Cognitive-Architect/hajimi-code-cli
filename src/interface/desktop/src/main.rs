@@ -864,6 +864,7 @@ async fn stream_chat(
 
         let stats_before = gateway.stats().await;
         let token_before = stats_before.working_tokens as u64;
+        let precise_prompt_start = client.count_tokens(msgs_for_opt.clone(), &model).ok().map(|n| n as u64);
 
         // Audit: stream started (B-05/03)
         let _ = audit::log_usage(&audit::KeyUsageRecord {
@@ -872,6 +873,8 @@ async fn stream_chat(
             model: model.clone(),
             status: "started".into(),
             estimated_tokens: Some(msg_count as u64 * 50),
+            precise_prompt: precise_prompt_start,
+            precise_completion: None,
             token_before: Some(token_before),
             token_after: None,
         });
@@ -899,6 +902,8 @@ async fn stream_chat(
             }
         }
 
+        let usage = client.last_usage();
+
         // Trigger compression via LLM-driven summary
         let _ = gateway.optimize(msgs_for_opt, client.as_ref()).await;
         let stats_after = gateway.stats().await;
@@ -907,12 +912,18 @@ async fn stream_chat(
         // Verify context is retrievable
         let _retrieved = gateway.working().get(&session_key).await;
 
-        Ok((token_before, token_after))
+        Ok((token_before, token_after, usage))
     }.await;
 
-    let (chat_result, token_before_val, token_after_val) = match chat_result {
-        Ok((tb, ta)) => (Ok(()), tb, ta),
-        Err(e) => (Err(e), 0, 0),
+    let (chat_result, token_before_val, token_after_val, usage_val) = match chat_result {
+        Ok((tb, ta, u)) => (Ok(()), tb, ta, u),
+        Err(e) => (Err(e), 0, 0, None),
+    };
+
+    let (precise_prompt_end, precise_completion_end) = if let Some(u) = usage_val {
+        (Some(u.prompt_tokens), Some(u.completion_tokens))
+    } else {
+        (None, None)
     };
 
     // Audit: completed or failed (B-05/03)
@@ -922,6 +933,8 @@ async fn stream_chat(
         model,
         status: if chat_result.is_ok() { "completed".into() } else { "failed".into() },
         estimated_tokens: Some(msg_count as u64 * 50),
+        precise_prompt: precise_prompt_end,
+        precise_completion: precise_completion_end,
         token_before: Some(token_before_val),
         token_after: Some(token_after_val),
     });
@@ -1132,19 +1145,27 @@ async fn create_agent_with_provider(agent_id: String, goal: String, provider_id:
 
     // Audit: stream started (B-05/03)
     let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
-    let _ = audit::log_usage(&audit::KeyUsageRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        provider_name: provider.clone(),
-        model: model.clone(),
-        status: "started".into(),
-        estimated_tokens: None,
-        token_before: None,
-        token_after: None,
-    });
 
     // Execute via LLM client (B-05/FIX-02: per-agent provider client switching)
     let result = async {
         let client = create_llm_client(&provider, profile.as_deref(), config)?;
+        let precise_prompt_start = client.count_tokens(
+            vec![ChatMessage { role: "user".into(), content: goal.clone(), timestamp: None }],
+            &model
+        ).ok().map(|n| n as u64);
+
+        let _ = audit::log_usage(&audit::KeyUsageRecord {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            provider_name: provider.clone(),
+            model: model.clone(),
+            status: "started".into(),
+            estimated_tokens: None,
+            precise_prompt: precise_prompt_start,
+            precise_completion: None,
+            token_before: None,
+            token_after: None,
+        });
+
         let mut stream = client
             .stream_chat(goal)
             .await
@@ -1158,8 +1179,20 @@ async fn create_agent_with_provider(agent_id: String, goal: String, provider_id:
                 engine_llm_core::StreamChunk::Done => break,
             }
         }
-        Ok(output)
+        let usage = client.last_usage();
+        Ok((output, usage))
     }.await;
+
+    let (_output_val, usage_val) = match &result {
+        Ok((out, usage)) => (Some(out.clone()), *usage),
+        Err(_) => (None, None),
+    };
+
+    let (precise_prompt_end, precise_completion_end) = if let Some(u) = usage_val {
+        (Some(u.prompt_tokens), Some(u.completion_tokens))
+    } else {
+        (None, None)
+    };
 
     // Audit: completed or failed (B-05/03)
     let _ = audit::log_usage(&audit::KeyUsageRecord {
@@ -1168,12 +1201,14 @@ async fn create_agent_with_provider(agent_id: String, goal: String, provider_id:
         model,
         status: if result.is_ok() { "completed".into() } else { "failed".into() },
         estimated_tokens: None,
+        precise_prompt: precise_prompt_end,
+        precise_completion: precise_completion_end,
         token_before: None,
         token_after: None,
     });
 
     match result {
-        Ok(output) => Ok(format!("Agent {} completed. Output:\n{}", agent_id, output)),
+        Ok((output, _)) => Ok(format!("Agent {} completed. Output:\n{}", agent_id, output)),
         Err(e) => Err(e),
     }
 }

@@ -136,6 +136,17 @@ pub struct ChatMessage {
     pub timestamp: Option<u64>,
 }
 
+/// Token usage reported by the LLM provider.
+///
+/// Populated after a streaming call completes by parsing the provider-specific
+/// `usage` payload (OpenAI `usage`, Anthropic `message_start`/`message_delta`,
+/// Ollama `prompt_eval_count`/`eval_count`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Usage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+}
+
 /// Unified LLM client trait
 #[async_trait]
 pub trait LlmClient: Send + Sync {
@@ -174,6 +185,12 @@ pub trait LlmClient: Send + Sync {
     /// # Returns
     /// `Result<usize, EngineError>` — Token count or an error if the model is unsupported
     fn count_tokens(&self, messages: Vec<ChatMessage>, model: &str) -> Result<usize, EngineError>;
+
+    /// Retrieve the token usage from the most recent streaming call.
+    ///
+    /// Returns `None` if the provider did not include usage data in the
+    /// response (e.g. older API versions or unsupported local models).
+    fn last_usage(&self) -> Option<Usage>;
 }
 
 /// Convert internal `ChatMessage` to tiktoken-rs format for exact counting.

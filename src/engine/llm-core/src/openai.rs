@@ -1,24 +1,32 @@
 //! OpenAI GPT API Client
 use crate::EngineError;
-use crate::{LlmClient, LlmProvider};
+use crate::{LlmClient, LlmProvider, Usage};
 use crate::streaming::{ChannelStream, StreamChunk};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 /// OpenAI GPT client
-pub struct OpenAiClient { provider: LlmProvider, timeout_ms: u64 }
+pub struct OpenAiClient {
+    provider: LlmProvider,
+    timeout_ms: u64,
+    last_usage: Arc<Mutex<Option<Usage>>>,
+}
 impl OpenAiClient {
-    pub fn new(provider: LlmProvider) -> Self { Self { provider, timeout_ms: 30_000 } }
+    pub fn new(provider: LlmProvider) -> Self {
+        Self { provider, timeout_ms: 30_000, last_usage: Arc::new(Mutex::new(None)) }
+    }
     pub fn from_env() -> Result<Self, EngineError> { Ok(Self::new(LlmProvider::openai_from_env()?)) }
     pub fn with_timeout(mut self, t: u64) -> Self { self.timeout_ms = t; self }
 }
 #[derive(Serialize)] struct ChatRequest { model: String, messages: Vec<crate::ChatMessage>, stream: bool }
 #[derive(Deserialize)] struct Delta { content: Option<String> }
 #[derive(Deserialize)] struct Choice { delta: Delta }
-#[derive(Deserialize)] struct StreamResp { choices: Vec<Choice> }
+#[derive(Deserialize)] struct UsageData { prompt_tokens: u64, completion_tokens: u64 }
+#[derive(Deserialize)] struct StreamResp { choices: Vec<Choice>, usage: Option<UsageData> }
 
 #[async_trait]
 impl LlmClient for OpenAiClient {
@@ -46,6 +54,7 @@ impl LlmClient for OpenAiClient {
         let url = format!("{}/v1/chat/completions", base_url);
         let req = ChatRequest { model: model.clone(), messages: msgs, stream: true };
         let key = api_key_secret.expose_secret().to_string();
+        let usage_ref = self.last_usage.clone();
         tokio::spawn(async move {
             match client.post(&url).header("Authorization", format!("Bearer {}", key))
                 .json(&req).send().await {
@@ -71,6 +80,12 @@ impl LlmClient for OpenAiClient {
                                         if let Some(c) = r.choices.first().and_then(|c| c.delta.content.clone()) {
                                             tx.send(StreamChunk::Output(c)).await.ok();
                                         }
+                                        if let Some(u) = r.usage {
+                                            *usage_ref.lock().unwrap() = Some(Usage {
+                                                prompt_tokens: u.prompt_tokens,
+                                                completion_tokens: u.completion_tokens,
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -85,6 +100,10 @@ impl LlmClient for OpenAiClient {
 
     fn provider(&self) -> &LlmProvider { &self.provider }
     fn timeout_ms(&self) -> u64 { self.timeout_ms }
+
+    fn last_usage(&self) -> Option<Usage> {
+        *self.last_usage.lock().unwrap()
+    }
 
     fn count_tokens(&self, messages: Vec<crate::ChatMessage>, model: &str) -> Result<usize, crate::EngineError> {
         #[cfg(feature = "exact-tokens")]
