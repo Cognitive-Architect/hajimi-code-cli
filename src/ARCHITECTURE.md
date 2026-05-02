@@ -296,6 +296,7 @@ pub trait SyncMemoryGateway: Send {
 | Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
 | Phase 3 测试 | 47 passed | Day 1-5 功能全覆盖 | ✅ |
 | 精确 Token 统计 | 100/100 | 方案 B 精确模式（误差 0%，E2E 12 tests passed） | ✅ Scheme B 已完成 |
+| Token Tracker 持久化集成 | — | P1 清偿阶段：`TokenUsageTracker` 从孤岛激活为后端核心，Tauri Command 暴露，Frontend 混合持久化 | 📝 P1 进行中 |
 
 <!-- Scheme B: Precise Token Pipeline -->
 **Scheme B 精确 Token 统计管线**（Engine → Intelligence → Interface）：
@@ -365,6 +366,47 @@ patches/                 # 构建依赖补丁（非功能模块）
 | ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
 | ADR-SB-01 | Precise Token Pipeline | ✅ | engine/llm-core/ → intelligence/codex-twist/ → interface/web/ |
 | ADR-SB-02 | Tiktoken Integration（feature flag） | ✅ | engine/llm-core/ |
+| ADR-P1-01 | Token Tracker Persistence（`TokenUsageTracker` 作为 Intelligence 层统计核心，Backend → Tauri Command 暴露） | 📝 | intelligence/codex-twist/ → interface/desktop/ |
+| ADR-P1-02 | Hybrid Frontend Storage（Tauri Command + LocalStorage 混合持久化，刷新后数据不丢失） | 📝 | interface/web/app.js |
+
+<!-- P1-TOKEN-TRACKER-2026-05-02: integration initiated -->
+
+### P1 Token Tracker Integration 架构设计
+
+**核心原则**: 最小侵入 + 分层纯洁
+
+**接入点设计**:
+- `AppState` 新增 `token_tracker: Arc<codex_twist::memory::TokenUsageTracker>` 字段
+- `main()` 实例化并注入 `AppState`
+- `stream_chat` 结束时调用 `record_usage(session_key, provider, prompt_tokens, completion_tokens)`
+- 新增 `get_cumulative_stats` Tauri Command 返回 `GlobalStats` JSON
+
+**数据流**:
+```
+Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
+                                             │
+                                             ▼
+                              TokenUsageTracker::record_usage()
+                                             │
+                                             ▼
+                              Intelligence (codex-twist) 累计聚合
+                                             │
+                                             ▼
+                              get_cumulative_stats Tauri Command
+                                             │
+                                             ▼
+                              Frontend (app.js) 混合持久化恢复
+```
+
+**前端持久化策略**:
+- 主路径: `window.__TAURI__.core.invoke('get_cumulative_stats')`
+- 兜底路径: `localStorage.getItem('hajimi_cumulative_stats')`
+- 保存时机: `sendChatMessage()` 成功后写入 LocalStorage
+
+**关键约束**:
+- Engine 层不直接依赖 `codex_twist`（分层纯洁）
+- `TokenUsageTracker` 仅在 Intelligence 层提供服务
+- Interface 层通过 Tauri Command 消费，不暴露内存细节
 
 ---
 
