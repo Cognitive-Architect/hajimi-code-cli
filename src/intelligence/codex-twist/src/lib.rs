@@ -28,6 +28,7 @@ pub use lcr_adapter::ParseError;
 pub use storage::{ContextChunk, HctxStorage, StorageError};
 pub use thread::{Thread, ThreadConfig, ThreadId, ThreadStats};
 pub use turn::{ResponseContent, TokenUsage, ToolCall, ToolResult, Turn, TurnStatus};
+pub use memory::token_tracker::{TokenUsageTracker, SessionStats, GlobalStats};
 
 /// 模块版本
 pub const VERSION: &str = "0.1.0";

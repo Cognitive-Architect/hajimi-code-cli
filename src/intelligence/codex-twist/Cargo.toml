@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+chrono = { workspace = true }
 once_cell = "1.19"
 
 # 固定兼容Rust 1.75的依赖
