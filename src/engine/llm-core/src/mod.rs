@@ -159,6 +159,84 @@ pub trait LlmClient: Send + Sync {
     fn timeout_ms(&self) -> u64 {
         30_000
     }
+
+    /// Count the exact number of tokens in the given messages.
+    ///
+    /// When the `exact-tokens` feature is enabled, uses `tiktoken-rs` with the
+    /// appropriate tokenizer for the given model. Falls back to a heuristic
+    /// estimator (Chinese ≈ 1 token/char, English ≈ 1.3 tokens/word) when the
+    /// feature is disabled.
+    ///
+    /// # Arguments
+    /// * `messages` — Conversation history as a vector of `ChatMessage`
+    /// * `model` — Model identifier (e.g. "gpt-4", "claude-3-sonnet", "llama3")
+    ///
+    /// # Returns
+    /// `Result<usize, EngineError>` — Token count or an error if the model is unsupported
+    fn count_tokens(&self, messages: Vec<ChatMessage>, model: &str) -> Result<usize, EngineError>;
+}
+
+/// Convert internal `ChatMessage` to tiktoken-rs format for exact counting.
+#[cfg(feature = "exact-tokens")]
+fn to_tiktoken_messages(messages: &[ChatMessage]) -> Vec<tiktoken_rs::ChatCompletionRequestMessage> {
+    messages
+        .iter()
+        .map(|m| tiktoken_rs::ChatCompletionRequestMessage {
+            role: m.role.clone(),
+            content: Some(m.content.clone()),
+            name: None,
+            function_call: None,
+            tool_calls: vec![],
+            refusal: None,
+        })
+        .collect()
+}
+
+/// Normalize a model name to one recognized by tiktoken-rs.
+/// Maps Claude and most open-source models to "gpt-4" (cl100k_base),
+/// passes through OpenAI model names as-is.
+pub fn normalize_model_for_tiktoken(model: &str) -> String {
+    let lower = model.to_lowercase();
+    if lower.contains("claude") {
+        "gpt-4".to_string()
+    } else if lower.contains("gpt-4")
+        || lower.contains("gpt-3.5")
+        || lower.contains("gpt-oss")
+    {
+        model.to_string()
+    } else if lower.contains("llama")
+        || lower.contains("mistral")
+        || lower.contains("qwen")
+        || lower.contains("deepseek")
+    {
+        "gpt-4".to_string()
+    } else {
+        "gpt-4".to_string()
+    }
+}
+
+/// Heuristic token estimation (fallback when `exact-tokens` is disabled).
+/// Based on the frontend `estimateTokens()` algorithm with empirical overhead
+/// adjustments to approximate tiktoken-rs behavior:
+/// - Chinese characters (\u4e00-\u9fff): ~0.9 tokens each
+/// - English words: ~1.0 token each (short) / ~1.3 tokens each (long)
+/// - Per-message overhead: 3 tokens (role framing)
+/// - Reply priming: 3 tokens (when messages non-empty)
+pub fn heuristic_token_count(messages: &[ChatMessage]) -> usize {
+    let text: String = messages
+        .iter()
+        .map(|m| format!("{}: {}\n", m.role, m.content))
+        .collect();
+    let chinese = text
+        .chars()
+        .filter(|&c| c >= '\u{4e00}' && c <= '\u{9fff}')
+        .count();
+    let english = text.split_whitespace().count();
+    let coefficient = if english <= 5 { 1.0 } else { 1.3 };
+    let base = (chinese as f64 * 0.9).ceil() as usize
+        + (english as f64 * coefficient).ceil() as usize;
+    let overhead = messages.len() * 3 + 3;
+    base + overhead
 }
 
 pub mod anthropic;
@@ -172,3 +250,6 @@ pub use openai::OpenAiClient;
 // Re-export reqwest::Client for downstream consumers (e.g. desktop validate_provider)
 /// # Safety: reqwest::Client is safe to clone and share across tasks
 pub use reqwest::Client;
+
+#[cfg(test)]
+mod token_tests;

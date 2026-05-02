@@ -61,4 +61,19 @@ impl LlmClient for OllamaClient {
 
     fn provider(&self) -> &LlmProvider { &self.provider }
     fn timeout_ms(&self) -> u64 { self.timeout_ms }
+
+    fn count_tokens(&self, messages: Vec<crate::ChatMessage>, model: &str) -> Result<usize, crate::EngineError> {
+        #[cfg(feature = "exact-tokens")]
+        {
+            let normalized = crate::normalize_model_for_tiktoken(model);
+            let tiktoken_msgs = crate::to_tiktoken_messages(&messages);
+            tiktoken_rs::num_tokens_from_messages(&normalized, &tiktoken_msgs)
+                .map_err(|e| crate::EngineError::InvalidParameters(format!("Token count failed: {}", e)))
+        }
+        #[cfg(not(feature = "exact-tokens"))]
+        {
+            let _ = model;
+            Ok(crate::heuristic_token_count(&messages))
+        }
+    }
 }

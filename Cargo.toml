@@ -38,7 +38,7 @@ prax-pgvector = { version = "=0.5.2", features = ["sqlx"] }
 sqlx = { version = "=0.8.3", default-features = false, features = ["runtime-tokio", "postgres"] }
 rand = "=0.8.5"
 uuid = { version = "=1.10.0", features = ["v4", "serde"] }
-regex = "=1.10.5"
+regex = "=1.12.3"
 # 加密库，精确锁定防止 API 漂移
 age = "=0.10"
 argon2 = "=0.5.3"
