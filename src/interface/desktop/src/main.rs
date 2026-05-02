@@ -1472,6 +1472,44 @@ async fn get_ast_context(symbol_name: String) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+async fn get_cumulative_stats(
+    state: tauri::State<'_, AppState>
+) -> Result<serde_json::Value, String> {
+    let stats = state.token_tracker.get_global_stats().await;
+
+    let mut by_provider = serde_json::Map::new();
+    for (k, v) in &stats.by_provider {
+        by_provider.insert(k.clone(), serde_json::json!({
+            "prompt_tokens": v.prompt_tokens,
+            "completion_tokens": v.completion_tokens,
+            "total_tokens": v.total_tokens,
+            "request_count": v.request_count
+        }));
+    }
+
+    let mut by_day = serde_json::Map::new();
+    for (k, v) in &stats.by_day {
+        by_day.insert(k.clone(), serde_json::json!({
+            "prompt_tokens": v.prompt_tokens,
+            "completion_tokens": v.completion_tokens,
+            "total_tokens": v.total_tokens,
+            "request_count": v.request_count
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "total": {
+            "prompt_tokens": stats.total.prompt_tokens,
+            "completion_tokens": stats.total.completion_tokens,
+            "total_tokens": stats.total.total_tokens,
+            "request_count": stats.total.request_count
+        },
+        "by_provider": by_provider,
+        "by_day": by_day
+    }))
+}
+
 // ------------------------------------------------------------------
 // Main
 // ------------------------------------------------------------------
@@ -1550,6 +1588,8 @@ fn main() {
             // Phase 4 Day 5: Command Palette & Observability
             get_edit_history,
             run_agent_command,
+            // P1-03/05: Token cumulative stats
+            get_cumulative_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
