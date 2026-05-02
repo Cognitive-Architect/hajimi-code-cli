@@ -88,6 +88,45 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 
 ---
 
+---
+
+## Scheme B 启动状态 (B-01/06)
+
+**数据诚实性声明**：以下所有 metric 来自 `2026-04-30` 当天 `cargo check`、`Select-String`、`Get-ChildItem` 命令的真实输出。
+
+### Baseline 审计（Git `6ad02ec`）
+
+| 指标 | 实测命令 | 输出值 |
+|:---|:---|:---:|
+| `cargo check --workspace` | 编译检查 | 0 errors |
+| `*.rs` 文件数 | `Get-ChildItem src -Recurse -Filter *.rs` | 242 |
+| `*.js` 文件数 | `Get-ChildItem src -Recurse -Filter *.js` | 66 |
+| `app.js` `estimateTokens` | `Select-String app.js -Pattern estimateTokens` | 3 处 |
+| `app.js` `chatMessages` | `Select-String app.js -Pattern chatMessages` | 25 处 |
+| `main.rs` `memory_gateway` | `Select-String main.rs -Pattern memory_gateway` | 5 处 |
+| `main.rs` `log_usage` | `Select-String main.rs -Pattern log_usage` | 6 处 |
+| `llm-core` `stream_chat_with_context` | `Select-String mod.rs -Pattern stream_chat_with_context` | 1 处 |
+
+### 当前精确统计能力评估
+
+| 维度 | 当前得分 | 目标（B-06/06） |
+|:---|:---:|:---:|
+| 精确 Token 统计 | 30/100 | 90+/100 |
+| Audit Log 完整性 | 45/100 | 100/100 |
+| 输入/输出分离统计 | 0/100 | 100/100 |
+| 累计消耗统计 | 0/100 | 100/100 |
+
+### 关联文档
+
+- `docs/roadmap/Hajimi Context/p0 fix/02-exact-token-usage-tracking.md` — 技术路线图
+- `docs/roadmap/Hajimi Context/p0 fix/03-token-scheme-b-daily-development-plan.md` — 6 天开发计划
+- `docs/roadmap/Hajimi Context/p0 fix/04-token-scheme-b-guidance.md` — 架构决策与避坑指南
+
+*Phase 1~5 由 B-02/06 ~ B-06/06 覆盖。*
+
+---
+
 *本文档与代码同步维护，所有数据基于真实代码审计。metric 禁止估算，必须实测。*
 
 <!-- P0-CONTEXT-REMEDIATION-B09-EOF: P0 Context Debt Cleared -->
+<!-- SCHEME-B-BASELINE-B01: Day 1 baseline established -->

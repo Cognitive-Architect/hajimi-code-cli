@@ -295,6 +295,15 @@ pub trait SyncMemoryGateway: Send {
 | Agent Core 编译 | 0 errors, pre-existing warnings 外 crate | cargo check | ✅ |
 | Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
 | Phase 3 测试 | 47 passed | Day 1-5 功能全覆盖 | ✅ |
+| 精确 Token 统计 | 30/100 | 方案 A 估算模式（误差 ±10-20%） | ⏳ Scheme B 进行中 |
+
+<!-- Scheme B: Precise Token Pipeline -->
+**Scheme B 精确 Token 统计管线**（Engine → Intelligence → Interface）：
+- **Engine 层**: `tiktoken-rs` 集成，`LlmClient::count_tokens()` 精确编码
+- **Intelligence 层**: `TokenUsageTracker` 会话级 + 全局累计聚合
+- **Interface 层**: 前端 UI 升级精确分离显示（`🔄 xx.x% | ↑ xxxxx | ↓ xxxx`）
+- **设计文档**: `docs/roadmap/Hajimi Context/p0 fix/02-exact-token-usage-tracking.md`、`03-token-scheme-b-daily-development-plan.md`、`04-token-scheme-b-guidance.md`
+- **架构决策**: ADR-SB-01 Precise Token Pipeline，ADR-SB-02 Tiktoken Integration（feature flag 控制）
 
 ---
 
@@ -354,6 +363,8 @@ patches/                 # 构建依赖补丁（非功能模块）
 | ADR-016 | AST-First Context Retrieval（Retrieve 阶段可选注入 AST 上下文，fallback 到纯文本，LspContextProvider 抽象） | ✅ | engine/tool-system/lsp_integration.rs, intelligence/agent-core/memory_retriever.rs |
 | ADR-011 | Tauri v2 桌面应用架构 | ✅ | src/interface/desktop/ |
 | ADR-012 | 工具系统Channel流式传输 | ✅ | engine/tool-system/ |
+| ADR-SB-01 | Precise Token Pipeline | 📝 | engine/llm-core/ → intelligence/codex-twist/ → interface/web/ |
+| ADR-SB-02 | Tiktoken Integration（feature flag） | 📝 | engine/llm-core/ |
 
 ---
 
