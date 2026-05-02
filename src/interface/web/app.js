@@ -28,6 +28,9 @@ window.app = {
   chatMessages: [],
   autoCompact: true,
   isAutoCompacting: false,
+  tokenStats: { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 },
+  cumulativeStats: { promptTokens: 0, completionTokens: 0, requestCount: 0 },
+  showCumulative: false,
   mcpServers: [],
   traceEvents: [],
   tracePaused: false,
@@ -1836,6 +1839,8 @@ window.app = {
   clearChatContext() {
     this.chatContextFiles = [];
     this.chatMessages = [];
+    this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
+    this.cumulativeStats = { promptTokens: 0, completionTokens: 0, requestCount: 0 };
     this.renderChatContext();
     const chatMsgContainer = document.getElementById('aiChatMessages');
     if (chatMsgContainer) chatMsgContainer.innerHTML = '';
@@ -1876,12 +1881,36 @@ window.app = {
   },
 
   updateTokenDisplay() {
-    const totalTokens = this.chatMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
     const hintEl = document.querySelector('.composer-hint');
     if (hintEl) {
-      const baseText = 'Enter 发送 · Shift+Enter 换行 · @ 引用文件';
-      hintEl.textContent = totalTokens > 0 ? `${baseText} · ${totalTokens} tokens` : baseText;
+      hintEl.textContent = 'Enter 发送 · Shift+Enter 换行 · @ 引用文件';
     }
+    const statusEl = document.getElementById('statusTokens');
+    if (!statusEl) return;
+    if (this.chatMessages.length === 0) {
+      statusEl.textContent = '';
+      return;
+    }
+    const cfg = this.getActiveProviderConfig();
+    const threshold = cfg?.contextThreshold || 6400;
+    const estimated = this.chatMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
+    let promptTokens = this.tokenStats.promptTokens;
+    let completionTokens = this.tokenStats.completionTokens;
+    let isPrecise = promptTokens > 0 || completionTokens > 0;
+    if (!isPrecise) {
+      promptTokens = Math.floor(estimated * 0.35);
+      completionTokens = Math.ceil(estimated * 0.65);
+      this.tokenStats.estimatedTokens = estimated;
+    }
+    const totalTokens = promptTokens + completionTokens;
+    const percentage = Math.min((totalTokens / threshold) * 100, 99.9).toFixed(1);
+    const prefix = isPrecise ? '' : '~';
+    let text = `🔄 ${prefix}${percentage}% | ↑ ${prefix}${promptTokens} | ↓ ${prefix}${completionTokens}`;
+    if (this.showCumulative && this.cumulativeStats.requestCount > 0) {
+      const c = this.cumulativeStats;
+      text += ` | 累计: ↑ ${c.promptTokens} ↓ ${c.completionTokens} (${c.requestCount}轮)`;
+    }
+    statusEl.textContent = text;
   },
 
   getActiveProviderConfig() {
@@ -2018,6 +2047,7 @@ window.app = {
     const userContent = chatInput.value.trim();
     this.chatMessages.push({ role: 'user', content: userContent, timestamp: Date.now() });
     this.addChatMessage('user', userContent);
+    this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
     this.updateTokenDisplay();
     chatInput.value = '';
     chatInput.style.height = 'auto';
@@ -2406,7 +2436,18 @@ window.app = {
         body.innerHTML = this.formatText(`**错误：** ${event.error}`);
       }
       if (event.done) {
-        // Streaming complete
+        // Capture precise token usage from backend
+        if (event.promptTokens != null && event.completionTokens != null) {
+          this.tokenStats = {
+            promptTokens: event.promptTokens,
+            completionTokens: event.completionTokens,
+            estimatedTokens: 0
+          };
+          this.cumulativeStats.promptTokens += event.promptTokens;
+          this.cumulativeStats.completionTokens += event.completionTokens;
+          this.cumulativeStats.requestCount += 1;
+        }
+        this.updateTokenDisplay();
       }
     };
 
@@ -2517,6 +2558,8 @@ window.app = {
 
   newChatSession() {
     this.chatMessages = [];
+    this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
+    this.cumulativeStats = { promptTokens: 0, completionTokens: 0, requestCount: 0 };
     document.getElementById('aiChatMessages').innerHTML = '';
     this.addChatMessage('ai', '新会话已开始。有什么可以帮您的？');
     this.updateTokenDisplay();
@@ -3634,6 +3677,14 @@ window.app = {
   // ============================================================
   setupStatusBar() {
     this.updateStatusBar();
+    const tokensEl = document.getElementById('statusTokens');
+    if (tokensEl) {
+      tokensEl.style.cursor = 'pointer';
+      tokensEl.addEventListener('click', () => {
+        this.showCumulative = !this.showCumulative;
+        this.updateTokenDisplay();
+      });
+    }
   },
 
   updateStatusBar() {

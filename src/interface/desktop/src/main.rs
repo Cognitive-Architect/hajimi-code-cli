@@ -297,6 +297,8 @@ struct StreamEvent {
     chunk: String,
     done: bool,
     error: Option<String>,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -890,11 +892,14 @@ async fn stream_chat(
                 engine_llm_core::StreamChunk::Error(e) => (e, false, true),
                 engine_llm_core::StreamChunk::Done => (String::new(), true, false),
             };
+            let usage = if is_done { client.last_usage() } else { None };
             on_event
                 .send(StreamEvent {
                     chunk: text,
                     done: is_done,
                     error: if is_error { Some("LLM error".into()) } else { None },
+                    prompt_tokens: usage.as_ref().map(|u| u.prompt_tokens),
+                    completion_tokens: usage.as_ref().map(|u| u.completion_tokens),
                 })
                 .map_err(|e| e.to_string())?;
             if is_done {
