@@ -48,6 +48,7 @@ impl AgentLoopBuilder {
 
     /// `production_ready(device_id)` creates a production-ready AgentLoopBuilder with MemoryGateway and SyncMemoryGateway pre-configured.
     /// SAFETY: MemoryGateway is wrapped in Arc<Mutex<>> for thread-safe concurrent access.
+    /// device_id is used as project_id fallback for AutoMemory initialization when no explicit project_id is provided.
     /// Enables Session + Auto (graceful) + Graph + Cloud tiers for retrieve_multi cascade.
     pub fn production_ready(device_id: &str) -> Self {
         let mut gateway = memory::memory_gateway::MemoryGateway::new(device_id);
@@ -56,7 +57,14 @@ impl AgentLoopBuilder {
         gateway.enable_graph();
         let sync_gateway: memory::sync_gateway::SyncGatewayHandle =
             std::sync::Arc::new(tokio::sync::Mutex::new(gateway));
-        Self::new().with_sync_gateway(Some(sync_gateway))
+        // Create a separate MemoryGateway instance for the memory field (type: Arc<Mutex<MemoryGateway>>)
+        let mut gateway_for_memory = memory::memory_gateway::MemoryGateway::new(device_id);
+        let _ = gateway_for_memory.enable_auto(device_id);
+        gateway_for_memory.enable_graph();
+        let memory = std::sync::Arc::new(tokio::sync::Mutex::new(gateway_for_memory));
+        Self::new()
+            .with_memory(Some(memory))
+            .with_sync_gateway(Some(sync_gateway))
     }
     pub fn with_context(mut self, ctx: AgentContext) -> Self { self.context = Some(ctx); self }
     pub fn with_planner(mut self, p: Arc<Mutex<dyn Planner>>) -> Self { self.planner = Some(p); self }
