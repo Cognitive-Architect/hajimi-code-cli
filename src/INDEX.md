@@ -737,7 +737,7 @@ interface/mcp-server/
 
 <!-- P1-TOKEN-TRACKER-2026-05-02: integration initiated -->
 
-**状态**: 📝 P1 清偿阶段（Backend 集成 → Tauri Command → Frontend 持久化）
+**状态**: ✅ P1 Cleared with minimal AppState extension（Backend 集成 → Tauri Command → Frontend 持久化 → 清债验证 → 文档闭环）
 **目标**: 以最小变更激活 `TokenUsageTracker`，完成 Scheme B 精确 Token 统计全链路闭环
 **债务来源**: `docs/debt/DEBT-SCHEME-B.md` 诚实声明 3 项已知限制
 
@@ -750,23 +750,23 @@ interface/mcp-server/
 | 分层合规 (Engine↔Intelligence) | `grep codex_twist src/engine/` | 0 匹配 |
 | 分层合规 (Intelligence↔Interface) | `grep "use.*interface" src/intelligence/` | 0 匹配 |
 | 前端语法 | `node --check src/interface/web/app.js` | 通过 |
-| Git HEAD | `git rev-parse HEAD` | `db8ace5` |
+| Git HEAD | `git rev-parse HEAD` | `d2f3de5` |
 
 ### 已知限制（DEBT-SCHEME-B.md）
 
-1. `TokenUsageTracker` 尚未集成到 `interface/desktop/src/main.rs` `stream_chat` 流
-2. 前端 `cumulativeStats` 为内存内存储，页面刷新后丢失
-3. `exact-tokens` feature 默认关闭，需显式启用
+1. ✅ `TokenUsageTracker` 已集成到 `interface/desktop/src/main.rs` `stream_chat` 流（P1-02/05）
+2. ✅ 前端 `cumulativeStats` 已改为混合持久化，刷新后通过 Tauri Command 恢复（P1-04/05）
+3. ⚪ `exact-tokens` feature 维持设计决策，精确计数时显式启用 `--features exact-tokens`
 
 ### 后续 P1 工单映射
 
 | 工单 | 阶段 | 目标 | 覆盖文件 | 状态 |
 |:---|:---|:---|:---|:---:|
-| P1-01/05 | Step 0 | 文档基线同步 + Baseline 测量 | 4 份 MD | 📝 进行中 |
-| P1-02/05 | Step 1 | Backend 集成（AppState + record_usage） | `main.rs` | ⬜ 待启动 |
-| P1-03/05 | Step 2 | Tauri Command 暴露（get_cumulative_stats） | `main.rs` | ⬜ 待启动 |
-| P1-04/05 | Step 3-4 | Frontend 持久化（混合存储） | `app.js` | ⬜ 待启动 |
-| P1-05/05 | Step 5 | 清债验证 + 文档闭环 | 多文件 | ⬜ 待启动 |
+| P1-01/05 | Step 0 | 文档基线同步 + Baseline 测量 | 4 份 MD | ✅ 已完成 |
+| P1-02/05 | Step 1 | Backend 集成（AppState + record_usage） | `main.rs` | ✅ 已完成 |
+| P1-03/05 | Step 2 | Tauri Command 暴露（get_cumulative_stats） | `main.rs` | ✅ 已完成 |
+| P1-04/05 | Step 3-4 | Frontend 持久化（混合存储） | `app.js` | ✅ 已完成 |
+| P1-05/05 | Step 5 | 清债验证 + 文档闭环 | 多文件 | ✅ 已完成 |
 
 **关联文档**:
 - Roadmap: `docs/roadmap/Hajimi Context/P1 fix/P1-TOKEN-TRACKER-INTEGRATION-ROADMAP.md`

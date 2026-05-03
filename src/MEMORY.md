@@ -130,7 +130,7 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 
 ## P1 Token Tracker Integration → 进入清偿阶段
 
-<!-- P1-TOKEN-TRACKER-2026-05-02: integration initiated -->
+<!-- P1-TOKEN-TRACKER-2026-05-02: integration cleared, all 5 workitems done -->
 
 **数据诚实性声明**：以下所有 metric 来自 `2026-05-02` 当天 `cargo check`、`cargo test`、`grep` 命令的真实输出。
 
@@ -148,17 +148,17 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 
 | # | 限制项 | 影响 | 清偿计划 |
 |:---|:---|:---|:---|
-| 1 | `TokenUsageTracker` 未集成到 `main.rs` `stream_chat` 流 | 后端无法自动记录 usage | P1-02/05 Backend 集成 |
-| 2 | 前端 `cumulativeStats` 纯内存存储，刷新后丢失 | 累计统计不持久 | P1-04/05 Frontend 混合持久化 |
-| 3 | `exact-tokens` feature 默认关闭 | 需显式启用精确计数 | P1-05/05 可选策略调整 |
+| 1 | `TokenUsageTracker` 已集成到 `main.rs` `stream_chat` 流 | ✅ 已清偿（P1-02/05, `d2f3de5`）| `AppState` 扩展 + `record_usage()` |
+| 2 | 前端 `cumulativeStats` 已改为混合持久化 | ✅ 已清偿（P1-04/05, `d2f3de5`）| Tauri Command + LocalStorage 兜底 |
+| 3 | `exact-tokens` feature 维持设计决策 | ⚪ 非债务 | 精确计数时启用 `--features exact-tokens` |
 
 ### 分层合规声明
 
 - **Engine 层**: 零依赖 Intelligence（`codex_twist`），符合分层规则
 - **Intelligence 层**: `TokenUsageTracker` 功能完整，仅待 Interface 层消费，无反向依赖
-- **Interface 层**: `desktop`/`web` 待接入 Tracker，不影响下层纯洁性
+- **Interface 层**: `desktop`/`web` 已接入 Tracker（`get_cumulative_stats` Tauri Command + 前端混合持久化），不影响下层纯洁性
 
-**状态**: P1 清偿阶段已启动，预计 5 个工单完成全链路闭环。
+**状态**: ✅ P1 全链路闭环已完成（5/5 工单全部清偿）。
 
 ---
 
