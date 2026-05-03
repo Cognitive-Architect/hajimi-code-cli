@@ -2846,6 +2846,7 @@ dependencies = [
  "async-trait",
  "chimera-repl",
  "chrono",
+ "dirs 5.0.1",
  "engine-llm-core",
  "engine-tool-system",
  "futures",
