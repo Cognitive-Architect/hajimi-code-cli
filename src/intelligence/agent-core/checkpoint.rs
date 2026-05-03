@@ -46,7 +46,12 @@ impl CheckpointManager {
 
     pub async fn save(&self, agent_id: &AgentId, plan: Option<Plan>, reflections: Vec<Reflection>, swarm_workers: Vec<WorkerState>, blackboard: &Blackboard) -> ReplResult<Checkpoint> {
         // Persist checkpoint to auto/dream/memory tiers via push_vector
-        let mut chk = Checkpoint { id: format!("chk_{}", uuid::Uuid::new_v4()), timestamp: chrono::Utc::now(), agent_id: agent_id.clone(), plan, reflections, swarm_workers, blackboard: blackboard.snapshot().await, hash: String::new(), version: 1, goal_progress: None, key_reflection: None };
+        let mut chk = Checkpoint {
+            id: format!("chk_{}", uuid::Uuid::new_v4()), timestamp: chrono::Utc::now(),
+            agent_id: agent_id.clone(), plan, reflections, swarm_workers,
+            blackboard: blackboard.snapshot().await, hash: String::new(), version: 1,
+            goal_progress: None, key_reflection: None
+        };
         chk.hash = Self::compute_hash(&chk);
         {
             let mut chks = self.checkpoints.write().await;
@@ -139,7 +144,7 @@ impl CheckpointManager {
 
     pub async fn restore_from_memory(&self, agent_id: &AgentId) -> ReplResult<Checkpoint> {
         if let Some(ref mem) = self.memory {
-            let mem_guard = mem.lock().await; let prefix = format!("chk_{}", agent_id);
+            let mem_guard = mem.lock().await; let prefix = "chk_".to_string();
             for key in mem_guard.session.keys() {
                 if key.starts_with(&prefix) {
                     if let Some(entry) = mem_guard.session.get(key) {
@@ -159,14 +164,26 @@ impl CheckpointManager {
             let mut g = mem.lock().await;
             if let Some(ref mut auto) = g.auto {
                 let _ = auto.load();
-                let mut v = auto.entries.iter().filter(|(k, _)| k.starts_with("chk_")).filter_map(|(_, e)| serde_json::from_str::<Checkpoint>(&e.session_entry.content).ok()).filter(|c| c.agent_id == *agent_id && Self::verify_hash(c).is_ok()).collect::<Vec<_>>();
+                let mut v = auto.entries.iter()
+                    .filter(|(k, _)| k.starts_with("chk_"))
+                    .filter_map(|(_, e)| serde_json::from_str::<Checkpoint>(&e.session_entry.content).ok())
+                    .filter(|entry| entry.agent_id == *agent_id && Self::verify_hash(entry).is_ok())
+                    .collect::<Vec<_>>();
                 v.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
                 if let Some(c) = v.into_iter().next() { return Ok(c); }
             }
         }
-        let path = dirs::config_dir().ok_or_else(|| ReplError::Session("No config dir".to_string()))?.join(".hajimi").join("checkpoints").join(format!("{}.jsonl", project_id));
+        let path = dirs::config_dir().ok_or_else(|| ReplError::Session("No config dir".to_string()))?.join(".hajimi").join("checkpoints").join(format!("{}.jsonl", agent_id));
         let data = tokio::fs::read_to_string(&path).await.map_err(|e| ReplError::Session(format!("Read checkpoint failed: {}", e)))?;
-        let mut v = data.lines().filter(|l| !l.is_empty()).filter_map(|l| serde_json::from_str::<Checkpoint>(l).ok()).filter(|c| c.id.starts_with("chk_") && c.agent_id == *agent_id && Self::verify_hash(c).is_ok()).collect::<Vec<_>>();
+        let mut v = data.lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|l| serde_json::from_str::<Checkpoint>(l).ok())
+            .filter(|entry| {
+                entry.id.starts_with("chk_")
+                && entry.agent_id == *agent_id
+                && Self::verify_hash(entry).is_ok()
+            })
+            .collect::<Vec<_>>();
         v.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         v.into_iter().next().ok_or_else(|| ReplError::Session("No valid checkpoint found".to_string()))
     }
@@ -189,5 +206,12 @@ mod tests {
         mgr.save(&"a1".to_string(), None, vec![], vec![], &bb).await.unwrap();
         let chk = mgr.restore_latest_from_disk("a1", &"a1".to_string()).await.unwrap();
         assert_eq!(chk.agent_id, "a1"); assert!(chk.id.starts_with("chk_"));
+    }
+    #[tokio::test]
+    async fn test_restore_with_different_ids() {
+        let mgr = CheckpointManager::new(); let bb = Blackboard::new();
+        mgr.save(&"alice".to_string(), None, vec![], vec![], &bb).await.unwrap();
+        let chk = mgr.restore_latest_from_disk("my_project", &"alice".to_string()).await.unwrap();
+        assert_eq!(chk.agent_id, "alice"); assert!(chk.id.starts_with("chk_"));
     }
 }
