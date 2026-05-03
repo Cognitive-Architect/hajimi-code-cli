@@ -782,4 +782,6 @@ interface/mcp-server/
 
 ---
 
+<!-- MEMORY-REMEDIATION-2026-05-03: five-tier memory activation initiated -->
+
 *本索引文档与代码同步维护，最后更新于 2026-04-30*

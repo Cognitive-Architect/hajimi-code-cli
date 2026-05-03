@@ -408,6 +408,8 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 - `TokenUsageTracker` 仅在 Intelligence 层提供服务 — 验证: `cargo test -p codex-twist --test token_tracking_e2e` 12 passed
 - Interface 层通过 Tauri Command 消费，不暴露内存细节 — 验证: `cargo check --workspace` 0 errors
 
+<!-- MEMORY-REMEDIATION-2026-05-03: AgentLoopBuilder production_ready() adds default MemoryGateway injection -->
+
 ---
 
 ## 🔗 关联文档
