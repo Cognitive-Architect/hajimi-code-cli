@@ -20,8 +20,18 @@ pub struct MemoryGateway {
 }
 
 impl MemoryGateway {
+    /// Create a MemoryGateway with only session + cloud enabled.
+    /// For backward compatibility; equivalent to `new_with_project(device_id, None)`.
     pub fn new(device_id: &str) -> Self {
-        Self {
+        Self::new_with_project(device_id, None)
+    }
+
+    /// Create a MemoryGateway with optional project_id.
+    /// When project_id is Some, AutoMemory is automatically created and load() is called
+    /// to restore historical entries from disk. Graceful: if AutoMemory::new() fails,
+    /// auto remains None and the gateway is still usable.
+    pub fn new_with_project(device_id: &str, project_id: Option<&str>) -> Self {
+        let mut gateway = Self {
             session: SessionMemory::new(),
             auto: None,
             dream: None,
@@ -29,7 +39,14 @@ impl MemoryGateway {
             cloud: Some(CloudMemory::new(device_id)),
             episodic: None,
             sync_engine: MemorySyncEngine::new(),
+        };
+        if let Some(pid) = project_id {
+            if let Ok(mut auto) = AutoMemory::new(pid) {
+                let _ = auto.load();
+                gateway.auto = Some(auto);
+            }
         }
+        gateway
     }
 
     pub fn enable_episodic(&mut self) { self.episodic = Some(EpisodicMemory::new()); }
@@ -122,6 +139,22 @@ mod tests {
         gw.enable_graph();
         gw.enable_episodic();
         assert_eq!(gw.layer_count(), 6);
+    }
+
+    #[test]
+    fn test_new_with_project_id() {
+        let gw = MemoryGateway::new_with_project("test_device", Some("test_project"));
+        assert!(gw.auto.is_some());
+    }
+
+    #[test]
+    fn test_new_without_project_id() {
+        let gw = MemoryGateway::new_with_project("test_device", None);
+        assert!(gw.auto.is_none());
+        assert!(gw.dream.is_none());
+        assert!(gw.graph.is_none());
+        assert!(gw.episodic.is_none());
+        assert!(gw.cloud.is_some());
     }
 
     #[test]

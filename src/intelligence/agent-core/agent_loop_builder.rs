@@ -51,15 +51,13 @@ impl AgentLoopBuilder {
     /// device_id is used as project_id fallback for AutoMemory initialization when no explicit project_id is provided.
     /// Enables Session + Auto (graceful) + Graph + Cloud tiers for retrieve_multi cascade.
     pub fn production_ready(device_id: &str) -> Self {
-        let mut gateway = memory::memory_gateway::MemoryGateway::new(device_id);
-        // Graceful: AutoMemory may fail if project dir is not writable; Session+Cloud remain available
-        let _ = gateway.enable_auto(device_id);
+        // Auto-enable AutoMemory with project_id = device_id fallback; load() restores history from disk
+        let mut gateway = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
         gateway.enable_graph();
         let sync_gateway: memory::sync_gateway::SyncGatewayHandle =
             std::sync::Arc::new(tokio::sync::Mutex::new(gateway));
         // Create a separate MemoryGateway instance for the memory field (type: Arc<Mutex<MemoryGateway>>)
-        let mut gateway_for_memory = memory::memory_gateway::MemoryGateway::new(device_id);
-        let _ = gateway_for_memory.enable_auto(device_id);
+        let mut gateway_for_memory = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
         gateway_for_memory.enable_graph();
         let memory = std::sync::Arc::new(tokio::sync::Mutex::new(gateway_for_memory));
         Self::new()
