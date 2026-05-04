@@ -409,6 +409,7 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 - Interface 层通过 Tauri Command 消费，不暴露内存细节 — 验证: `cargo check --workspace` 0 errors
 
 <!-- MEMORY-REMEDIATION-2026-05-03: AgentLoopBuilder production_ready() adds default MemoryGateway injection -->
+<!-- MEMORY-REMEDIATION-CLEARED: 7/7 Cleared -->
 
 ---
 
