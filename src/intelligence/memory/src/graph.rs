@@ -46,10 +46,13 @@ impl std::fmt::Display for GraphError {
 impl std::error::Error for GraphError {}
 impl GraphMemory {
     pub fn new(project_id: &str) -> Result<Self, GraphError> {
-        let db_path = Self::db_path(project_id);
+        Self::new_with_path(&Self::db_path(project_id))
+    }
+
+    pub fn new_with_path(db_path: &std::path::Path) -> Result<Self, GraphError> {
         std::fs::create_dir_all(db_path.parent().ok_or_else(|| GraphError::DbError("Invalid db path".into()))?)
             .map_err(|e| GraphError::DbError(format!("Failed to create dir: {}", e)))?;
-        let conn = rusqlite::Connection::open(&db_path)
+        let conn = rusqlite::Connection::open(db_path)
             .map_err(|e| GraphError::DbError(format!("Failed to open {}: {}", db_path.display(), e)))?;
         // SAFETY: SQLite WAL mode enables concurrent reads while serializing writers.
         conn.pragma_update(None, "journal_mode", "WAL")
@@ -116,7 +119,54 @@ impl GraphMemory {
         Ok(())
     }
 
-    pub fn recall(&self, _query: &str) -> Result<Vec<EntityNode>, GraphError> { Ok(Vec::new()) }
+    pub fn recall(&self, query: &str) -> Result<Vec<EntityNode>, GraphError> {
+        if query.is_empty() { return Ok(Vec::new()); }
+        let conn = self.db.as_ref().ok_or_else(|| GraphError::DbError("No DB".into()))?;
+        let conn = conn.lock().map_err(|_| GraphError::DbError("Lock poisoned".into()))?;
+        let keywords: Vec<&str> = query.split_whitespace().collect();
+        let mut stmt = conn.prepare("SELECT id, name, entity_type, created_at FROM entities WHERE name LIKE ?1")
+            .map_err(|e| GraphError::DbError(e.to_string()))?;
+        let mut results = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for kw in &keywords {
+            let pattern = format!("%{}%", kw);
+            let rows = stmt.query_map([&pattern], |row| {
+                let etype_str: String = row.get(2)?;
+                let entity_type = match etype_str.as_str() {
+                    "Person" => EntityType::Person,
+                    "Org" => EntityType::Org,
+                    "Location" => EntityType::Location,
+                    "Concept" => EntityType::Concept,
+                    "Product" => EntityType::Product,
+                    _ => EntityType::Concept,
+                };
+                let created_at_str: String = row.get(3)?;
+                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?
+                    .with_timezone(&Utc);
+                Ok(EntityNode {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    entity_type,
+                    created_at,
+                })
+            }).map_err(|e| GraphError::DbError(e.to_string()))?;
+            for row in rows {
+                let node = row.map_err(|e| GraphError::DbError(e.to_string()))?;
+                if seen.insert(node.id.clone()) {
+                    results.push(node);
+                }
+            }
+        }
+        results.sort_by(|a, b| {
+            let sa = keywords.iter().filter(|k| a.name.contains(*k)).count();
+            let sb = keywords.iter().filter(|k| b.name.contains(*k)).count();
+            sb.cmp(&sa)
+        });
+        const TOP_K: usize = 10;
+        results.truncate(TOP_K);
+        Ok(results)
+    }
 
     pub fn store(&mut self, entry: MemoryEntry) -> Result<(), GraphError> {
         let entities = extract_entities(&entry.content)
@@ -141,6 +191,24 @@ impl GraphMemory {
             self.nodes.insert(node.id.clone(), node);
         }
         tx.commit().map_err(|e| GraphError::DbError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        if let Some(db) = self.db.take() {
+            if let Ok(mutex) = Arc::try_unwrap(db) {
+                if let Ok(conn) = mutex.into_inner() {
+                    let _ = conn.close();
+                }
+            }
+        }
+    }
+
+    pub fn flush(&self) -> Result<(), GraphError> {
+        let conn = self.db.as_ref().ok_or_else(|| GraphError::DbError("No DB".into()))?;
+        let conn = conn.lock().map_err(|_| GraphError::DbError("Lock poisoned".into()))?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .map_err(|e| GraphError::DbError(e.to_string()))?;
         Ok(())
     }
 
@@ -334,6 +402,15 @@ mod tests {
         let conn = gm.db.as_ref().unwrap().lock().unwrap();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0)).unwrap();
         assert!(count > 0, "Expected entities in SQLite, found {}", count);
+    }
+    #[test] fn test_recall_lifecycle() {
+        let mut gm = GraphMemory::new("test_recall_lifecycle").unwrap();
+        let entry = crate::types::MemoryEntry { id: "e1".into(), content: "Apple and Microsoft are companies".into(), tokens: 10, timestamp: chrono::Utc::now(), layer: crate::types::MemoryLayerId::Graph };
+        gm.store(entry).unwrap();
+        let results = gm.recall("Apple").unwrap();
+        assert!(!results.is_empty(), "Expected recall results before close");
+        gm.close();
+        assert!(gm.recall("Apple").is_err(), "Expected error after close");
     }
     #[test] fn test_extract_entities_basic() {
         let text = "Apple Inc was founded by Steve Jobs"; let entities = extract_entities(text).unwrap();

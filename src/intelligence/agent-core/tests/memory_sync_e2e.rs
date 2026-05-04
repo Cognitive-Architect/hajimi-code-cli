@@ -8,7 +8,7 @@ fn create_sync_gateway() -> Arc<Mutex<MemoryGateway>> {
     let mut gw = MemoryGateway::new("e2e_sync");
     gw.enable_auto("e2e_sync").unwrap();
     gw.enable_dream().unwrap();
-    gw.enable_graph();
+    gw.enable_graph("e2e_sync");
     Arc::new(Mutex::new(gw))
 }
 
