@@ -26,6 +26,7 @@ pub mod plan_optimizer;
 pub mod resource_monitor;
 pub mod edit_applier;
 pub mod workflow_orchestrator;
+pub mod memory_bootstrapper;
 pub use edit_applier::{EditApplier, ProposedEdit, AppliedEdit, EditHunk, EditState, edit_summary};
 pub use workflow_orchestrator::{WorkflowOrchestrator, WorkflowOutcome};
 
@@ -41,6 +42,7 @@ pub use swarm::{Supervisor, Worker, TaskAssignment, WorkerResult, SwarmMessage, 
 pub use checkpoint::{CheckpointManager, Checkpoint, WorkerState};
 pub use agent_loop::{AgentLoop, LoopState, LoopOutcome, Observation, TraceEvent};
 pub use agent_loop_builder::AgentLoopBuilder;
+pub use memory_bootstrapper::{MemoryBootstrapper, BootstrapResult};
 
 #[cfg(test)]
 mod agent_loop_tests;
