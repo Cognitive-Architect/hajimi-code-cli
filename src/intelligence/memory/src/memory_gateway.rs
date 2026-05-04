@@ -61,8 +61,10 @@ impl MemoryGateway {
         Ok(())
     }
 
-    pub fn enable_graph(&mut self) {
-        self.graph = Some(GraphMemory::new());
+    pub fn enable_graph(&mut self, project_id: &str) {
+        if let Ok(gm) = GraphMemory::new(project_id) {
+            self.graph = Some(gm);
+        }
     }
 
     pub fn enable_cloud(&mut self, device_id: &str) {
@@ -136,7 +138,7 @@ mod tests {
         assert!(gw.auto.is_none());
         gw.enable_auto("test_project").unwrap();
         gw.enable_dream().unwrap();
-        gw.enable_graph();
+        gw.enable_graph("test_project");
         gw.enable_episodic();
         assert_eq!(gw.layer_count(), 6);
     }
@@ -170,7 +172,7 @@ mod tests {
         let mut gw = MemoryGateway::new("test_device");
         gw.enable_auto("test_project").unwrap();
         gw.enable_dream().unwrap();
-        gw.enable_graph();
+        gw.enable_graph("test_project");
         assert!(gw.push_vector("k1", "hello cascade").is_ok());
         assert!(gw.session.get("k1").is_some());
     }

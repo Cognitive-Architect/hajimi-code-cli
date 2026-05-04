@@ -53,12 +53,12 @@ impl AgentLoopBuilder {
     pub fn production_ready(device_id: &str) -> Self {
         // Auto-enable AutoMemory with project_id = device_id fallback; load() restores history from disk
         let mut gateway = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
-        gateway.enable_graph();
+        gateway.enable_graph(device_id);
         let sync_gateway: memory::sync_gateway::SyncGatewayHandle =
             std::sync::Arc::new(tokio::sync::Mutex::new(gateway));
         // Create a separate MemoryGateway instance for the memory field (type: Arc<Mutex<MemoryGateway>>)
         let mut gateway_for_memory = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
-        gateway_for_memory.enable_graph();
+        gateway_for_memory.enable_graph(device_id);
         let memory = std::sync::Arc::new(tokio::sync::Mutex::new(gateway_for_memory));
         Self::new()
             .with_memory(Some(memory))

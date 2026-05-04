@@ -20,29 +20,141 @@ pub enum RelationType { RelatedTo, PartOf, CreatedBy, LocatedIn }
 pub struct RelationEdge { pub id: EdgeId, pub source_id: EntityId, pub target_id: EntityId, pub relation_type: RelationType }
 #[derive(Clone, Debug, Default)]
 pub struct EntityIndex { pub name_to_id: HashMap<String, EntityId>, pub type_to_ids: HashMap<EntityType, Vec<EntityId>> }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GraphMemory {
     pub nodes: HashMap<EntityId, EntityNode>,
     pub edges: HashMap<EdgeId, RelationEdge>,
     pub index: EntityIndex,
+    pub db: Option<Arc<Mutex<rusqlite::Connection>>>,
+}
+
+impl std::fmt::Debug for GraphMemory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphMemory")
+            .field("nodes", &self.nodes)
+            .field("edges", &self.edges)
+            .field("index", &self.index)
+            .field("db", &self.db.is_some())
+            .finish()
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
-pub enum GraphError { NotFound(String), Duplicate(String) }
+pub enum GraphError { NotFound(String), Duplicate(String), DbError(String) }
 impl std::fmt::Display for GraphError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { match self { Self::NotFound(i) => write!(f, "Not found: {}", i), Self::Duplicate(i) => write!(f, "Duplicate: {}", i) } }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { match self { Self::NotFound(i) => write!(f, "Not found: {}", i), Self::Duplicate(i) => write!(f, "Duplicate: {}", i), Self::DbError(e) => write!(f, "Database error: {}", e) } }
 }
 impl std::error::Error for GraphError {}
 impl GraphMemory {
-    pub fn new() -> Self { Self { nodes: HashMap::new(), edges: HashMap::new(), index: EntityIndex::default() } }
+    pub fn new(project_id: &str) -> Result<Self, GraphError> {
+        let db_path = Self::db_path(project_id);
+        std::fs::create_dir_all(db_path.parent().ok_or_else(|| GraphError::DbError("Invalid db path".into()))?)
+            .map_err(|e| GraphError::DbError(format!("Failed to create dir: {}", e)))?;
+        let conn = rusqlite::Connection::open(&db_path)
+            .map_err(|e| GraphError::DbError(format!("Failed to open {}: {}", db_path.display(), e)))?;
+        // SAFETY: SQLite WAL mode enables concurrent reads while serializing writers.
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .map_err(|e| GraphError::DbError(e.to_string()))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, name TEXT NOT NULL, entity_type TEXT NOT NULL, created_at TEXT NOT NULL)",
+            [],
+        ).map_err(|e| GraphError::DbError(e.to_string()))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS relations (id TEXT PRIMARY KEY, source_id TEXT NOT NULL, target_id TEXT NOT NULL, relation_type TEXT NOT NULL)",
+            [],
+        ).map_err(|e| GraphError::DbError(e.to_string()))?;
+        let mut gm = Self {
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
+            index: EntityIndex::default(),
+            db: Some(Arc::new(Mutex::new(conn))),
+        };
+        gm.load_entities()?;
+        Ok(gm)
+    }
+
+    fn db_path(project_id: &str) -> std::path::PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".hajimi")
+            .join("memory")
+            .join(project_id)
+            .join("graph.db")
+    }
+
+    fn load_entities(&mut self) -> Result<(), GraphError> {
+        let conn = self.db.as_ref().ok_or_else(|| GraphError::DbError("No DB".into()))?;
+        let conn = conn.lock().map_err(|_| GraphError::DbError("Lock poisoned".into()))?;
+        let mut stmt = conn.prepare("SELECT id, name, entity_type, created_at FROM entities")
+            .map_err(|e| GraphError::DbError(e.to_string()))?;
+        let rows = stmt.query_map([], |row| {
+            let etype_str: String = row.get(2)?;
+            let entity_type = match etype_str.as_str() {
+                "Person" => EntityType::Person,
+                "Org" => EntityType::Org,
+                "Location" => EntityType::Location,
+                "Concept" => EntityType::Concept,
+                "Product" => EntityType::Product,
+                _ => EntityType::Concept,
+            };
+            let created_at_str: String = row.get(3)?;
+            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?
+                .with_timezone(&Utc);
+            Ok(EntityNode {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type,
+                created_at,
+            })
+        }).map_err(|e| GraphError::DbError(e.to_string()))?;
+        for row in rows {
+            let node = row.map_err(|e| GraphError::DbError(e.to_string()))?;
+            self.index.name_to_id.insert(node.name.clone(), node.id.clone());
+            self.index.type_to_ids.entry(node.entity_type.clone()).or_default().push(node.id.clone());
+            self.nodes.insert(node.id.clone(), node);
+        }
+        Ok(())
+    }
+
     pub fn recall(&self, _query: &str) -> Result<Vec<EntityNode>, GraphError> { Ok(Vec::new()) }
-    pub fn store(&mut self, _entry: MemoryEntry) -> Result<(), GraphError> { Ok(()) }
+
+    pub fn store(&mut self, entry: MemoryEntry) -> Result<(), GraphError> {
+        let entities = extract_entities(&entry.content)
+            .map_err(|e| GraphError::DbError(format!("Entity extraction failed: {}", e)))?;
+        let conn = self.db.as_ref().ok_or_else(|| GraphError::DbError("No DB".into()))?;
+        let mut conn = conn.lock().map_err(|_| GraphError::DbError("Lock poisoned".into()))?;
+        let tx = conn.transaction().map_err(|e| GraphError::DbError(e.to_string()))?;
+        for entity in entities {
+            let node_id = format!("{}_{}", entry.id, entity.label);
+            let node = EntityNode {
+                id: node_id.clone(),
+                name: entity.label,
+                entity_type: EntityType::Concept,
+                created_at: Utc::now(),
+            };
+            tx.execute(
+                "INSERT OR REPLACE INTO entities (id, name, entity_type, created_at) VALUES (?1, ?2, ?3, ?4)",
+                [&node.id, &node.name, &format!("{:?}", node.entity_type), &node.created_at.to_rfc3339()],
+            ).map_err(|e| GraphError::DbError(e.to_string()))?;
+            self.index.name_to_id.insert(node.name.clone(), node.id.clone());
+            self.index.type_to_ids.entry(node.entity_type.clone()).or_default().push(node.id.clone());
+            self.nodes.insert(node.id.clone(), node);
+        }
+        tx.commit().map_err(|e| GraphError::DbError(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn search(&self, name: &str) -> Result<Vec<EntityNode>, GraphError> {
         match self.index.name_to_id.get(name) { Some(id) => self.nodes.get(id).map(|n| vec![n.clone()]).ok_or_else(|| GraphError::NotFound(id.clone())), None => Ok(Vec::new()) }
     }
     pub fn node_count(&self) -> usize { self.nodes.len() }
     pub fn edge_count(&self) -> usize { self.edges.len() }
 }
-impl Default for GraphMemory { fn default() -> Self { Self::new() } }
+impl Default for GraphMemory {
+    fn default() -> Self {
+        Self { nodes: HashMap::new(), edges: HashMap::new(), index: EntityIndex::default(), db: None }
+    }
+}
 impl MemoryLayer for GraphMemory { fn layer_id(&self) -> MemoryLayerId { MemoryLayerId::Graph } fn capacity(&self) -> TokenCount { self.node_count() * 100 + self.edge_count() * 50 } }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entity { pub id: Uuid, pub label: String, pub span: (usize, usize), pub confidence: f32 }
@@ -211,9 +323,18 @@ impl KnowledgeGraph {
 #[cfg(test)]
 mod tests {
     use super::*; use std::thread; use std::time::Instant; use std::sync::atomic::{AtomicUsize, Ordering};
-    #[test] fn test_new() { assert_eq!(GraphMemory::new().node_count(), 0); }
-    #[test] fn test_layer_id() { assert_eq!(GraphMemory::new().layer_id(), MemoryLayerId::Graph); }
-    #[test] fn test_search() { assert!(GraphMemory::new().search("x").unwrap().is_empty()); }
+    #[test] fn test_new() { assert_eq!(GraphMemory::new("test_new").unwrap().node_count(), 0); }
+    #[test] fn test_layer_id() { assert_eq!(GraphMemory::new("test_layer").unwrap().layer_id(), MemoryLayerId::Graph); }
+    #[test] fn test_search() { assert!(GraphMemory::new("test_search").unwrap().search("x").unwrap().is_empty()); }
+    #[test] fn test_store_persists_to_sqlite() {
+        let mut gm = GraphMemory::new("test_store_sqlite").unwrap();
+        let entry = crate::types::MemoryEntry { id: "e1".into(), content: "Apple and Microsoft".into(), tokens: 10, timestamp: chrono::Utc::now(), layer: crate::types::MemoryLayerId::Graph };
+        gm.store(entry).unwrap();
+        assert!(gm.node_count() > 0);
+        let conn = gm.db.as_ref().unwrap().lock().unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0)).unwrap();
+        assert!(count > 0, "Expected entities in SQLite, found {}", count);
+    }
     #[test] fn test_extract_entities_basic() {
         let text = "Apple Inc was founded by Steve Jobs"; let entities = extract_entities(text).unwrap();
         assert!(!entities.is_empty(), "Should find entities");
