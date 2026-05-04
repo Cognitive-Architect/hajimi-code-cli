@@ -1,6 +1,7 @@
 pub mod types;
 pub mod auto;
 pub mod session;
+// NOTE: DreamMemory MVP uses hash-based embedding with cosine similarity.
 pub mod dream;
 pub mod scheduler;
 pub mod sync;

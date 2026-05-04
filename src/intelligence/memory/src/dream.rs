@@ -1,21 +1,16 @@
-//! Dream Memory Layer - Vector Embedding Storage with ONNX Runtime
+//! Dream Memory Layer - Vector Embedding Storage (MVP)
 #![deny(unsafe_code)]
 
 use crate::auto::{AutoEntry, AutoMemory};
 use chrono::{DateTime, Utc};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 use thiserror::Error;
 
-// DEBT-ONNX-API-W28: ONNX Runtime占位类型（待API稳定后替换为真实ort::Session）
-pub struct OnnxSession;
-impl OnnxSession {
-    pub fn builder() -> Result<Self, String> { Ok(Self) }
-    pub fn commit_from_memory(&self, _data: &[u8]) -> Result<Self, String> { Ok(Self) }
-}
-
 pub const EMBEDDING_DIM: usize = 384;
-const EMBED_TIMEOUT_MS: u64 = 500;
+
+pub type EmbeddingCache = HashMap<String, Vec<f32>>;
 
 #[derive(Debug, Error)]
 pub enum DreamError {
@@ -23,18 +18,12 @@ pub enum DreamError {
     Io(#[from] std::io::Error),
     #[error("SQLite error: {0}")]
     Sqlite(String),
-    #[error("ONNX error: {0}")]
-    Onnx(String),
-    #[error("Embedding timeout: exceeded {EMBED_TIMEOUT_MS}ms")]
-    Timeout,
     #[error("Invalid dimension: expected {EMBED_DIM}, got {actual}", EMBED_DIM = EMBEDDING_DIM)]
     InvalidDimension { actual: usize },
     #[error("Invalid project ID")]
     InvalidProjectId,
     #[error("Cannot determine config directory")]
     NoConfigDir,
-    #[error("ONNX model not found: {0}")]
-    ModelNotFound(PathBuf),
 }
 
 impl From<rusqlite::Error> for DreamError {
@@ -66,7 +55,7 @@ impl DreamEntry {
 
 pub struct DreamMemory {
     db: rusqlite::Connection,
-    embedding_model: OnnxSession,
+    embedding_cache: RefCell<EmbeddingCache>,
     project_id: String,
     db_path: PathBuf,
 }
@@ -93,34 +82,34 @@ impl DreamMemory {
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_dream_timestamp ON dream_entries(timestamp)", [],
         )?;
-        let model_path = dream_dir.join("embedding_model.onnx");
-        // Week 28: ONNX Session创建占位（避免rc版本API不匹配）
-        // 实际生产环境使用正确的commit_from_file API
-        let embedding_model = OnnxSession::builder()
-            .map_err(|e: String| DreamError::Onnx(e))?
-            .commit_from_memory(b"")
-            .map_err(|_| DreamError::ModelNotFound(model_path))?;
-        Ok(Self { db, embedding_model, project_id: project_id.to_string(), db_path })
+        Ok(Self { db, embedding_cache: RefCell::new(EmbeddingCache::new()), project_id: project_id.to_string(), db_path })
     }
 
     pub fn db_path(&self) -> &PathBuf { &self.db_path }
     pub fn project_id(&self) -> &str { &self.project_id }
 
-    pub fn embed(&self, content: &str) -> Result<Vec<f32>, DreamError> {
-        let start = Instant::now();
-        let timeout = Duration::from_millis(EMBED_TIMEOUT_MS);
-        
-        // Week 28: ONNX推理占位实现（避免API版本不匹配）
-        // 实际生产环境使用正确的ort API
-        let _ = content;
-        let _ = &self.embedding_model;
-        
-        if start.elapsed() > timeout {
-            return Err(DreamError::Timeout);
+    /// # Safety: DreamMemory uses deterministic hash-based embeddings. The same input text
+    /// always produces the same vector, enabling reproducible cosine similarity scores.
+    /// This is an MVP implementation; Phase 3 will migrate to a real ONNX model.
+    pub fn embed(&self, text: &str) -> Vec<f32> {
+        {
+            let cache = self.embedding_cache.borrow();
+            if let Some(cached) = cache.get(text) {
+                return cached.clone();
+            }
         }
-        
-        // 返回零向量占位（实际应为ONNX输出）
-        Ok(vec![0.0f32; EMBEDDING_DIM])
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hasher::write(&mut hasher, text.as_bytes());
+        let seed = std::hash::Hasher::finish(&mut hasher);
+        let mut vec = Vec::with_capacity(EMBEDDING_DIM);
+        let mut state = seed;
+        for _ in 0..EMBEDDING_DIM {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let val = ((state >> 32) as u32) as f32 / u32::MAX as f32;
+            vec.push(val * 2.0 - 1.0);
+        }
+        self.embedding_cache.borrow_mut().insert(text.to_string(), vec.clone());
+        vec
     }
 
     pub fn search(&self, query_embedding: &[f32], k: usize) -> Result<Vec<DreamEntry>, DreamError> {
@@ -190,11 +179,8 @@ impl DreamMemory {
             if let Some(auto_entry) = auto.get(key) {
                 let content = &auto_entry.session_entry.content;
                 let tokens = auto_entry.session_entry.tokens;
-                match self.embed(content) {
-                    Ok(embedding) => { self.insert(key, content, tokens, &embedding)?; }
-                    Err(DreamError::Timeout) => { continue; }
-                    Err(e) => return Err(e),
-                }
+                let embedding = self.embed(content);
+                self.insert(key, content, tokens, &embedding)?;
             }
         }
         Ok(())
@@ -275,20 +261,20 @@ mod tests {
     #[test]
     fn test_dream_embed_valid() {
         if let Ok(dream) = DreamMemory::new("test_embed_valid") {
-            let start = Instant::now();
-            let embed_result = dream.embed("test content");
-            let elapsed = start.elapsed();
-            if let Ok(embedding) = embed_result {
-                assert_eq!(embedding.len(), EMBEDDING_DIM);
-                assert!(elapsed.as_millis() < 500 || embedding.len() == EMBEDDING_DIM);
-            }
+            let embedding = dream.embed("test content");
+            assert_eq!(embedding.len(), EMBEDDING_DIM);
         }
     }
 
     #[test]
-    fn test_dream_embed_invalid_model() {
-        let result = DreamMemory::new("test_invalid_model_xyz");
-        assert!(result.is_err() || result.is_ok());
+    fn test_dream_embed_deterministic() {
+        if let Ok(dream) = DreamMemory::new("test_embed_deterministic") {
+            let a = dream.embed("hello world");
+            let b = dream.embed("hello world");
+            assert_eq!(a, b);
+            let c = dream.embed("different text");
+            assert_ne!(a, c);
+        }
     }
 
     #[test]
@@ -309,18 +295,6 @@ mod tests {
             let sync_result = dream.sync_from_auto(&auto);
             assert!(sync_result.is_ok() || sync_result.is_err());
         }
-    }
-
-    #[test]
-    fn test_dream_timeout_500ms() {
-        let start = Instant::now();
-        if let Ok(dream) = DreamMemory::new("test_timeout") {
-            let embed_start = Instant::now();
-            let _ = dream.embed("test");
-            let embed_elapsed = embed_start.elapsed();
-            assert!(embed_elapsed.as_millis() < 1000 || true);
-        }
-        assert!(start.elapsed().as_secs() < 5);
     }
 
     #[test]
