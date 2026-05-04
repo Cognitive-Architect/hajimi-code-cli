@@ -3,8 +3,10 @@
 
 use crate::auto::{AutoEntry, AutoMemory};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -53,11 +55,21 @@ impl DreamEntry {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct DreamPersistedEntry {
+    id: String,
+    content: String,
+    tokens: usize,
+    embedding: Vec<f32>,
+    timestamp: String,
+}
+
 pub struct DreamMemory {
     db: rusqlite::Connection,
     embedding_cache: RefCell<EmbeddingCache>,
     project_id: String,
     db_path: PathBuf,
+    jsonl_path: PathBuf,
 }
 
 impl DreamMemory {
@@ -82,7 +94,18 @@ impl DreamMemory {
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_dream_timestamp ON dream_entries(timestamp)", [],
         )?;
-        Ok(Self { db, embedding_cache: RefCell::new(EmbeddingCache::new()), project_id: project_id.to_string(), db_path })
+        let memory_dir = config_dir.join("hajimi").join("memory").join(project_id);
+        std::fs::create_dir_all(&memory_dir)?;
+        let jsonl_path = memory_dir.join("dream.jsonl");
+        let mut dream = Self {
+            db,
+            embedding_cache: RefCell::new(EmbeddingCache::new()),
+            project_id: project_id.to_string(),
+            db_path,
+            jsonl_path,
+        };
+        dream.load_from_disk()?;
+        Ok(dream)
     }
 
     pub fn db_path(&self) -> &PathBuf { &self.db_path }
@@ -182,6 +205,55 @@ impl DreamMemory {
                 let embedding = self.embed(content);
                 self.insert(key, content, tokens, &embedding)?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn save(&self) -> Result<(), DreamError> {
+        let jsonl_path = &self.jsonl_path;
+        if let Some(parent) = jsonl_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut temp = tempfile::NamedTempFile::new_in(
+            jsonl_path.parent().unwrap_or(std::path::Path::new("."))
+        )?;
+        let mut stmt = self.db.prepare(
+            "SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let id: String = row.get(0)?;
+            let content: String = row.get(1)?;
+            let tokens: usize = row.get(2)?;
+            let embedding_blob: Vec<u8> = row.get(3)?;
+            let timestamp: String = row.get(4)?;
+            let embedding: Vec<f32> = embedding_blob
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            Ok((id, content, tokens, embedding, timestamp))
+        })?;
+        for row in rows {
+            let (id, content, tokens, embedding, timestamp) = row?;
+            let entry = DreamPersistedEntry { id, content, tokens, embedding, timestamp };
+            let json = serde_json::to_string(&entry)
+                .map_err(|e| DreamError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+            writeln!(temp, "{}", json)?;
+        }
+        temp.flush()?;
+        std::fs::rename(temp.path(), jsonl_path)?;
+        Ok(())
+    }
+
+    pub fn load_from_disk(&mut self) -> Result<(), DreamError> {
+        if !self.jsonl_path.exists() { return Ok(()); }
+        let content = std::fs::read_to_string(&self.jsonl_path)?;
+        for line in content.lines() {
+            if line.trim().is_empty() { continue; }
+            let entry: DreamPersistedEntry = match serde_json::from_str(line) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let _ = self.insert(&entry.id, &entry.content, entry.tokens, &entry.embedding);
         }
         Ok(())
     }
@@ -294,6 +366,39 @@ mod tests {
             let auto = AutoMemory::new("test_auto_for_dream").expect("fail");
             let sync_result = dream.sync_from_auto(&auto);
             assert!(sync_result.is_ok() || sync_result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_dream_persist_load() {
+        let pid = "test_persist_load";
+        {
+            let mut dream = DreamMemory::new(pid).unwrap();
+            let embedding = dream.embed("persist test");
+            dream.insert("k1", "persist test", 2, &embedding).unwrap();
+            dream.save().unwrap();
+        }
+        {
+            let dream = DreamMemory::new(pid).unwrap();
+            assert_eq!(dream.len().unwrap(), 1);
+            let (content, _) = dream.get("k1").unwrap().unwrap();
+            assert_eq!(content, "persist test");
+        }
+    }
+
+    #[test]
+    fn test_dream_recall_similarity() {
+        if let Ok(mut dream) = DreamMemory::new("test_recall_similarity") {
+            let text = "the quick brown fox jumps over the lazy dog";
+            let embedding = dream.embed(text);
+            dream.insert("k1", text, 9, &embedding).unwrap();
+            let results = dream.search(&embedding, 5).unwrap();
+            assert!(!results.is_empty());
+            assert!(
+                results[0].similarity_score >= 0.7,
+                "same-text recall should be >= 0.7, got {}",
+                results[0].similarity_score
+            );
         }
     }
 

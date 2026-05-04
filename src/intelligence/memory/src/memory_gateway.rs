@@ -56,8 +56,8 @@ impl MemoryGateway {
         Ok(())
     }
 
-    pub fn enable_dream(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.dream = Some(DreamMemory::new("dream_project")?);
+    pub fn enable_dream(&mut self, project_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.dream = Some(DreamMemory::new(project_id)?);
         Ok(())
     }
 
@@ -137,7 +137,7 @@ mod tests {
         let mut gw = MemoryGateway::new("test_device");
         assert!(gw.auto.is_none());
         gw.enable_auto("test_project").unwrap();
-        gw.enable_dream().unwrap();
+        gw.enable_dream("test_project").unwrap();
         gw.enable_graph("test_project");
         gw.enable_episodic();
         assert_eq!(gw.layer_count(), 6);
@@ -171,7 +171,7 @@ mod tests {
     fn test_push_vector_cascade() {
         let mut gw = MemoryGateway::new("test_device");
         gw.enable_auto("test_project").unwrap();
-        gw.enable_dream().unwrap();
+        gw.enable_dream("test_project").unwrap();
         gw.enable_graph("test_project");
         assert!(gw.push_vector("k1", "hello cascade").is_ok());
         assert!(gw.session.get("k1").is_some());

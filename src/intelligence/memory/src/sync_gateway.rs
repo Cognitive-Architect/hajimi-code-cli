@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     fn gw() -> crate::memory_gateway::MemoryGateway {
         let mut g = crate::memory_gateway::MemoryGateway::new("t");
-        g.enable_auto("t").unwrap(); g.enable_dream().unwrap(); g.enable_graph("t"); g
+        g.enable_auto("t").unwrap(); g.enable_dream("t").unwrap(); g.enable_graph("t"); g
     }
     fn rt() -> tokio::runtime::Runtime { tokio::runtime::Runtime::new().unwrap() }
     #[test]
