@@ -785,4 +785,19 @@ interface/mcp-server/
 <!-- MEMORY-REMEDIATION-2026-05-03: five-tier memory activation initiated -->
 <!-- MEMORY-REMEDIATION-CLEARED: 7/7 Cleared -->
 
+## Phase 3a/3b Memory Enhancement — 进入实施阶段
+
+<!-- PHASE-3A-REMEDIATION-2026-05-05: semantic memory + LLM summary initiated -->
+
+**状态**: Phase 3a/3b 启动，目标：有理解的记忆 + 智能积累
+
+| 阶段 | 模块 | 目标 | 关键文件 | 当前基线 |
+|:---|:---|:---|:---|:---:|
+| 3a-1 | MemoryBootstrapper | LLM 自然语言摘要 | `memory_bootstrapper.rs` | 100 行 |
+| 3a-2 | DreamMemory | fastembed 语义向量 (384-dim) | `dream.rs` | 433 行 |
+| 3b-1 | EpisodicMemory | JSONL 持久化 | `episodic.rs` | 65 行 |
+| 3b-2 | DreamMemory | HNSW 索引 (O(log n)) | `dream.rs` | 433 行 |
+
+**技术约束**: 所有新依赖为 optional feature，严格四层分层，数据诚实
+
 *本索引文档与代码同步维护，最后更新于 2026-04-30*

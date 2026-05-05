@@ -423,4 +423,16 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 
 ---
 
+### Phase 3a/3b Memory Enhancement 架构
+
+<!-- PHASE-3A-REMEDIATION-2026-05-05: semantic memory + LLM summary initiated -->
+
+**新增组件** (Intelligence 层):
+- DreamMemory semantic embedding (`fastembed` AllMiniLML6V2 384-dim, optional feature) + LRU cache
+- MemoryBootstrapper LLM 自然语言摘要 (`generate_natural_language_summary`)
+- EpisodicMemory JSONL 持久化 (`episodes.jsonl`, 1000条容量)
+- DreamMemory HNSW 索引 (`hnsw_rs` optional feature, O(log n) ~5ms)
+
+**架构决策**: ADR-P3-01 Semantic Embedding, ADR-P3-02 HNSW Index, ADR-P3-03 Episodic Persistence
+
 *本架构文档与代码同步维护，最后更新于 2026-04-27*

@@ -165,3 +165,21 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 <!-- P0-CONTEXT-REMEDIATION-B09-EOF: P0 Context Debt Cleared -->
 <!-- SCHEME-B-BASELINE-B01: Day 1 baseline established -->
 <!-- MEMORY-REMEDIATION-CLEARED: 7/7 Cleared -->
+
+## Phase 3 记忆增强 — 进入实施阶段
+
+<!-- PHASE-3A-REMEDIATION-2026-05-05: semantic memory + LLM summary initiated -->
+
+**排期**: 17 个工作日（2026-05-05 至 2026-05-22）
+
+| 阶段 | 目标 | 验收标准 |
+|:---|:---|:---|
+| Phase 3a | 有理解的记忆 | 自然语言摘要可读性 ≥ 4.0/5.0，语义召回 precision@5 ≥ 0.7 |
+| Phase 3b | 智能积累 + 性能 | EpisodicMemory 跨进程 100% 恢复，HNSW 召回延迟 < 5ms |
+
+**基线数据** (实测 `wc -l`):
+- `memory_bootstrapper.rs`: 100 行
+- `dream.rs`: 433 行
+- `episodic.rs`: 65 行
+
+**约束**: fastembed / hnsw_rs 均为可选 feature，hash-based fallback 保留

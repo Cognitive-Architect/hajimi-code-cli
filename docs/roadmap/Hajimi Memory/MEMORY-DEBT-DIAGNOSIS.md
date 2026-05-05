@@ -139,3 +139,17 @@ wc -l src/intelligence/memory/src/*.rs src/intelligence/agent-core/src/agent_loo
 ---
 
 *本文件与代码同步维护。所有 metric 来自 `2026-05-03` 代码审计，零占位符，零估算。*
+
+## Phase 3 排期启动
+
+<!-- PHASE-3A-REMEDIATION-2026-05-05: 17-day Phase 3a/3b remediation initiated -->
+
+**排期**: 17 天（2026-05-05 至 2026-05-22）
+
+| 工单范围 | 阶段 | 目标 |
+|:---|:---|:---|
+| B-01/17 ~ B-07/17 | Phase 3a | LLM 摘要 + fastembed 语义向量 |
+| B-08/17 ~ B-14/17 | Phase 3b | EpisodicMemory 持久化 + HNSW 索引 |
+| B-15/17 ~ B-17/17 | 验证闭环 | 文档 + 测试 + 清债 |
+
+**状态**: Phase 3a/3b 正式进入实施阶段
