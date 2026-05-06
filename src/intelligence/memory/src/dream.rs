@@ -661,4 +661,153 @@ mod tests {
         let reenabled = dream.embed("test text");
         assert_eq!(before, reenabled, "enable_semantic should restore result");
     }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_semantic_same_text() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        if !model_path.join("model.onnx").exists() {
+            eprintln!("skip: model not found");
+            return;
+        }
+        let dream = DreamMemory::new_with_semantic("test_same_text", Some(model_path)).unwrap();
+        if !dream.is_semantic_enabled() {
+            eprintln!("skip: semantic not available");
+            return;
+        }
+        let a = dream.embed("identical text content");
+        let b = dream.embed("identical text content");
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 0.001, "same text cosine should be ~1.0, got {}", sim);
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn bench_embed_latency() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        if !model_path.join("model.onnx").exists() {
+            eprintln!("skip: model not found");
+            return;
+        }
+        let dream = DreamMemory::new_with_semantic("bench_latency", Some(model_path)).unwrap();
+        if !dream.is_semantic_enabled() {
+            eprintln!("skip: semantic not available");
+            return;
+        }
+        for _ in 0..10 { let _ = dream.embed("warmup"); }
+        let start = Instant::now();
+        for _ in 0..100 {
+            let _ = dream.embed("benchmark text for latency measurement");
+        }
+        let avg_us = start.elapsed().as_micros() as f64 / 100.0;
+        eprintln!("semantic embed avg latency: {:.2}us", avg_us);
+        assert!(avg_us < 10_000.0, "avg latency {:.2}us > 10ms", avg_us);
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_precision_at_k() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        if !model_path.join("model.onnx").exists() {
+            eprintln!("skip: model not found");
+            return;
+        }
+        let mut dream = DreamMemory::new_with_semantic("test_precision", Some(model_path)).unwrap();
+        if !dream.is_semantic_enabled() {
+            eprintln!("skip: semantic not available");
+            return;
+        }
+        let relevant = vec![
+            "rust programming language",
+            "rust memory safety guarantees",
+            "rust compiler and cargo",
+            "rust ownership and borrowing",
+            "rust systems programming",
+        ];
+        let irrelevant = vec![
+            "python snake habitat",
+            "javascript frontend frameworks",
+            "java virtual machine internals",
+            "golang concurrency patterns",
+            "ruby on rails web development",
+        ];
+        let query = "rust programming";
+        let qemb = dream.embed(query);
+        for (i, t) in relevant.iter().enumerate() {
+            dream.insert(&format!("r{}", i), t, 10, &dream.embed(t)).unwrap();
+        }
+        for (i, t) in irrelevant.iter().enumerate() {
+            dream.insert(&format!("i{}", i), t, 10, &dream.embed(t)).unwrap();
+        }
+        let results = dream.search(&qemb, 5).unwrap();
+        let rc = results.iter().filter(|r| r.auto_entry.session_entry.content.contains("rust")).count();
+        let precision = rc as f32 / 5.0;
+        assert!(precision >= 0.7, "precision@5 = {} < 0.7", precision);
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_mixed_vectors() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let mut dream = DreamMemory::new_with_semantic("test_mixed", Some(model_path)).unwrap();
+        dream.disable_semantic();
+        let hash_emb = dream.embed("hash text");
+        dream.insert("h1", "hash text", 5, &hash_emb).unwrap();
+        dream.enable_semantic();
+        if dream.is_semantic_enabled() {
+            let sem_emb = dream.embed("semantic text");
+            dream.insert("s1", "semantic text", 5, &sem_emb).unwrap();
+        }
+        let query = dream.embed("text");
+        let results = dream.search(&query, 5).unwrap();
+        assert!(!results.is_empty(), "mixed vectors search should return results");
+    }
+
+    #[test]
+    fn test_concurrent_embed() {
+        use std::thread;
+        let handles: Vec<_> = (0..10).map(|i| {
+            thread::spawn(move || {
+                let dream = DreamMemory::new(&format!("test_concurrent_{}", i)).unwrap();
+                let text = "concurrent test text";
+                let v1 = dream.embed(text);
+                let v2 = dream.embed(text);
+                assert_eq!(v1, v2, "embed deterministic across threads");
+                assert_eq!(v1.len(), EMBEDDING_DIM);
+            })
+        }).collect();
+        for h in handles { h.join().unwrap(); }
+    }
+
+    #[test]
+    fn test_cache_hit_rate() {
+        let dream = DreamMemory::new("test_cache_hit").unwrap();
+        let text = "cache hit benchmark text";
+        let start = Instant::now();
+        let _ = dream.embed(text);
+        let miss = start.elapsed();
+        let start = Instant::now();
+        for _ in 0..100 { let _ = dream.embed(text); }
+        let hit = start.elapsed() / 100;
+        eprintln!("cache miss: {:?}, hit avg: {:?}", miss, hit);
+        assert!(hit < miss, "cache hit ({:?}) faster than miss ({:?})", hit, miss);
+    }
+
+    #[test]
+    fn test_empty_query_cosine() {
+        let empty: Vec<f32> = vec![];
+        let v = vec![1.0f32, 0.0, 0.0];
+        assert_eq!(cosine_similarity(&empty, &v), 0.0, "empty vs non-empty = 0");
+        assert_eq!(cosine_similarity(&empty, &empty), 0.0, "empty vs empty = 0");
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_model_load_failure_graceful() {
+        let bad = PathBuf::from("/nonexistent/model/path");
+        let dream = DreamMemory::new_with_semantic("test_load_fail", Some(bad)).unwrap();
+        assert!(!dream.is_semantic_enabled(), "semantic disabled on bad path");
+        let v = dream.embed("fallback test");
+        assert_eq!(v.len(), EMBEDDING_DIM);
+    }
 }
