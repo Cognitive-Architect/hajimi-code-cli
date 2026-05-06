@@ -266,6 +266,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 - **测试覆盖 + 基准（Day 6）**: `test_semantic_same_text`（cosine≈1.0），`test_precision_at_k`（precision@5≥0.7），`bench_embed_latency`（<10ms），`benches/dream_semantic_bench.rs` 独立基准程序
 - **容错缓冲（Day 7）**: 6 个弱断言测试加固，`load_from_disk` 错误处理改进，`cache_stats()` / `clear_cache()` 新增，6 个边界测试补充
 - **验证闭环（Day 8）**: Phase 3a 全面验证，4 份文档更新，`DEBT-PHASE-3A-REMEDIATION.md` 新建，综合验收测试 `test_phase3a_acceptance`
+- **EpisodicMemory 持久化（Day 9）**: `episodic.rs` 扩展 Episode 结构体（action + metadata 字段）、`EpisodicError` 错误类型、`new_with_persist()` / `load_from_disk()` / `append_to_jsonl()`（NamedTempFile + rename 原子写入），复用 AutoMemory JSONL 模式，向后兼容纯内存 `new()`
 
 **新增特性 (Phase 4)**:
 - **EditApplier 核心引擎（Day 1+6）**: `ProposedEdit`/`AppliedEdit`/`EditHunk` 模型，hunk-level unified diff，冲突检测（精确匹配），原子写入（唯一 `.bak` 备份），真正 undo 文件恢复，Governance 审批门，10MB/50-hunk/并发保护，undo 栈 100 条上限，Checkpoint 自动保存
@@ -798,7 +799,7 @@ interface/mcp-server/
 |:---|:---|:---|:---|:---:|
 | 3a-1 | MemoryBootstrapper | LLM 自然语言摘要 | `memory_bootstrapper.rs` | 100 行 |
 | 3a-2 | DreamMemory | fastembed 语义向量 (384-dim) | `dream.rs` | 433 行 |
-| 3b-1 | EpisodicMemory | JSONL 持久化 | `episodic.rs` | 65 行 |
+| 3b-1 | EpisodicMemory | JSONL 持久化 | `episodic.rs` | 187 行 |
 | 3b-2 | DreamMemory | HNSW 索引 (O(log n)) | `dream.rs` | 433 行 |
 
 **技术约束**: 所有新依赖为 optional feature，严格四层分层，数据诚实

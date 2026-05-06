@@ -180,7 +180,7 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 **基线数据** (实测 `wc -l`):
 - `memory_bootstrapper.rs`: 100 行
 - `dream.rs`: 433 行
-- `episodic.rs`: 65 行
+- `episodic.rs`: 187 行（+122 行，Episode 结构体 + JSONL 持久化）
 
 **约束**: fastembed / hnsw_rs 均为可选 feature，hash-based fallback 保留
 
@@ -207,7 +207,7 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 **实测基线数据** (实测 `wc -l` / `cargo test`):
 - `memory_bootstrapper.rs`: 248 行（+148 行，LLM 摘要全链路）
 - `dream.rs`: 887 行（+454 行，semantic embedding + LRU + 向后兼容）
-- `episodic.rs`: 65 行（未变更）
+- `episodic.rs`: 187 行（+122 行，Episode 结构体 + JSONL 持久化）
 - `memory` 测试数: 142 passed（无 semantic）/ 150 passed（semantic-memory）
 - `agent-core` 测试数: 103 passed（lib）/ 5 passed（bootstrapper_e2e）
 

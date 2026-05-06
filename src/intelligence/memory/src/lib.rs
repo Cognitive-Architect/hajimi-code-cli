@@ -35,4 +35,4 @@ pub use sync_gateway::{
 pub use graph::{GraphMemory, KnowledgeGraph, Entity, Node, Edge, extract_entities, NerError, GraphError};
 pub use graph_query::{KnowledgeGraph as QueryGraph, Path, GraphError as QueryGraphError, bfs_traverse, dfs_traverse, find_paths, MemoryGateway};
 pub use cloud::{CloudMemory, CloudIdentity, CloudError, EncryptedChunk, CloudSyncMeta, generate_identity, derive_key, verify_argon2_params, encrypt_chunk, decrypt_chunk, constant_time_verify};
-pub use episodic::{EpisodicMemory, Episode};
+pub use episodic::{EpisodicMemory, Episode, EpisodicError};
