@@ -4,10 +4,12 @@
 use crate::auto::{AutoEntry, AutoMemory};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use log::{debug, trace};
 use thiserror::Error;
 
 #[cfg(feature = "semantic-memory")]
@@ -16,8 +18,9 @@ use std::sync::Arc;
 use fastembed::{TextEmbedding, TextInitOptions, EmbeddingModel};
 
 pub const EMBEDDING_DIM: usize = 384;
+pub const MAX_CACHE: usize = 1000;
 
-pub type EmbeddingCache = HashMap<String, Vec<f32>>;
+pub type EmbeddingCache = lru::LruCache<String, Vec<f32>>;
 
 #[derive(Debug, Error)]
 pub enum DreamError {
@@ -71,14 +74,15 @@ struct DreamPersistedEntry {
 
 pub struct DreamMemory {
     db: rusqlite::Connection,
-    embedding_cache: RefCell<EmbeddingCache>,
+    embedding_cache: Mutex<EmbeddingCache>,
     project_id: String,
     db_path: PathBuf,
     jsonl_path: PathBuf,
     #[cfg(feature = "semantic-memory")]
-    semantic_embedder: Option<Arc<std::sync::Mutex<TextEmbedding>>>,
+    semantic_embedder: Option<Arc<Mutex<TextEmbedding>>>,
     #[cfg(feature = "semantic-memory")]
     model_path: Option<PathBuf>,
+    semantic_disabled: AtomicBool,
 }
 
 impl DreamMemory {
@@ -108,7 +112,9 @@ impl DreamMemory {
         let jsonl_path = memory_dir.join("dream.jsonl");
         let mut dream = Self {
             db,
-            embedding_cache: RefCell::new(EmbeddingCache::new()),
+            embedding_cache: Mutex::new(EmbeddingCache::new(
+                NonZeroUsize::new(MAX_CACHE).unwrap()
+            )),
             project_id: project_id.to_string(),
             db_path,
             jsonl_path,
@@ -116,6 +122,7 @@ impl DreamMemory {
             semantic_embedder: None,
             #[cfg(feature = "semantic-memory")]
             model_path: None,
+            semantic_disabled: AtomicBool::new(false),
         };
         dream.load_from_disk()?;
         Ok(dream)
@@ -133,7 +140,7 @@ impl DreamMemory {
         let mut mem = Self::new(project_id)?;
         match Self::init_semantic(model_path.clone()) {
             Ok(embedder) => {
-                mem.semantic_embedder = Some(Arc::new(std::sync::Mutex::new(embedder)));
+                mem.semantic_embedder = Some(Arc::new(Mutex::new(embedder)));
                 mem.model_path = model_path;
             }
             Err(e) => {
@@ -176,40 +183,73 @@ impl DreamMemory {
         self.model_path.as_ref()
     }
 
-    /// Generate an embedding for the given text.
-    /// When the `semantic-memory` feature is enabled and a semantic embedder is available,
-    /// uses fastembed (ONNX) for real semantic vectors. Otherwise falls back to
-    /// deterministic hash-based embeddings for backward compatibility.
+    /// Disable semantic embedding, forcing hash-based fallback.
+    pub fn disable_semantic(&self) {
+        self.semantic_disabled.store(true, Ordering::Relaxed);
+        debug!("semantic embedding disabled");
+    }
+
+    /// Re-enable semantic embedding (if embedder is available).
+    pub fn enable_semantic(&self) {
+        self.semantic_disabled.store(false, Ordering::Relaxed);
+        debug!("semantic embedding enabled");
+    }
+
+    /// Returns true if semantic embedding is currently disabled.
+    pub fn is_semantic_disabled(&self) -> bool {
+        self.semantic_disabled.load(Ordering::Relaxed)
+    }
+
+    /// Generate an embedding for the given text using a three-tier strategy:
+    /// 1. LRU cache hit
+    /// 2. fastembed semantic vector (if feature enabled and available)
+    /// 3. deterministic hash-based fallback
     pub fn embed(&self, text: &str) -> Vec<f32> {
+        // Tier 1: LRU cache
         {
-            let cache = self.embedding_cache.borrow();
+            let mut cache = self.embedding_cache.lock()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(cached) = cache.get(text) {
+                trace!("embed cache hit: text_len={}", text.len());
                 return cached.clone();
             }
         }
+
+        // Tier 2: semantic embedding
         #[cfg(feature = "semantic-memory")]
         {
-            if let Some(ref embedder) = self.semantic_embedder {
-                let docs = vec![text];
-                match embedder.lock() {
-                    Ok(mut guard) => match guard.embed(docs, None) {
-                        Ok(embeddings) if !embeddings.is_empty() => {
-                            let vec = embeddings[0].clone();
-                            self.embedding_cache.borrow_mut().insert(text.to_string(), vec.clone());
-                            return vec;
-                        }
+            if !self.semantic_disabled.load(Ordering::Relaxed) {
+                if let Some(ref embedder) = self.semantic_embedder {
+                    let docs = vec![text];
+                    match embedder.lock() {
+                        Ok(mut guard) => match guard.embed(docs, None) {
+                            Ok(embeddings) if !embeddings.is_empty() => {
+                                let vec = embeddings[0].clone();
+                                let mut cache = self.embedding_cache.lock()
+                                    .unwrap_or_else(|e| e.into_inner());
+                                cache.put(text.to_string(), vec.clone());
+                                debug!("embed semantic: text_len={}", text.len());
+                                return vec;
+                            }
+                            Err(e) => {
+                                debug!("semantic embed failed, fallback to hash: {}", e);
+                            }
+                            _ => {}
+                        },
                         Err(e) => {
-                            eprintln!("semantic embed failed, fallback to hash: {}", e);
+                            debug!("semantic embedder lock poisoned, fallback to hash: {}", e);
                         }
-                        _ => {}
-                    },
-                    Err(e) => {
-                        eprintln!("semantic embedder lock poisoned, fallback to hash: {}", e);
                     }
                 }
             }
         }
-        self.hash_embed(text)
+
+        // Tier 3: hash-based fallback
+        let vec = self.hash_embed(text);
+        let mut cache = self.embedding_cache.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.put(text.to_string(), vec.clone());
+        vec
     }
 
     /// Deterministic hash-based embedding (MVP fallback).
@@ -225,7 +265,6 @@ impl DreamMemory {
             let val = ((state >> 32) as u32) as f32 / u32::MAX as f32;
             vec.push(val * 2.0 - 1.0);
         }
-        self.embedding_cache.borrow_mut().insert(text.to_string(), vec.clone());
         vec
     }
 
@@ -347,7 +386,14 @@ impl DreamMemory {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-            let _ = self.insert(&entry.id, &entry.content, entry.tokens, &entry.embedding);
+            // Backward compat: re-embed if old dimension mismatches
+            let embedding = if entry.embedding.len() != EMBEDDING_DIM {
+                debug!("dimension compat: re-embed {} (old dim={})", entry.id, entry.embedding.len());
+                self.embed(&entry.content)
+            } else {
+                entry.embedding
+            };
+            let _ = self.insert(&entry.id, &entry.content, entry.tokens, &embedding);
         }
         Ok(())
     }
@@ -523,5 +569,96 @@ mod tests {
         let embedding = vec![0.0f32; EMBEDDING_DIM];
         let entry = DreamEntry::new(auto_entry, embedding).expect("fail").with_similarity(0.95);
         assert!((entry.similarity_score - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_empty_string_embed() {
+        let dream = DreamMemory::new("test_empty_string").unwrap();
+        let vec = dream.embed("");
+        assert_eq!(vec.len(), EMBEDDING_DIM);
+    }
+
+    #[test]
+    fn test_long_text_embed() {
+        let dream = DreamMemory::new("test_long_text").unwrap();
+        let text = "a".repeat(15000);
+        let vec = dream.embed(&text);
+        assert_eq!(vec.len(), EMBEDDING_DIM);
+    }
+
+    #[test]
+    fn test_lru_eviction() {
+        let dream = DreamMemory::new("test_lru_eviction").unwrap();
+        for i in 0..1001 {
+            let _ = dream.embed(&format!("text_{:04}", i));
+        }
+        assert_eq!(dream.embed("text_0000").len(), EMBEDDING_DIM);
+        assert_eq!(dream.embed("text_1000").len(), EMBEDDING_DIM);
+    }
+
+    #[test]
+    fn test_dimension_compat() {
+        let pid = "test_dim_compat";
+        {
+            let dream = DreamMemory::new(pid).unwrap();
+            let old_entry = DreamPersistedEntry {
+                id: "k1".to_string(),
+                content: "compat test".to_string(),
+                tokens: 2,
+                embedding: vec![0.5f32; 64],
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            let json = serde_json::to_string(&old_entry).unwrap();
+            std::fs::write(&dream.jsonl_path, format!("{}\n", json)).unwrap();
+        }
+        {
+            let dream = DreamMemory::new(pid).unwrap();
+            let (content, embedding) = dream.get("k1").unwrap().unwrap();
+            assert_eq!(content, "compat test");
+            assert_eq!(embedding.len(), EMBEDDING_DIM);
+        }
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_semantic_similarity() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        if !model_path.join("model.onnx").exists() {
+            eprintln!("skip: model not found");
+            return;
+        }
+        let dream = DreamMemory::new_with_semantic("test_semantic_sim", Some(model_path)).unwrap();
+        if !dream.is_semantic_enabled() {
+            eprintln!("skip: semantic embedder not initialized");
+            return;
+        }
+        let embed_cat = dream.embed("cat");
+        let embed_kitten = dream.embed("kitten");
+        let sim = cosine_similarity(&embed_cat, &embed_kitten);
+        assert!(
+            sim > 0.7,
+            "semantic similarity cat-kitten should be > 0.7, got {}",
+            sim
+        );
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_disable_semantic() {
+        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let dream = DreamMemory::new_with_semantic("test_disable_sem", Some(model_path)).unwrap();
+        if !dream.is_semantic_enabled() {
+            eprintln!("skip: semantic not available");
+            return;
+        }
+        let before = dream.embed("test text");
+        dream.disable_semantic();
+        assert!(dream.is_semantic_disabled());
+        let after = dream.embed("test text");
+        assert_ne!(before, after, "disable_semantic should change embed result");
+        dream.enable_semantic();
+        assert!(!dream.is_semantic_disabled());
+        let reenabled = dream.embed("test text");
+        assert_eq!(before, reenabled, "enable_semantic should restore result");
     }
 }

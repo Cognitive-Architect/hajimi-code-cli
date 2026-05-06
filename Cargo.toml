@@ -59,6 +59,7 @@ dirs = "=5.0.1"
 tempfile = "=3.14.0"
 aho-corasick = "=1.1.3"
 lru = "=0.12.5"
+log = "=0.4.25"
 fastembed = "=5.13.4"
 # scale-info locked to =2.11.6 for nightly compatibility (parity-scale-codec alignment)
 # zstd-sys patched locally (src/patches/zstd-sys) to fix zstd-safe 6.x experimental API mismatch

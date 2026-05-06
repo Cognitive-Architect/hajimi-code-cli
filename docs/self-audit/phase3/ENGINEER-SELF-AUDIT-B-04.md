@@ -2,7 +2,7 @@
 
 > **工单**: B-04/17 — fastembed Optional Integration + DreamMemory Semantic Constructor
 > **日期**: 2026-04-30
-> **提交 SHA**: [待填写]
+> **提交 SHA**: c09d590
 > **分支**: v3.8.0-batch-1
 
 ---
