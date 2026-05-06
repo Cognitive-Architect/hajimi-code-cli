@@ -10,6 +10,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
+#[cfg(feature = "semantic-memory")]
+use std::sync::Arc;
+#[cfg(feature = "semantic-memory")]
+use fastembed::{TextEmbedding, TextInitOptions, EmbeddingModel};
+
 pub const EMBEDDING_DIM: usize = 384;
 
 pub type EmbeddingCache = HashMap<String, Vec<f32>>;
@@ -70,6 +75,10 @@ pub struct DreamMemory {
     project_id: String,
     db_path: PathBuf,
     jsonl_path: PathBuf,
+    #[cfg(feature = "semantic-memory")]
+    semantic_embedder: Option<Arc<std::sync::Mutex<TextEmbedding>>>,
+    #[cfg(feature = "semantic-memory")]
+    model_path: Option<PathBuf>,
 }
 
 impl DreamMemory {
@@ -103,6 +112,10 @@ impl DreamMemory {
             project_id: project_id.to_string(),
             db_path,
             jsonl_path,
+            #[cfg(feature = "semantic-memory")]
+            semantic_embedder: None,
+            #[cfg(feature = "semantic-memory")]
+            model_path: None,
         };
         dream.load_from_disk()?;
         Ok(dream)
@@ -111,9 +124,62 @@ impl DreamMemory {
     pub fn db_path(&self) -> &PathBuf { &self.db_path }
     pub fn project_id(&self) -> &str { &self.project_id }
 
-    /// # Safety: DreamMemory uses deterministic hash-based embeddings. The same input text
-    /// always produces the same vector, enabling reproducible cosine similarity scores.
-    /// This is an MVP implementation; Phase 3 will migrate to a real ONNX model.
+    /// Create a DreamMemory with optional fastembed semantic embedding support.
+    /// If `model_path` is provided, verifies that `model.onnx` exists and attempts
+    /// to initialize a `TextEmbedding`. On any failure, gracefully falls back to
+    /// hash-based embeddings (semantic_embedder remains None).
+    #[cfg(feature = "semantic-memory")]
+    pub fn new_with_semantic(project_id: &str, model_path: Option<PathBuf>) -> Result<Self, DreamError> {
+        let mut mem = Self::new(project_id)?;
+        match Self::init_semantic(model_path.clone()) {
+            Ok(embedder) => {
+                mem.semantic_embedder = Some(Arc::new(std::sync::Mutex::new(embedder)));
+                mem.model_path = model_path;
+            }
+            Err(e) => {
+                eprintln!("fastembed init failed, fallback to hash-based: {}", e);
+            }
+        }
+        Ok(mem)
+    }
+
+    #[cfg(feature = "semantic-memory")]
+    fn init_semantic(model_path: Option<PathBuf>) -> Result<TextEmbedding, DreamError> {
+        let mut opts = TextInitOptions::new(EmbeddingModel::AllMiniLML6V2)
+            .with_show_download_progress(true);
+        if let Some(ref path) = model_path {
+            let onnx_path = path.join("model.onnx");
+            if !onnx_path.exists() {
+                return Err(DreamError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("model.onnx not found in {:?}", path),
+                )));
+            }
+            opts = opts.with_cache_dir(path.clone());
+        }
+        TextEmbedding::try_new(opts)
+            .map_err(|e| DreamError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("fastembed initialization failed: {}", e),
+            )))
+    }
+
+    /// Returns true if a semantic embedder is active.
+    #[cfg(feature = "semantic-memory")]
+    pub fn is_semantic_enabled(&self) -> bool {
+        self.semantic_embedder.is_some()
+    }
+
+    /// Returns the configured local model path, if any.
+    #[cfg(feature = "semantic-memory")]
+    pub fn semantic_model_path(&self) -> Option<&PathBuf> {
+        self.model_path.as_ref()
+    }
+
+    /// Generate an embedding for the given text.
+    /// When the `semantic-memory` feature is enabled and a semantic embedder is available,
+    /// uses fastembed (ONNX) for real semantic vectors. Otherwise falls back to
+    /// deterministic hash-based embeddings for backward compatibility.
     pub fn embed(&self, text: &str) -> Vec<f32> {
         {
             let cache = self.embedding_cache.borrow();
@@ -121,6 +187,34 @@ impl DreamMemory {
                 return cached.clone();
             }
         }
+        #[cfg(feature = "semantic-memory")]
+        {
+            if let Some(ref embedder) = self.semantic_embedder {
+                let docs = vec![text];
+                match embedder.lock() {
+                    Ok(mut guard) => match guard.embed(docs, None) {
+                        Ok(embeddings) if !embeddings.is_empty() => {
+                            let vec = embeddings[0].clone();
+                            self.embedding_cache.borrow_mut().insert(text.to_string(), vec.clone());
+                            return vec;
+                        }
+                        Err(e) => {
+                            eprintln!("semantic embed failed, fallback to hash: {}", e);
+                        }
+                        _ => {}
+                    },
+                    Err(e) => {
+                        eprintln!("semantic embedder lock poisoned, fallback to hash: {}", e);
+                    }
+                }
+            }
+        }
+        self.hash_embed(text)
+    }
+
+    /// Deterministic hash-based embedding (MVP fallback).
+    /// The same input text always produces the same vector.
+    fn hash_embed(&self, text: &str) -> Vec<f32> {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hasher::write(&mut hasher, text.as_bytes());
         let seed = std::hash::Hasher::finish(&mut hasher);
