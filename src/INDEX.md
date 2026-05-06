@@ -258,12 +258,14 @@ const ALLOWED_COMMANDS: &[&str] = &[
 - **Worker 全生命周期 Trace**: `events.rs` 6 个 trace 方法覆盖 spawn/start/complete/fail/crash/restart
 - **子模块提取（债务清偿）**: `SwarmDelegate` / `MultiWorkerAggregator` / `WorkerLifecycleManager` / `event_tracing` 4 个独立模块，单文件复杂度降低 23%-37%
 
-**新增特性 (Phase 3)**:
-- **DEBT-LINES 提取（Day 1）**: `MemoryRetriever` / `LoopStateMachine` / `ReflectionPersistence` / `PlanOptimizer` 4 个独立模块，`agent_loop.rs` 337→247行，`reflector.rs` 281→187行
-- **Trace 系统增强（Day 2）**: `TraceEvent` 扩展 `step_type`/`plan_summary`/`reflection_key_points`/`confidence_score`，Desktop `subscribe_agent_trace` + Web 结构化卡片
-- **治理控制面板（Day 3）**: `AgentLoop::pause/resume/inject_memory/update_plan`，`DefaultGovernance::set_approval_level` 运行时调级，Desktop/Web 双端控制面板
-- **Session Checkpoint 浏览器（Day 4）**: `Checkpoint` 扩展 `goal_progress`/`key_reflection`，`restore/compare/export` API，Web 恢复/比较/导出交互
-- **Resource Dashboard（Day 5）**: `ResourceMonitor` 原子计数器 + 滑动窗口失败率 + 可配置阈值警报 + 冷却期，`AgentLoop` 每迭代自动记录，Desktop 命令 + Web 仪表盘
+**新增特性 (Phase 3a — 有理解的记忆，B-01/17 ~ B-08/17)**:
+- **基线测量（Day 1）**: `memory_bootstrapper.rs` / `dream.rs` / `episodic.rs` 基线 `wc -l` 测量，INDEX/ARCHITECTURE/MEMORY 文档同步
+- **LLM 自然语言摘要（Day 2-3）**: `MemoryBootstrapper` 新增 `collect_context()` / `build_summary_prompt()` / `generate_natural_language_summary()`，Prompt 模板外部化到 `prompts/summary_prompt.md`，失败降级 emoji 格式，5 个 E2E 测试
+- **fastembed 集成（Day 4）**: `memory/Cargo.toml` 新增 `fastembed` optional feature，`DreamMemory` 新增 `new_with_semantic()` 构造函数
+- **embed 重构 + LRU（Day 5）**: `embed()` 三级调用（cache → fastembed → hash），`Mutex<LruCache<1000>>` 线程安全缓存，`disable_semantic()` AtomicBool 控制，向后兼容维度检测
+- **测试覆盖 + 基准（Day 6）**: `test_semantic_same_text`（cosine≈1.0），`test_precision_at_k`（precision@5≥0.7），`bench_embed_latency`（<10ms），`benches/dream_semantic_bench.rs` 独立基准程序
+- **容错缓冲（Day 7）**: 6 个弱断言测试加固，`load_from_disk` 错误处理改进，`cache_stats()` / `clear_cache()` 新增，6 个边界测试补充
+- **验证闭环（Day 8）**: Phase 3a 全面验证，4 份文档更新，`DEBT-PHASE-3A-REMEDIATION.md` 新建，综合验收测试 `test_phase3a_acceptance`
 
 **新增特性 (Phase 4)**:
 - **EditApplier 核心引擎（Day 1+6）**: `ProposedEdit`/`AppliedEdit`/`EditHunk` 模型，hunk-level unified diff，冲突检测（精确匹配），原子写入（唯一 `.bak` 备份），真正 undo 文件恢复，Governance 审批门，10MB/50-hunk/并发保护，undo 栈 100 条上限，Checkpoint 自动保存
@@ -281,6 +283,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `tests/autonomous_goal_test.rs` | 6 | `test_completion_rate`, `bench_agent_loop` |
 | `tests/integration.rs` | 10 | `test_worker_crash_isolation`, `test_loop_timeout_handling` |
 | `tests/memory_sync_e2e.rs` | 6 | `test_sync_gateway_20_iteration_consistency`, `test_sync_gateway_concurrent_stress` |
+| `tests/memory_bootstrapper_e2e.rs` | 5 | `test_cross_session_memory_recovery`, `test_natural_language_summary_quality`, `test_summary_persistence_roundtrip` |
 | `tests/swarm_callback_e2e.rs` | 3 | `test_concurrent_30_tasks`, `test_worker_crash_recovery` |
 | `tests/agent_loop_leak_test.rs` | 8 | `test_worker_cleanup_on_shutdown`, `test_supervisor_drop_releases_handles` |
 | `tests/trace_event_test.rs` | **8** | `test_trace_event_serialization_roundtrip`, `test_emit_trace_broadcasts_via_loop` |

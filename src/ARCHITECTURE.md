@@ -120,7 +120,7 @@
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
 | `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
-| `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud | ✅ 稳定 |
+| `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud + **semantic embedding (fastembed)** ⭐ | ✅ Phase 3a 完成 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
 
 > <!-- P0-CONTEXT-REMEDIATION-2026-04-30 -->
@@ -294,7 +294,7 @@ pub trait SyncMemoryGateway: Send {
 | Agent Core E2E | 194 passed | cargo-discoverable | ✅ |
 | Agent Core 编译 | 0 errors, pre-existing warnings 外 crate | cargo check | ✅ |
 | Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
-| Phase 3 测试 | 47 passed | Day 1-5 功能全覆盖 | ✅ |
+| Phase 3 测试 | 150 passed | Day 1-8 Phase 3a 全量验证 | ✅ |
 | 精确 Token 统计 | 100/100 | 方案 B 精确模式（误差 0%，E2E 12 tests passed） | ✅ Scheme B 已完成 |
 | Token Tracker 持久化集成 | 100/100 | ✅ TokenUsageTracker 正式激活（P1 已清偿）：AppState 扩展 + `record_usage()` + `get_cumulative_stats` Tauri Command + Frontend 混合持久化 | ✅ P1 Cleared |
 

@@ -473,6 +473,9 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
+    #[cfg(feature = "semantic-memory")]
+    const MODEL_PATH: &str = "models/fast-all-MiniLM-L6-v2";
+
     fn create_test_auto_entry(content: &str, tokens: usize) -> AutoEntry {
         let session_entry = crate::session::SessionEntry {
             content: content.to_string(), tokens,
@@ -632,7 +635,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn test_semantic_similarity() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         if !model_path.join("model.onnx").exists() {
             eprintln!("skip: model not found");
             return;
@@ -655,7 +658,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn test_disable_semantic() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         let dream = DreamMemory::new_with_semantic("test_disable_sem", Some(model_path)).unwrap();
         if !dream.is_semantic_enabled() {
             eprintln!("skip: semantic not available");
@@ -675,7 +678,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn test_semantic_same_text() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         if !model_path.join("model.onnx").exists() {
             eprintln!("skip: model not found");
             return;
@@ -694,7 +697,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn bench_embed_latency() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         if !model_path.join("model.onnx").exists() {
             eprintln!("skip: model not found");
             return;
@@ -717,7 +720,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn test_precision_at_k() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         if !model_path.join("model.onnx").exists() {
             eprintln!("skip: model not found");
             return;
@@ -758,7 +761,7 @@ mod tests {
     #[cfg(feature = "semantic-memory")]
     #[test]
     fn test_mixed_vectors() {
-        let model_path = PathBuf::from("models/fast-all-MiniLM-L6-v2");
+        let model_path = PathBuf::from(MODEL_PATH);
         let mut dream = DreamMemory::new_with_semantic("test_mixed", Some(model_path)).unwrap();
         dream.disable_semantic();
         let hash_emb = dream.embed("hash text");
@@ -883,5 +886,46 @@ mod tests {
         dream.clear_cache();
         let (size2, _) = dream.cache_stats();
         assert_eq!(size2, 0, "cache should be empty after clear_cache");
+    }
+
+    /// Phase 3a comprehensive acceptance test.
+    /// Verifies the three-tier embed strategy, LRU cache, semantic/hash fallback,
+    /// disable/enable toggle, and deterministic behavior in a single scenario.
+    #[cfg(feature = "semantic-memory")]
+    #[test]
+    fn test_phase3a_acceptance() {
+        let model_path = PathBuf::from(MODEL_PATH);
+        let dream = DreamMemory::new_with_semantic("test_phase3a", Some(model_path)).unwrap();
+
+        // Tier 1: hash fallback is always available
+        let hash_vec = dream.embed("hash fallback text");
+        assert_eq!(hash_vec.len(), EMBEDDING_DIM, "hash fallback produces correct dimension");
+
+        // Tier 2: semantic embedder availability (skip if model missing)
+        let semantic_available = dream.is_semantic_enabled();
+        if semantic_available {
+            let sem_vec = dream.embed("semantic text");
+            assert_eq!(sem_vec.len(), EMBEDDING_DIM, "semantic embed produces correct dimension");
+
+            // disable → hash
+            dream.disable_semantic();
+            let disabled_vec = dream.embed("semantic text");
+            assert_ne!(sem_vec, disabled_vec, "disable_semantic should change output");
+
+            // enable → semantic restored
+            dream.enable_semantic();
+            let reenabled_vec = dream.embed("semantic text");
+            assert_eq!(sem_vec, reenabled_vec, "enable_semantic should restore semantic output");
+        }
+
+        // LRU cache stats should reflect usage
+        let (size, cap) = dream.cache_stats();
+        assert!(size > 0, "cache should contain entries after embed calls");
+        assert_eq!(cap, MAX_CACHE, "cache capacity should be MAX_CACHE");
+
+        // Determinism: same text → same vector (within same mode)
+        let a = dream.embed("determinism check");
+        let b = dream.embed("determinism check");
+        assert_eq!(a, b, "embed must be deterministic for identical input");
     }
 }

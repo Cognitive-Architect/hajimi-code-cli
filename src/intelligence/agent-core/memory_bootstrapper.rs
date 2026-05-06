@@ -1,3 +1,6 @@
+//! Memory Bootstrapper — Phase 3a Completed (B-01/17 ~ B-08/17)
+//! LLM natural language summary + semantic embedding integration.
+
 use crate::agent_loop::AgentLoop;
 use crate::agent_loop_builder::AgentLoopBuilder;
 use crate::blackboard::Blackboard;
