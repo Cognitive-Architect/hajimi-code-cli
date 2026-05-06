@@ -393,7 +393,9 @@ impl DreamMemory {
             } else {
                 entry.embedding
             };
-            let _ = self.insert(&entry.id, &entry.content, entry.tokens, &embedding);
+            if let Err(e) = self.insert(&entry.id, &entry.content, entry.tokens, &embedding) {
+                debug!("load_from_disk insert failed for {}: {}", entry.id, e);
+            }
         }
         Ok(())
     }
@@ -436,6 +438,21 @@ impl DreamMemory {
         self.db.execute("DELETE FROM dream_entries", [])?;
         Ok(())
     }
+
+    /// Returns current cache size and capacity.
+    pub fn cache_stats(&self) -> (usize, usize) {
+        let cache = self.embedding_cache.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        (cache.len(), cache.cap().into())
+    }
+
+    /// Clears the embedding cache.
+    pub fn clear_cache(&self) {
+        let mut cache = self.embedding_cache.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.clear();
+        debug!("embedding cache cleared");
+    }
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -467,46 +484,40 @@ mod tests {
     #[test]
     fn test_dream_new_valid() {
         let result = DreamMemory::new("test_dream_new_valid");
-        assert!(result.is_err() || result.is_ok());
+        assert!(result.is_ok(), "DreamMemory::new should succeed for valid project_id");
     }
 
     #[test]
     fn test_dream_embed_valid() {
-        if let Ok(dream) = DreamMemory::new("test_embed_valid") {
-            let embedding = dream.embed("test content");
-            assert_eq!(embedding.len(), EMBEDDING_DIM);
-        }
+        let dream = DreamMemory::new("test_embed_valid").expect("DreamMemory::new should succeed");
+        let embedding = dream.embed("test content");
+        assert_eq!(embedding.len(), EMBEDDING_DIM);
     }
 
     #[test]
     fn test_dream_embed_deterministic() {
-        if let Ok(dream) = DreamMemory::new("test_embed_deterministic") {
-            let a = dream.embed("hello world");
-            let b = dream.embed("hello world");
-            assert_eq!(a, b);
-            let c = dream.embed("different text");
-            assert_ne!(a, c);
-        }
+        let dream = DreamMemory::new("test_embed_deterministic").expect("DreamMemory::new should succeed");
+        let a = dream.embed("hello world");
+        let b = dream.embed("hello world");
+        assert_eq!(a, b, "same text should produce identical embeddings");
+        let c = dream.embed("different text");
+        assert_ne!(a, c, "different text should produce different embeddings");
     }
 
     #[test]
     fn test_dream_search_k_nearest() {
-        if let Ok(dream) = DreamMemory::new("test_search_k") {
-            let query = vec![0.0f32; EMBEDDING_DIM];
-            let search_result = dream.search(&query, 5);
-            if let Ok(results) = search_result {
-                assert!(results.len() <= 5);
-            }
-        }
+        let dream = DreamMemory::new("test_search_k").expect("DreamMemory::new should succeed");
+        let query = vec![0.0f32; EMBEDDING_DIM];
+        let results = dream.search(&query, 5).expect("search should succeed");
+        assert!(results.len() <= 5, "search should return at most k results");
     }
 
     #[test]
     fn test_dream_sync_from_auto() {
-        if let Ok(mut dream) = DreamMemory::new("test_sync_auto") {
-            let auto = AutoMemory::new("test_auto_for_dream").expect("fail");
-            let sync_result = dream.sync_from_auto(&auto);
-            assert!(sync_result.is_ok() || sync_result.is_err());
-        }
+        let mut dream = DreamMemory::new("test_sync_auto").expect("DreamMemory::new should succeed");
+        let auto = AutoMemory::new("test_auto_for_dream").expect("AutoMemory::new should succeed");
+        let sync_result = dream.sync_from_auto(&auto);
+        assert!(sync_result.is_ok(), "sync_from_auto should succeed for empty auto memory");
     }
 
     #[test]
@@ -528,18 +539,17 @@ mod tests {
 
     #[test]
     fn test_dream_recall_similarity() {
-        if let Ok(mut dream) = DreamMemory::new("test_recall_similarity") {
-            let text = "the quick brown fox jumps over the lazy dog";
-            let embedding = dream.embed(text);
-            dream.insert("k1", text, 9, &embedding).unwrap();
-            let results = dream.search(&embedding, 5).unwrap();
-            assert!(!results.is_empty());
-            assert!(
-                results[0].similarity_score >= 0.7,
-                "same-text recall should be >= 0.7, got {}",
-                results[0].similarity_score
-            );
-        }
+        let mut dream = DreamMemory::new("test_recall_similarity").expect("DreamMemory::new should succeed");
+        let text = "the quick brown fox jumps over the lazy dog";
+        let embedding = dream.embed(text);
+        dream.insert("k1", text, 9, &embedding).unwrap();
+        let results = dream.search(&embedding, 5).unwrap();
+        assert!(!results.is_empty(), "search should return at least one result");
+        assert!(
+            results[0].similarity_score >= 0.7,
+            "same-text recall should be >= 0.7, got {}",
+            results[0].similarity_score
+        );
     }
 
     #[test]
@@ -809,5 +819,69 @@ mod tests {
         assert!(!dream.is_semantic_enabled(), "semantic disabled on bad path");
         let v = dream.embed("fallback test");
         assert_eq!(v.len(), EMBEDDING_DIM);
+    }
+
+    #[test]
+    fn test_insert_invalid_dimension() {
+        let mut dream = DreamMemory::new("test_insert_dim").unwrap();
+        let bad = vec![0.0f32; 100];
+        let result = dream.insert("k1", "test", 2, &bad);
+        assert!(
+            matches!(result, Err(DreamError::InvalidDimension { actual: 100 })),
+            "insert with wrong dimension should fail"
+        );
+    }
+
+    #[test]
+    fn test_search_invalid_dimension() {
+        let dream = DreamMemory::new("test_search_dim").unwrap();
+        let bad_query = vec![0.0f32; 100];
+        let result = dream.search(&bad_query, 5);
+        assert!(
+            matches!(result, Err(DreamError::InvalidDimension { actual: 100 })),
+            "search with wrong query dimension should fail"
+        );
+    }
+
+    #[test]
+    fn test_get_nonexistent() {
+        let dream = DreamMemory::new("test_get_none").unwrap();
+        let result = dream.get("nonexistent_key").unwrap();
+        assert!(result.is_none(), "get on nonexistent key should return None");
+    }
+
+    #[test]
+    fn test_clear_and_len() {
+        let mut dream = DreamMemory::new("test_clear_len").unwrap();
+        let emb = dream.embed("text");
+        dream.insert("k1", "text", 2, &emb).unwrap();
+        assert_eq!(dream.len().unwrap(), 1);
+        dream.clear().unwrap();
+        assert_eq!(dream.len().unwrap(), 0, "clear should remove all entries");
+        assert!(dream.is_empty().unwrap(), "is_empty should be true after clear");
+    }
+
+    #[test]
+    fn test_delete_then_get() {
+        let mut dream = DreamMemory::new("test_delete_get").unwrap();
+        let emb = dream.embed("text");
+        dream.insert("k1", "text", 2, &emb).unwrap();
+        assert!(dream.get("k1").unwrap().is_some());
+        dream.delete("k1").unwrap();
+        assert!(dream.get("k1").unwrap().is_none(), "get after delete should return None");
+    }
+
+    #[test]
+    fn test_cache_stats_and_clear() {
+        let dream = DreamMemory::new("test_cache_stats").unwrap();
+        let (size0, cap) = dream.cache_stats();
+        assert_eq!(size0, 0, "cache should start empty");
+        assert_eq!(cap, MAX_CACHE, "cache capacity should be MAX_CACHE");
+        let _ = dream.embed("warmup text");
+        let (size1, _) = dream.cache_stats();
+        assert_eq!(size1, 1, "cache should contain one entry after embed");
+        dream.clear_cache();
+        let (size2, _) = dream.cache_stats();
+        assert_eq!(size2, 0, "cache should be empty after clear_cache");
     }
 }
