@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_new_with_persist() -> Result<(), EpisodicError> {
-        let m = EpisodicMemory::new_with_persist("test_ep")?;
+        let m = EpisodicMemory::new_with_persist(&format!("test_ep_{}", uuid::Uuid::new_v4()))?;
         assert!(m.storage_dir.as_ref().unwrap().exists());
         assert!(EpisodicMemory::new_with_persist("").is_err());
         assert!(EpisodicMemory::new_with_persist("a/b").is_err());
@@ -149,13 +149,13 @@ mod tests {
 
     #[test]
     fn test_load_empty_and_persist() -> Result<(), EpisodicError> {
-        let pid = "test_load_persist";
-        let mut m = EpisodicMemory::new_with_persist(pid)?;
+        let pid = format!("test_persist_{}", uuid::Uuid::new_v4());
+        let mut m = EpisodicMemory::new_with_persist(&pid)?;
         m.load_from_disk()?;
         assert_eq!(m.len(), 0);
         let id = m.record("a1","c1","s",0.9);
         drop(m);
-        let m2 = EpisodicMemory::new_with_persist(pid)?;
+        let m2 = EpisodicMemory::new_with_persist(&pid)?;
         assert_eq!(m2.len(), 1);
         assert_eq!(m2.query_recent(1)[0].id, id);
         Ok(())
@@ -163,11 +163,11 @@ mod tests {
 
     #[test]
     fn test_skip_bad_lines() -> Result<(), EpisodicError> {
-        let pid = "test_bad";
-        let dir = dirs::home_dir().unwrap().join(".hajimi/memory").join(pid);
+        let pid = format!("test_bad_{}", uuid::Uuid::new_v4());
+        let dir = dirs::home_dir().unwrap().join(".hajimi/memory").join(&pid);
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("episodes.jsonl"), "{\"id\":\"g\",\"timestamp\":\"2024-01-01T00:00:00Z\",\"action\":\"a\",\"content\":\"c\",\"outcome\":\"o\",\"confidence\":0.5}\nbad\n")?;
-        let mut m = EpisodicMemory::new_with_persist(pid)?;
+        let mut m = EpisodicMemory::new_with_persist(&pid)?;
         m.load_from_disk()?;
         assert_eq!(m.len(), 1);
         Ok(())
@@ -175,11 +175,11 @@ mod tests {
 
     #[test]
     fn test_append_order() -> Result<(), EpisodicError> {
-        let pid = "test_ord";
-        let m = EpisodicMemory::new_with_persist(pid)?;
+        let pid = format!("test_ord_{}", uuid::Uuid::new_v4());
+        let m = EpisodicMemory::new_with_persist(&pid)?;
         m.record("f","c","o",1.0); m.record("s","c","o",1.0); m.record("t","c","o",1.0);
         drop(m);
-        let m2 = EpisodicMemory::new_with_persist(pid)?;
+        let m2 = EpisodicMemory::new_with_persist(&pid)?;
         let a = m2.export_all();
         assert_eq!(a.len(), 3);
         assert_eq!(a[0].action, "f"); assert_eq!(a[1].action, "s"); assert_eq!(a[2].action, "t");
