@@ -220,7 +220,7 @@ impl EditApplier {
                 }
             }
 
-            let (content, file_existed) = match tokio::fs::read_to_string(&file_path).await {
+            let (content, _file_existed) = match tokio::fs::read_to_string(&file_path).await {
                 Ok(c) => (c, true),
                 Err(_) => {
                     // If file doesn't exist, all hunks for this file must be pure insertions

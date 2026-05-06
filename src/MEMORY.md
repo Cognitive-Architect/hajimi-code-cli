@@ -183,3 +183,5 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 - `episodic.rs`: 65 行
 
 **约束**: fastembed / hnsw_rs 均为可选 feature，hash-based fallback 保留
+
+*本文档最后更新于 2026-05-05*

@@ -286,25 +286,6 @@ impl AgentLoop {
         }
     }
 
-    fn emit_trace_enriched(&self, step: LoopState, details: String, iteration: usize, plan_summary: Option<String>, reflection_key_points: Vec<String>, confidence_score: Option<f32>) {
-        let confidence = confidence_score.map(|c| c.clamp(0.0, 1.0));
-        if let Some(ref tx) = self.trace_tx {
-            let step_type = match step {
-                LoopState::Observing => TraceStepType::Observe,
-                LoopState::Retrieving => TraceStepType::Retrieve,
-                LoopState::Planning => TraceStepType::Plan,
-                LoopState::Acting => TraceStepType::Act,
-                LoopState::Reflecting => TraceStepType::Reflect,
-                LoopState::Storing => TraceStepType::Store,
-                LoopState::Deciding => TraceStepType::Decide,
-                _ => TraceStepType::Other,
-            };
-            let summary = plan_summary.filter(|s| !s.is_empty()).map(|s| if s.len() > 10240 { s.chars().take(10240).collect() } else { s });
-            let event = TraceEvent { step, details, iteration, timestamp: chrono::Utc::now(), step_type, plan_summary: summary, reflection_key_points, confidence_score: confidence, edit_payload: None };
-            let _ = tx.send(event);
-        }
-    }
-
     pub fn with_edit_applier(mut self, applier: Arc<EditApplier>) -> Self {
         self.edit_applier = Some(applier);
         self

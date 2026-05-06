@@ -159,7 +159,7 @@ impl CheckpointManager {
     }
 
     /// SAFETY: restore_from_auto_memory reads Checkpoint from persistent JSONL via config_dir.
-    pub async fn restore_from_auto_memory(&self, project_id: &str, agent_id: &AgentId) -> ReplResult<Checkpoint> {
+    pub async fn restore_from_auto_memory(&self, _project_id: &str, agent_id: &AgentId) -> ReplResult<Checkpoint> {
         if let Some(ref mem) = self.memory {
             let mut g = mem.lock().await;
             if let Some(ref mut auto) = g.auto {

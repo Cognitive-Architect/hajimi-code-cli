@@ -435,4 +435,4 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 
 **架构决策**: ADR-P3-01 Semantic Embedding, ADR-P3-02 HNSW Index, ADR-P3-03 Episodic Persistence
 
-*本架构文档与代码同步维护，最后更新于 2026-04-27*
+*本架构文档与代码同步维护，最后更新于 2026-05-05*

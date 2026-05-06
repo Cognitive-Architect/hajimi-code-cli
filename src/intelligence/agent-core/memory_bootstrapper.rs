@@ -175,22 +175,11 @@ impl MemoryBootstrapper {
     }
 
     fn build_summary_prompt(ctx: &SummaryContext) -> String {
-        format!(
-            "你是一个代码项目的记忆助手。以下是项目的上下文信息：\n\n\
-             【最近计划】\n{}\n\n\
-             【反思记录】\n{}\n\n\
-             【目标进度】\n{}\n\n\
-             【关键状态】\n{}\n\n\
-             请用自然语言、第一人称总结：\n\
-             1. 上次工作到哪里了？\n\
-             2. 当前正在解决什么问题？\n\
-             3. 下一步计划是什么？\n\n\
-             要求：简洁（<200字）、口语化、突出关键决策。",
-            ctx.plan_description,
-            if ctx.reflections.is_empty() { "暂无反思记录" } else { &ctx.reflections },
-            ctx.goal_progress,
-            if ctx.blackboard_hints.is_empty() { "无" } else { &ctx.blackboard_hints }
-        )
+        include_str!("prompts/summary_prompt.md")
+            .replace("{plan}", &ctx.plan_description)
+            .replace("{reflections}", if ctx.reflections.is_empty() { "暂无反思记录" } else { &ctx.reflections })
+            .replace("{progress}", &ctx.goal_progress)
+            .replace("{hints}", if ctx.blackboard_hints.is_empty() { "无" } else { &ctx.blackboard_hints })
     }
 
     async fn generate_natural_language_summary(
