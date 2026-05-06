@@ -46,7 +46,6 @@ impl EpisodicMemory {
     pub fn new() -> Self {
         Self { episodes: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_EPISODES))), storage_dir: None, jsonl_path: None }
     }
-
     /// Create with JSONL persistence at ~/.hajimi/memory/{project_id}/episodes.jsonl
     pub fn new_with_persist(project_id: &str) -> Result<Self, EpisodicError> {
         if project_id.is_empty() || project_id.contains('/') || project_id.contains('\\') {
@@ -60,7 +59,6 @@ impl EpisodicMemory {
         mem.load_from_disk()?;
         Ok(mem)
     }
-
     /// Load episodes from JSONL on disk. Graceful if file does not exist.
     pub fn load_from_disk(&mut self) -> Result<(), EpisodicError> {
         let path = match &self.jsonl_path { Some(p) => p, None => return Ok(()) };
@@ -77,7 +75,6 @@ impl EpisodicMemory {
         }
         Ok(())
     }
-
     /// Atomically append an episode to JSONL (NamedTempFile + rename).
     pub fn append_to_jsonl(&self, episode: &Episode) -> Result<(), EpisodicError> {
         let (storage_dir, jsonl_path) = match (&self.storage_dir, &self.jsonl_path) { (Some(d), Some(p)) => (d, p), _ => return Ok(()) };
@@ -91,7 +88,6 @@ impl EpisodicMemory {
         fs::rename(temp.path(), jsonl_path)?;
         Ok(())
     }
-
     /// Record a new episode. Persists automatically if jsonl_path is set.
     pub fn record(&self, action_type: &str, content: &str, outcome: &str, confidence: f32) -> String {
         let episode = Episode { id: format!("ep_{}", uuid::Uuid::new_v4()), timestamp: chrono::Utc::now(), action: action_type.to_string(), content: content.to_string(), outcome: outcome.to_string(), confidence, metadata: None };
@@ -104,36 +100,33 @@ impl EpisodicMemory {
         let _ = self.append_to_jsonl(&episode);
         id
     }
-
     pub fn query_range(&self, start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> Vec<Episode> {
         self.episodes.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|e| e.timestamp >= start && e.timestamp <= end).cloned().collect()
     }
-
     pub fn query_recent(&self, n: usize) -> Vec<Episode> {
         self.episodes.lock().unwrap_or_else(|e| e.into_inner()).iter().rev().take(n).cloned().collect()
     }
-
+    pub fn query_by_keyword(&self, keyword: &str) -> Vec<Episode> {
+        let eps = self.episodes.lock().unwrap_or_else(|e| e.into_inner());
+        if keyword.is_empty() { return eps.iter().cloned().collect(); }
+        let kw = keyword.to_lowercase();
+        eps.iter().filter(|e| e.action.to_lowercase().contains(&kw) || e.content.to_lowercase().contains(&kw) || e.outcome.to_lowercase().contains(&kw)).cloned().collect()
+    }
     pub fn len(&self) -> usize { self.episodes.lock().unwrap_or_else(|e| e.into_inner()).len() }
-
     pub fn is_empty(&self) -> bool { self.len() == 0 }
-
     pub fn export_all(&self) -> Vec<Episode> {
         self.episodes.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
     }
-
     pub fn import(&self, episodes: Vec<Episode>) {
         let mut eps = self.episodes.lock().unwrap_or_else(|e| e.into_inner());
         eps.clear();
         for ep in episodes { eps.push_back(ep); }
     }
 }
-
 impl Default for EpisodicMemory { fn default() -> Self { Self::new() } }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test] fn test_record() { assert!(!EpisodicMemory::new().record("a","c","o",0.9).is_empty()); }
     #[test] fn test_query_range() { let m = EpisodicMemory::new(); let s = chrono::Utc::now(); m.record("a","c","o",0.9); assert_eq!(m.query_range(s, chrono::Utc::now()).len(), 1); }
     #[test] fn test_export_import() { let m1 = EpisodicMemory::new(); m1.record("a","c","o",0.9); let m2 = EpisodicMemory::new(); m2.import(m1.export_all()); assert_eq!(m2.len(), 1); }
@@ -184,5 +177,14 @@ mod tests {
         assert_eq!(a.len(), 3);
         assert_eq!(a[0].action, "f"); assert_eq!(a[1].action, "s"); assert_eq!(a[2].action, "t");
         Ok(())
+    }
+    #[test] fn test_query_by_keyword() { let m = EpisodicMemory::new(); m.record("search","hello","ok",0.9); assert_eq!(m.query_by_keyword("search").len(),1); assert_eq!(m.query_by_keyword("").len(),1); assert!(m.query_by_keyword("xyz").is_empty()); }
+    #[test] fn test_query_recent_zero() { assert!(EpisodicMemory::new().query_recent(0).is_empty()); }
+    #[test] fn test_capacity_eviction() { let m = EpisodicMemory::new(); for i in 0..1001 { m.record(&format!("a{}",i),"c","o",0.5); } assert_eq!(m.len(),1000); assert_eq!(m.export_all()[0].action,"a1"); }
+    #[test]
+    fn test_episodic_roundtrip() -> Result<(),EpisodicError> {
+        let pid = format!("rt_{}",uuid::Uuid::new_v4());
+        let m1 = EpisodicMemory::new_with_persist(&pid)?; let id = m1.record("a","c","o",0.9); drop(m1);
+        let m2 = EpisodicMemory::new_with_persist(&pid)?; assert_eq!(m2.len(),1); assert_eq!(m2.query_recent(1)[0].id,id); Ok(())
     }
 }

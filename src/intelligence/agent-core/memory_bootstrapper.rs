@@ -50,6 +50,11 @@ impl MemoryBootstrapper {
         let _ = gateway.enable_auto(&self.project_id);
         gateway.enable_graph(&self.project_id);
         let _ = gateway.enable_dream(&self.project_id);
+        if gateway.episodic.is_none() {
+            if let Ok(episodic) = memory::episodic::EpisodicMemory::new_with_persist(&self.project_id) {
+                gateway.episodic = Some(episodic);
+            }
+        }
         let gateway_arc = Arc::new(Mutex::new(gateway));
         let checkpoint_mgr = CheckpointManager::new().with_memory(gateway_arc.clone());
         let checkpoint = checkpoint_mgr
@@ -84,6 +89,11 @@ impl MemoryBootstrapper {
             checkpoint_mgr,
             summary,
         })
+    }
+
+    /// Record an episode via the gateway.
+    pub fn record_episode(gateway: &memory::memory_gateway::MemoryGateway, action_type: &str, content: &str, outcome: &str, confidence: f32) -> Option<String> {
+        gateway.record_episode(action_type, content, outcome, confidence)
     }
 
     /// Build a fully configured AgentLoop using the shared MemoryGateway from load_project_memory.

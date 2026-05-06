@@ -45,6 +45,9 @@ impl MemoryGateway {
                 let _ = auto.load();
                 gateway.auto = Some(auto);
             }
+            if let Ok(episodic) = EpisodicMemory::new_with_persist(pid) {
+                gateway.episodic = Some(episodic);
+            }
         }
         gateway
     }
