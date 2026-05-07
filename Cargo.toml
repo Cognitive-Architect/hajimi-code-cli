@@ -61,6 +61,7 @@ aho-corasick = "=1.1.3"
 lru = "=0.12.5"
 log = "=0.4.25"
 fastembed = "=5.13.4"
+hnsw_rs = "=0.3.4"
 # scale-info locked to =2.11.6 for nightly compatibility (parity-scale-codec alignment)
 # zstd-sys patched locally (src/patches/zstd-sys) to fix zstd-safe 6.x experimental API mismatch
 # with zstd-sys 2.0.15+ (missing ZSTD_paramSwitch_e and ZSTD_c_experimentalParam6).

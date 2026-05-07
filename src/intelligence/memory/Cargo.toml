@@ -26,6 +26,7 @@ rand = { workspace = true }
 ort = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 fastembed = { workspace = true, optional = true }
+hnsw_rs = { workspace = true, optional = true }
 cfg-if = { workspace = true }
 
 # Week 6-8: Cloud E2EE加密依赖 (B-07: scrypt fallback and degraded_mode removed - pure Argon2id only, DEBT-CRYPTO-004 for low-memory envs if needed)
@@ -45,6 +46,7 @@ jieba-rs = { workspace = true }
 default = []
 onnx = ["dep:ort", "dep:ndarray"]
 semantic-memory = ["dep:fastembed"]
+hnsw-index = ["dep:hnsw_rs"]
 
 [dev-dependencies]
 tokio = { workspace = true }

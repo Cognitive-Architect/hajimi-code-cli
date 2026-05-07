@@ -12,6 +12,11 @@ use std::sync::Mutex;
 use log::{debug, trace};
 use thiserror::Error;
 
+#[cfg(feature = "hnsw-index")]
+use std::collections::HashMap;
+#[cfg(feature = "hnsw-index")]
+use hnsw_rs::prelude::*;
+
 #[cfg(feature = "semantic-memory")]
 use std::sync::Arc;
 #[cfg(feature = "semantic-memory")]
@@ -83,6 +88,16 @@ pub struct DreamMemory {
     #[cfg(feature = "semantic-memory")]
     model_path: Option<PathBuf>,
     semantic_disabled: AtomicBool,
+    #[cfg(feature = "hnsw-index")]
+    /// HNSW approximate-nearest-neighbour index (hnsw_rs) for fast vector search.
+    /// Memory footprint: ~200MB for 10K 384-dim vectors (see SAFETY note below).
+    hnsw_index: Option<Hnsw<'static, f32, DistCosine>>,
+    #[cfg(feature = "hnsw-index")]
+    /// Maps internal HNSW point id → original text content for result reconstruction.
+    id_to_text: HashMap<usize, String>,
+    #[cfg(feature = "hnsw-index")]
+    /// Monotonically increasing id allocator for HNSW insertions.
+    next_id: usize,
 }
 
 impl DreamMemory {
@@ -123,6 +138,12 @@ impl DreamMemory {
             #[cfg(feature = "semantic-memory")]
             model_path: None,
             semantic_disabled: AtomicBool::new(false),
+            #[cfg(feature = "hnsw-index")]
+            hnsw_index: None,
+            #[cfg(feature = "hnsw-index")]
+            id_to_text: HashMap::new(),
+            #[cfg(feature = "hnsw-index")]
+            next_id: 0,
         };
         dream.load_from_disk()?;
         Ok(dream)
@@ -181,6 +202,29 @@ impl DreamMemory {
     #[cfg(feature = "semantic-memory")]
     pub fn semantic_model_path(&self) -> Option<&PathBuf> {
         self.model_path.as_ref()
+    }
+
+    /// Create a DreamMemory with HNSW vector index support (hnsw_rs).
+    ///
+    /// # SAFETY
+    /// Hnsw::new allocates internal buffers for max_elements=10000.
+    /// Memory footprint is estimated at <200MB for 10K 384-dim vectors
+    /// (each vector 384×4B ≈ 1.5KB + graph overhead ≈ 15KB ≈ 16.5KB/vec,
+    /// 10K vectors ≈ 165MB, well under 200MB).
+    /// The Hnsw index uses internal RwLock; insert/search take &self,
+    /// but concurrent writes should be serialized by the caller.
+    #[cfg(feature = "hnsw-index")]
+    pub fn new_with_hnsw(project_id: &str) -> Result<Self, DreamError> {
+        let mut mem = Self::new(project_id)?;
+        let hnsw = Hnsw::new(
+            16,       // max_nb_connection: neighbours stored per layer (M)
+            10000,    // max_elements: hint for pre-allocation
+            16,       // max_layer: max hierarchical depth
+            16,       // ef_construction: search width during graph build
+            DistCosine,
+        );
+        mem.hnsw_index = Some(hnsw);
+        Ok(mem)
     }
 
     /// Disable semantic embedding, forcing hash-based fallback.
