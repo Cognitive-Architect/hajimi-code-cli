@@ -316,6 +316,12 @@ impl DreamMemory {
         if query_embedding.len() != EMBEDDING_DIM {
             return Err(DreamError::InvalidDimension { actual: query_embedding.len() });
         }
+        #[cfg(feature = "hnsw-index")]
+        {
+            if self.hnsw_index.is_some() {
+                return self.search_hnsw(query_embedding, k);
+            }
+        }
         let mut stmt = self.db.prepare(
             "SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries"
         )?;
@@ -360,6 +366,38 @@ impl DreamMemory {
         Ok(scored_entries.into_iter().map(|(e, _)| e).collect())
     }
 
+    /// HNSW approximate-nearest-neighbour search.
+    /// Translates hnsw_rs cosine distance into similarity score (1.0 - distance).
+    /// Falls back to empty results if id mapping is missing.
+    #[cfg(feature = "hnsw-index")]
+    fn search_hnsw(&self, query_embedding: &[f32], k: usize) -> Result<Vec<DreamEntry>, DreamError> {
+        let hnsw = self.hnsw_index.as_ref().unwrap();
+        let ef = k.max(16);
+        let neighbours = hnsw.search(query_embedding, k, ef);
+        let mut results = Vec::new();
+        for n in neighbours {
+            let hnsw_id = n.get_origin_id();
+            let similarity = 1.0f32 - n.get_distance().min(1.0);
+            if let Some(db_id) = self.id_to_text.get(&hnsw_id) {
+                if let Some((content, _emb)) = self.get(db_id)? {
+                    let tokens = content.split_whitespace().count();
+                    let session_entry = crate::session::SessionEntry {
+                        content: content.clone(), tokens,
+                        timestamp: std::time::Instant::now(), access_count: 0,
+                    };
+                    let auto_entry = AutoEntry {
+                        session_entry,
+                        file_path: self.db_path.clone(),
+                        last_persisted: Utc::now(),
+                        embedding: None,
+                    };
+                    results.push(DreamEntry { auto_entry, embedding: vec![], similarity_score: similarity });
+                }
+            }
+        }
+        Ok(results)
+    }
+
     pub fn insert(&mut self, id: &str, content: &str, tokens: usize, embedding: &[f32]) -> Result<(), DreamError> {
         if embedding.len() != EMBEDDING_DIM {
             return Err(DreamError::InvalidDimension { actual: embedding.len() });
@@ -371,7 +409,22 @@ impl DreamMemory {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![id, content, tokens, embedding_blob, timestamp],
         )?;
+        #[cfg(feature = "hnsw-index")]
+        if self.hnsw_index.is_some() {
+            let hnsw = self.hnsw_index.as_ref().unwrap();
+            let hnsw_id = self.next_id;
+            hnsw.insert_slice((embedding, hnsw_id));
+            self.id_to_text.insert(hnsw_id, id.to_string());
+            self.next_id += 1;
+        }
         Ok(())
+    }
+
+    /// Store a dream entry, delegating to [`insert`](DreamMemory::insert).
+    /// This is the HNSW-aware storage entry-point; when hnsw-index is enabled
+    /// the underlying `insert` also updates the HNSW graph.
+    pub fn store(&mut self, id: &str, content: &str, tokens: usize, embedding: &[f32]) -> Result<(), DreamError> {
+        self.insert(id, content, tokens, embedding)
     }
 
     pub fn sync_from_auto(&mut self, auto: &AutoMemory) -> Result<(), DreamError> {
@@ -971,5 +1024,43 @@ mod tests {
         let a = dream.embed("determinism check");
         let b = dream.embed("determinism check");
         assert_eq!(a, b, "embed must be deterministic for identical input");
+    }
+
+    #[cfg(feature = "hnsw-index")]
+    #[test]
+    fn test_hnsw_recall() {
+        let mut dream = DreamMemory::new_with_hnsw("test_hnsw_recall").unwrap();
+        let texts = vec![
+            "rust programming language",
+            "python snake habitat",
+            "javascript frontend frameworks",
+            "java virtual machine",
+            "golang concurrency patterns",
+            "ruby on rails",
+            "c++ systems programming",
+            "typescript type safety",
+            "kotlin android development",
+            "swift ios apps",
+        ];
+        for (i, text) in texts.iter().enumerate() {
+            let emb = dream.embed(text);
+            dream.store(&format!("k{}", i), text, text.split_whitespace().count(), &emb).unwrap();
+        }
+        // Query with the first text's embedding — top-1 should be itself
+        let query = dream.embed("rust programming language");
+        let results = dream.search(&query, 3).unwrap();
+        assert!(!results.is_empty(), "hnsw search should return results");
+        eprintln!("HNSW recall test: top-1 similarity = {:.4}", results[0].similarity_score);
+        assert!(
+            results[0].similarity_score >= 0.85,
+            "top-1 self-recall similarity should be >= 0.85, got {}",
+            results[0].similarity_score
+        );
+        // Verify store + search roundtrip
+        let extra = dream.embed("extra text for store test");
+        dream.store("extra", "extra text for store test", 5, &extra).unwrap();
+        let post = dream.search(&extra, 1).unwrap();
+        assert!(!post.is_empty(), "stored entry should be searchable");
+        eprintln!("HNSW recall test: store+search roundtrip ok, similarity = {:.4}", post[0].similarity_score);
     }
 }
