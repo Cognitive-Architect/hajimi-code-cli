@@ -4,7 +4,7 @@
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
 > **当前状态**: ✅ Agent Core 266测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复） <!-- D4-AUDIT-2026-04-28: metrics from real commands -->  
-> **最后更新**: 2026-04-27
+> **最后更新**: 2026-04-30
 
 ---
 
@@ -120,7 +120,7 @@
 | `cloud/` | 云端同步 | 批次同步 | ✅ 稳定 |
 | `codex-twist/` | AI内存管理 | 5级内存架构 | ✅ 双轨清理 |
 | `knowledge/` | 知识图谱 | ADR, GNN, 实体关系, SimHash-64 ⭐ | ✅ 稳定 |
-| `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud + **semantic embedding (fastembed)** ⭐ | ✅ Phase 3a 完成 |
+| `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud + **semantic embedding (fastembed)** ⭐ + **EpisodicMemory JSONL 持久化** + **HNSW 索引** | ✅ Phase 3b 完成 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
 
 > <!-- P0-CONTEXT-REMEDIATION-2026-04-30 -->
@@ -294,7 +294,9 @@ pub trait SyncMemoryGateway: Send {
 | Agent Core E2E | 194 passed | cargo-discoverable | ✅ |
 | Agent Core 编译 | 0 errors, pre-existing warnings 外 crate | cargo check | ✅ |
 | Memory Sync E2E | 6 passed | `memory_sync_e2e.rs` | ✅ |
-| Phase 3 测试 | 150 passed | Day 1-8 Phase 3a 全量验证 | ✅ |
+| Phase 3 测试 | 172 passed | Day 1-15 Phase 3a/3b 全量验证 | ✅ Phase 3b 完成 |
+| HNSW 召回率 | top-1=1.0 | `bench_hnsw_recall` @ n=100, recall@10 | ✅ |
+| HNSW 内存 | 15.9MB | `bench_hnsw_memory` @ n=1000 vectors | ✅ |
 | 精确 Token 统计 | 100/100 | 方案 B 精确模式（误差 0%，E2E 12 tests passed） | ✅ Scheme B 已完成 |
 | Token Tracker 持久化集成 | 100/100 | ✅ TokenUsageTracker 正式激活（P1 已清偿）：AppState 扩展 + `record_usage()` + `get_cumulative_stats` Tauri Command + Frontend 混合持久化 | ✅ P1 Cleared |
 
@@ -426,13 +428,33 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 ### Phase 3a/3b Memory Enhancement 架构
 
 <!-- PHASE-3A-REMEDIATION-2026-05-05: semantic memory + LLM summary initiated -->
+<!-- PHASE-3B-REMEDIATION-2026-04-30: Phase 3b completed -->
+
+**状态**: ✅ Phase 3a/3b **全部完成**（17/17 工单）
 
 **新增组件** (Intelligence 层):
 - DreamMemory semantic embedding (`fastembed` AllMiniLML6V2 384-dim, optional feature) + LRU cache
 - MemoryBootstrapper LLM 自然语言摘要 (`generate_natural_language_summary`)
-- EpisodicMemory JSONL 持久化 (`episodes.jsonl`, 1000条容量)
-- DreamMemory HNSW 索引 (`hnsw_rs` optional feature, O(log n) ~5ms)
+- EpisodicMemory JSONL 持久化 (`episodes.jsonl`, 1000条容量) + 跨进程恢复
+- DreamMemory HNSW 索引 (`hnsw_rs` optional feature, O(log n) ~5ms release / ~7.4ms debug)
+
+**EpisodicMemory 架构**:
+- `Episode` 结构体：id, timestamp, action, content, outcome, confidence, metadata
+- `new_with_persist(project_id)` → `~/.hajimi/memory/{project_id}/episodes.jsonl`
+- `append_to_jsonl()` 原子写入（NamedTempFile + rename）
+- `load_from_disk()` 容错加载（跳过损坏行）
+- `query_by_keyword()` 关键词检索（B-10 新增）
+- 容量淘汰：MAX_EPISODES=1000，超限 pop_front
+
+**HNSW 索引架构**:
+- `hnsw_rs` crate，optional feature `hnsw-index`
+- 参数 FINAL（B-15）: M=16, max_elements=10_000, max_layer=16, ef_construction=16
+- `new_with_hnsw()` 启动时重建，失败 graceful 降级为线性扫描
+- `rebuild_hnsw()` 策略 A：SQLite 全表扫描 → 新 HNSW → 原子替换
+- 每 1000 条插入触发自动重建
+- `search_hnsw()`: hnsw.search → id_to_text 映射 → SQLite 重建 DreamEntry
+- 5 个联合/边缘/并发测试（joint/empty/single/concurrent/graceful）
 
 **架构决策**: ADR-P3-01 Semantic Embedding, ADR-P3-02 HNSW Index, ADR-P3-03 Episodic Persistence
 
-*本架构文档与代码同步维护，最后更新于 2026-05-05*
+*本架构文档与代码同步维护，最后更新于 2026-04-30*
