@@ -216,14 +216,7 @@ impl DreamMemory {
     #[cfg(feature = "hnsw-index")]
     pub fn new_with_hnsw(project_id: &str) -> Result<Self, DreamError> {
         let mut mem = Self::new(project_id)?;
-        let hnsw = Hnsw::new(
-            16,       // max_nb_connection: neighbours stored per layer (M)
-            10000,    // max_elements: hint for pre-allocation
-            16,       // max_layer: max hierarchical depth
-            16,       // ef_construction: search width during graph build
-            DistCosine,
-        );
-        mem.hnsw_index = Some(hnsw);
+        mem.rebuild_hnsw()?; // Strategy A: rebuild from SQLite on startup
         Ok(mem)
     }
 
@@ -398,6 +391,56 @@ impl DreamMemory {
         Ok(results)
     }
 
+    /// Rebuild the HNSW index from SQLite `dream_entries` table.
+    /// Strategy A: discard in-memory index on process exit, reconstruct on startup.
+    /// Runs on caller thread; for background rebuild wrap in std::thread::spawn
+    /// or tokio::spawn.  Uses atomic replacement so failure leaves old index intact.
+    #[cfg(feature = "hnsw-index")]
+    fn rebuild_hnsw(&mut self) -> Result<(), DreamError> {
+        let start = std::time::Instant::now();
+        // Step 1: collect valid entries from db (avoids borrow conflicts)
+        let mut entries: Vec<(String, Vec<f32>)> = Vec::new();
+        {
+            let mut stmt = self.db.prepare("SELECT id, embedding_blob FROM dream_entries")?;
+            let rows = stmt.query_map([], |row| {
+                let id: String = row.get(0)?;
+                let embedding_blob: Vec<u8> = row.get(1)?;
+                let embedding: Vec<f32> = embedding_blob
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                Ok((id, embedding))
+            })?;
+            for row in rows {
+                let (id, embedding) = row?;
+                if embedding.len() == EMBEDDING_DIM {
+                    entries.push((id, embedding));
+                }
+            }
+        }
+        // Step 2: build new index + mapping (old index unaffected on failure)
+        let new_hnsw = Hnsw::new(
+            16,       // max_nb_connection
+            10000,    // max_elements
+            16,       // max_layer
+            16,       // ef_construction
+            DistCosine,
+        );
+        let mut new_map = HashMap::new();
+        let mut next_id = 0usize;
+        for (id, embedding) in entries {
+            new_hnsw.insert_slice((&embedding, next_id));
+            new_map.insert(next_id, id);
+            next_id += 1;
+        }
+        // Step 3: atomic replacement
+        self.hnsw_index = Some(new_hnsw);
+        self.id_to_text = new_map;
+        self.next_id = next_id;
+        debug!("HNSW rebuilt {} entries in {:?}", next_id, start.elapsed());
+        Ok(())
+    }
+
     pub fn insert(&mut self, id: &str, content: &str, tokens: usize, embedding: &[f32]) -> Result<(), DreamError> {
         if embedding.len() != EMBEDDING_DIM {
             return Err(DreamError::InvalidDimension { actual: embedding.len() });
@@ -410,12 +453,19 @@ impl DreamMemory {
             rusqlite::params![id, content, tokens, embedding_blob, timestamp],
         )?;
         #[cfg(feature = "hnsw-index")]
-        if self.hnsw_index.is_some() {
-            let hnsw = self.hnsw_index.as_ref().unwrap();
-            let hnsw_id = self.next_id;
-            hnsw.insert_slice((embedding, hnsw_id));
-            self.id_to_text.insert(hnsw_id, id.to_string());
-            self.next_id += 1;
+        {
+            if let Some(ref hnsw) = self.hnsw_index {
+                let hnsw_id = self.next_id;
+                hnsw.insert_slice((embedding, hnsw_id));
+                self.id_to_text.insert(hnsw_id, id.to_string());
+                self.next_id += 1;
+            }
+            // Periodic rebuild every 1000 insertions to combat index drift
+            if self.hnsw_index.is_some() && self.next_id % 1000 == 0 && self.next_id > 0 {
+                if let Err(e) = self.rebuild_hnsw() {
+                    debug!("HNSW periodic rebuild failed: {}", e);
+                }
+            }
         }
         Ok(())
     }
@@ -1062,5 +1112,45 @@ mod tests {
         let post = dream.search(&extra, 1).unwrap();
         assert!(!post.is_empty(), "stored entry should be searchable");
         eprintln!("HNSW recall test: store+search roundtrip ok, similarity = {:.4}", post[0].similarity_score);
+    }
+
+    #[cfg(feature = "hnsw-index")]
+    #[test]
+    fn test_hnsw_rebuild() {
+        let pid = format!("test_hnsw_rebuild_{}", uuid::Uuid::new_v4());
+        let texts = vec![
+            "rust programming language",
+            "python snake habitat",
+            "javascript frontend frameworks",
+            "java virtual machine",
+            "golang concurrency patterns",
+            "ruby on rails",
+            "c++ systems programming",
+            "typescript type safety",
+            "kotlin android development",
+            "swift ios apps",
+        ];
+        // Phase 1: create, insert, save, then drop
+        {
+            let mut dream = DreamMemory::new_with_hnsw(&pid).unwrap();
+            for (i, text) in texts.iter().enumerate() {
+                let emb = dream.embed(text);
+                dream.store(&format!("k{}", i), text, text.split_whitespace().count(), &emb).unwrap();
+            }
+            dream.save().unwrap();
+        }
+        // Phase 2: reopen (rebuild from JSONL/SQLite) and verify recall
+        {
+            let dream = DreamMemory::new_with_hnsw(&pid).unwrap();
+            let query = dream.embed("rust programming language");
+            let results = dream.search(&query, 3).unwrap();
+            assert!(!results.is_empty(), "rebuilt HNSW should return results");
+            eprintln!("HNSW rebuild test: top-1 similarity = {:.4}", results[0].similarity_score);
+            assert!(
+                results[0].similarity_score >= 0.85,
+                "rebuilt index top-1 self-recall should be >= 0.85, got {}",
+                results[0].similarity_score
+            );
+        }
     }
 }
