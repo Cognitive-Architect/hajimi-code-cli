@@ -1396,6 +1396,7 @@ async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<(), 
         step: agent_core::LoopState::Idle, details: "Resource alerts subscription started".to_string(), iteration: 0,
         timestamp: chrono::Utc::now(), step_type: TraceStepType::Other,
         plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None,
+        operation_summary: None, thinking_content: None,
     }).map_err(|e| e.to_string())?;
     Ok(())
 }

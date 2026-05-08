@@ -29,6 +29,16 @@ pub enum LoopState { Idle, Observing, Retrieving, Planning, Acting, Reflecting, 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TraceStepType { Observe, Retrieve, Plan, Act, Reflect, Store, Decide, Other, EditProposed, EditApplied, EditRejected }
 
+/// Summary of file and command operations performed during an agent step.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct OperationSummary {
+    pub files_edited: usize,
+    pub files_created: usize,
+    pub files_deleted: usize,
+    pub commands_run: usize,
+    pub total_diff_lines: usize,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceEvent {
     pub step: LoopState,
@@ -40,6 +50,8 @@ pub struct TraceEvent {
     pub reflection_key_points: Vec<String>,
     pub confidence_score: Option<f32>,
     pub edit_payload: Option<String>,
+    pub operation_summary: Option<OperationSummary>,
+    pub thinking_content: Option<String>,
 }
 
 pub struct AgentLoop {
@@ -276,6 +288,21 @@ impl AgentLoop {
     }
 
     fn emit_trace(&self, step: LoopState, details: String, iteration: usize) {
+        self.emit_trace_with_meta(step, details, iteration, None, vec![], None, None, None, None);
+    }
+
+    fn emit_trace_with_meta(
+        &self,
+        step: LoopState,
+        details: String,
+        iteration: usize,
+        plan_summary: Option<String>,
+        reflection_key_points: Vec<String>,
+        confidence_score: Option<f32>,
+        edit_payload: Option<String>,
+        operation_summary: Option<OperationSummary>,
+        thinking_content: Option<String>,
+    ) {
         if let Some(ref tx) = self.trace_tx {
             let step_type = match step {
                 LoopState::Observing => TraceStepType::Observe,
@@ -287,7 +314,11 @@ impl AgentLoop {
                 LoopState::Deciding => TraceStepType::Decide,
                 _ => TraceStepType::Other,
             };
-            let event = TraceEvent { step, details, iteration, timestamp: chrono::Utc::now(), step_type, plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None };
+            let event = TraceEvent {
+                step, details, iteration, timestamp: chrono::Utc::now(), step_type,
+                plan_summary, reflection_key_points, confidence_score, edit_payload,
+                operation_summary, thinking_content,
+            };
             let _ = tx.send(event);
         }
     }

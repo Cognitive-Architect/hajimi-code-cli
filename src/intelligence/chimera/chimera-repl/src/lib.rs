@@ -19,7 +19,7 @@ pub mod traits;
 
 pub use clock::{Clock, TestClock, SystemTimeClock};
 pub use engine::{EngineController, EngineState};
-pub use event::{ReplEvent, ReplEventSender};
+pub use event::{ReplEvent, ReplEventSender, OperationSummary};
 pub use io::{InputSource, TestInput, StdinInput};
 pub use repl::ChimeraRepl;
 pub use session::SessionState;

@@ -217,6 +217,8 @@ impl WorkflowOrchestrator {
                 reflection_key_points: vec![],
                 confidence_score: confidence.map(|c| c.clamp(0.0, 1.0)),
                 edit_payload: None,
+                operation_summary: None,
+                thinking_content: None,
             };
             let _ = tx.send(event);
         }

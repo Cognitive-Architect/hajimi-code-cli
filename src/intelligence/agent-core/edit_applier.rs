@@ -374,6 +374,8 @@ impl EditApplier {
                 reflection_key_points: vec![],
                 confidence_score: Some(confidence.clamp(0.0, 1.0)),
                 edit_payload,
+                operation_summary: None,
+                thinking_content: None,
             };
             let _ = tx.send(event);
         }

@@ -6,10 +6,21 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 
+/// Summary of file and command operations performed during an agent step.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OperationSummary {
+    pub files_edited: usize,
+    pub files_created: usize,
+    pub files_deleted: usize,
+    pub commands_run: usize,
+    pub total_diff_lines: usize,
+}
+
 /// Events emitted by the REPL engine and agent system.
 /// Supports serde for persistence and cross-process communication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
+#[non_exhaustive]
 pub enum ReplEvent {
     /// User input received.
     Input(String),
@@ -50,6 +61,12 @@ pub enum ReplEvent {
     SwarmTaskCompleted { agent_id: String, task_id: String, worker_id: String, success: bool, output: String },
     /// A tool execution has completed within a worker.
     ToolExecutionCompleted { agent_id: String, tool_name: String, task_id: String, result: String, success: bool },
+
+    // === B-05/12: Thinking UI Data Structures ===
+    /// Operation summary event for UI visualization.
+    OperationSummary { agent_id: String, summary: OperationSummary },
+    /// Thinking content event for reasoning trace display.
+    ThinkingContent { agent_id: String, content: String },
 }
 
 impl ReplEvent {
@@ -66,6 +83,8 @@ impl ReplEvent {
                 | ReplEvent::SwarmTaskCompleted { .. }
                 | ReplEvent::ToolExecutionCompleted { .. }
                 | ReplEvent::ProtocolEvent(_)
+                | ReplEvent::OperationSummary { .. }
+                | ReplEvent::ThinkingContent { .. }
         )
     }
 

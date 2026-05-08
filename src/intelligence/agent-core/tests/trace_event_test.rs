@@ -10,7 +10,7 @@ use memory::memory_gateway::MemoryGateway;
 fn tm() -> Arc<Mutex<MemoryGateway>> { Arc::new(Mutex::new(MemoryGateway::new("tt"))) }
 
 fn sample_event() -> TraceEvent {
-    TraceEvent { step: LoopState::Planning, details: "Test".to_string(), iteration: 1, timestamp: chrono::Utc::now(), step_type: TraceStepType::Plan, plan_summary: Some("S".to_string()), reflection_key_points: vec!["p1".to_string()], confidence_score: Some(0.85), edit_payload: None }
+    TraceEvent { step: LoopState::Planning, details: "Test".to_string(), iteration: 1, timestamp: chrono::Utc::now(), step_type: TraceStepType::Plan, plan_summary: Some("S".to_string()), reflection_key_points: vec!["p1".to_string()], confidence_score: Some(0.85), edit_payload: None, operation_summary: None, thinking_content: None }
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn test_emit_trace_broadcasts_via_loop() {
 
 #[tokio::test]
 async fn test_emit_trace_enriched_fields_preserved() {
-    let event = TraceEvent { step: LoopState::Acting, details: "A".to_string(), iteration: 5, timestamp: chrono::Utc::now(), step_type: TraceStepType::Act, plan_summary: Some("Fix".to_string()), reflection_key_points: vec!["k1".to_string(), "k2".to_string()], confidence_score: Some(0.92), edit_payload: None };
+    let event = TraceEvent { step: LoopState::Acting, details: "A".to_string(), iteration: 5, timestamp: chrono::Utc::now(), step_type: TraceStepType::Act, plan_summary: Some("Fix".to_string()), reflection_key_points: vec!["k1".to_string(), "k2".to_string()], confidence_score: Some(0.92), edit_payload: None, operation_summary: None, thinking_content: None };
     let de: TraceEvent = serde_json::from_str(&serde_json::to_string(&event).unwrap()).unwrap();
     assert_eq!(de.plan_summary, Some("Fix".to_string()));
     assert_eq!(de.reflection_key_points.len(), 2);

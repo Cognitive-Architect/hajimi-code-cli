@@ -61,7 +61,7 @@ async fn test_regression_debt_lines_extraction() {
 #[tokio::test]
 async fn test_regression_trace_event_fields_present() {
     use agent_core::TraceEvent;
-    let event = TraceEvent { step: LoopState::Planning, details: "T".to_string(), iteration: 0, timestamp: chrono::Utc::now(), step_type: TraceStepType::Plan, plan_summary: Some("P".to_string()), reflection_key_points: vec!["k1".to_string()], confidence_score: Some(0.5), edit_payload: None };
+    let event = TraceEvent { step: LoopState::Planning, details: "T".to_string(), iteration: 0, timestamp: chrono::Utc::now(), step_type: TraceStepType::Plan, plan_summary: Some("P".to_string()), reflection_key_points: vec!["k1".to_string()], confidence_score: Some(0.5), edit_payload: None, operation_summary: None, thinking_content: None };
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("plan_summary") && json.contains("reflection_key_points") && json.contains("confidence_score"));
 }

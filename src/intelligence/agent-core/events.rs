@@ -145,6 +145,31 @@ impl AgentEventProcessor {
         Ok(())
     }
 
+    /// Process operation summary and broadcast.
+    pub async fn process_operation_summary(&self, agent_id: &str, summary: crate::OperationSummary) -> ReplResult<()> {
+        let event = ReplEvent::OperationSummary {
+            agent_id: agent_id.to_string(),
+            summary: chimera_repl::OperationSummary {
+                files_edited: summary.files_edited,
+                files_created: summary.files_created,
+                files_deleted: summary.files_deleted,
+                commands_run: summary.commands_run,
+                total_diff_lines: summary.total_diff_lines,
+            },
+        };
+        self.event_sender.send(event).await?;
+        self.emit_gateway("OperationSummary", format!("edited={} created={} deleted={} commands={} diff_lines={}", summary.files_edited, summary.files_created, summary.files_deleted, summary.commands_run, summary.total_diff_lines), agent_id).await;
+        Ok(())
+    }
+
+    /// Process thinking content and broadcast.
+    pub async fn process_thinking_content(&self, agent_id: &str, content: &str) -> ReplResult<()> {
+        let event = ReplEvent::ThinkingContent { agent_id: agent_id.to_string(), content: content.to_string() };
+        self.event_sender.send(event).await?;
+        self.emit_gateway("ThinkingContent", format!("content_len={}", content.len()), agent_id).await;
+        Ok(())
+    }
+
     /// Emit a trace event when a worker is spawned.
     pub async fn trace_worker_spawn(&self, agent_id: &str, worker_id: &str) {
         EventTracing::trace_worker_spawn(agent_id, worker_id).await;

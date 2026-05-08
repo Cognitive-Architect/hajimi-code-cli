@@ -40,7 +40,7 @@ pub use reflector::{AutonomousReflector, Reflection, Critique, CritiqueSeverity}
 pub use governance::{DefaultGovernance, GovernanceRequest, GovernancePolicy, ApprovalLevel, Decision, Vote, PermissionLevel};
 pub use swarm::{Supervisor, Worker, TaskAssignment, WorkerResult, SwarmMessage, WorkerStatus, SwarmCoordinator, SupervisorMetrics};
 pub use checkpoint::{CheckpointManager, Checkpoint, WorkerState};
-pub use agent_loop::{AgentLoop, LoopState, LoopOutcome, Observation, TraceEvent};
+pub use agent_loop::{AgentLoop, LoopState, LoopOutcome, Observation, TraceEvent, OperationSummary};
 pub use agent_loop_builder::AgentLoopBuilder;
 pub use memory_bootstrapper::{MemoryBootstrapper, BootstrapResult};
 
