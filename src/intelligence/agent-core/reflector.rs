@@ -15,6 +15,18 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Extract thinking content from LLM response enclosed in <thinking> tags.
+/// Returns None if no thinking block is found.
+pub fn extract_thinking(text: &str) -> Option<String> {
+    let start = text.find("<thinking>")?;
+    let end = text.find("</thinking>")?;
+    if end > start {
+        Some(text[start + 10..end].trim().to_string())
+    } else {
+        None
+    }
+}
+
 /// Maximum reflection iterations to prevent infinite loops.
 const MAX_REFLECTION_STEPS: usize = 10;
 /// Token budget for reflection to prevent resource exhaustion.
@@ -81,6 +93,8 @@ pub struct AutonomousReflector {
     governance: Arc<dyn AgentGovernance>,
     persistence: ReflectionPersistence,
     plan_optimizer: PlanOptimizer,
+    /// Last extracted thinking content from LLM response (B-06/12).
+    pub thinking_content: Option<String>,
 }
 
 impl AutonomousReflector {
@@ -88,7 +102,7 @@ impl AutonomousReflector {
     pub fn new(memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>, context: AgentContext) -> Self {
         let persistence = ReflectionPersistence::new(memory);
         let plan_optimizer = PlanOptimizer::new(None);
-        Self { context, llm: None, reflection_count: 0, token_used: 0, governance: Arc::new(DefaultGovernance::new()), persistence, plan_optimizer }
+        Self { context, llm: None, reflection_count: 0, token_used: 0, governance: Arc::new(DefaultGovernance::new()), persistence, plan_optimizer, thinking_content: None }
     }
     /// Attach governance engine for reflection approval.
     pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self { self.governance = gov; self }

@@ -108,8 +108,9 @@ impl AgentLoop {
         if let Some(ref pid) = self.provider_id {
             self.blackboard.write("__hajimi_provider_id", pid, &agent_id).await;
         }
+        let thinking_content = self.blackboard.read("__hajimi_thinking").await.map(|e| e.value);
         *self.current_state.lock().await = LoopState::Planning;
-        self.emit_trace(LoopState::Planning, format!("Planning initial goal: {}", initial_goal), 0);
+        self.emit_trace_with_meta(LoopState::Planning, format!("Planning initial goal: {}", initial_goal), 0, None, vec![], None, None, None, thinking_content);
         let goal_id = self.plan_initial_goal(initial_goal).await?;
         info!("Initial goal created: {}", goal_id);
         let mut outcome = LoopOutcome::InProgress;

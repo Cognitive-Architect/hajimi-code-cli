@@ -52,6 +52,8 @@ pub struct AgentEventProcessor {
     sync_gateway: Option<memory::sync_gateway::SyncGatewayHandle>,
     #[allow(dead_code)]
     context: AgentContext,
+    /// Accumulated operation stats across tool executions (B-06/12).
+    operation_summary: std::sync::Mutex<crate::OperationSummary>,
 }
 
 impl AgentEventProcessor {
@@ -66,6 +68,7 @@ impl AgentEventProcessor {
             memory,
             sync_gateway: None,
             context,
+            operation_summary: std::sync::Mutex::new(crate::OperationSummary::default()),
         }
     }
     pub fn with_sync_gateway(mut self, sg: Option<memory::sync_gateway::SyncGatewayHandle>) -> Self {
@@ -97,9 +100,34 @@ impl AgentEventProcessor {
     }
 
     /// Process tool result and broadcast.
+    /// Accumulates operation stats (files_edited, commands_run) based on tool name (B-06/12).
     pub async fn process_tool_result(&self, agent_id: &str, tool_name: &str, result: &str, success: bool) -> ReplResult<()> {
+        // Accumulate operation stats by tool name.
+        {
+            let mut summary = self.operation_summary.lock().unwrap();
+            let lower = tool_name.to_lowercase();
+            if lower.contains("edit") || lower.contains("write") || lower.contains("file") {
+                summary.files_edited += 1;
+                summary.total_diff_lines = summary.total_diff_lines.saturating_add(result.lines().count());
+            }
+            if lower.contains("create") || lower.contains("new") {
+                summary.files_created += 1;
+            }
+            if lower.contains("delete") || lower.contains("remove") {
+                summary.files_deleted += 1;
+            }
+            if lower.contains("bash") || lower.contains("shell") || lower.contains("powershell") || lower.contains("cargo") || lower.contains("npm") || lower.contains("git") {
+                summary.commands_run += 1;
+            }
+        }
+
         let event = ReplEvent::ToolResult { agent_id: agent_id.to_string(), tool_name: tool_name.to_string(), result: result.to_string(), success };
         self.event_sender.send(event).await?;
+
+        // Broadcast accumulated OperationSummary after each tool execution.
+        let summary = self.operation_summary.lock().unwrap().clone();
+        self.process_operation_summary(agent_id, summary).await?;
+
         self.emit_gateway("ToolResult", format!("{}: success={}", tool_name, success), agent_id).await;
         Ok(())
     }

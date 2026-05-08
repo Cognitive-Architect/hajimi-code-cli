@@ -62,11 +62,13 @@ pub struct HierarchicalPlanner {
     #[allow(dead_code)] memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>,
     governance: Arc<dyn AgentGovernance>,
     blackboard: Option<Arc<Blackboard>>,
+    /// Last extracted thinking content from LLM response (B-06/12).
+    pub thinking_content: Option<String>,
 }
 
 impl HierarchicalPlanner {
     pub fn new(memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>, context: AgentContext) -> Self {
-        Self { context, llm: None, current_plan: None, memory, governance: Arc::new(DefaultGovernance::new()), blackboard: None }
+        Self { context, llm: None, current_plan: None, memory, governance: Arc::new(DefaultGovernance::new()), blackboard: None, thinking_content: None }
     }
     pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self { self.governance = gov; self }
     pub fn with_llm(mut self, llm: Arc<dyn LlmClient>) -> Self { self.llm = Some(llm); self }
@@ -166,6 +168,18 @@ impl Planner for HierarchicalPlanner {
             self.current_plan = Some(plan); return Ok(());
         }
         Err(ReplError::Session(format!("Plan {} not found in Graph/Session", goal_id)))
+    }
+}
+
+/// Extract thinking content from LLM response enclosed in <thinking> tags.
+/// Returns None if no thinking block is found.
+pub fn extract_thinking(text: &str) -> Option<String> {
+    let start = text.find("<thinking>")?;
+    let end = text.find("</thinking>")?;
+    if end > start {
+        Some(text[start + 10..end].trim().to_string())
+    } else {
+        None
     }
 }
 
