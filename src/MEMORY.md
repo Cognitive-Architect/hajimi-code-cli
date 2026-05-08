@@ -312,4 +312,38 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 
 *Phase 3 完成。Ouroboros 衔尾蛇闭环。* ☝️🐍♾️🔥
 
+---
+
+## Thinking UI 方案C — 债务基线记录
+
+<!-- THINKING-UI-2026-05-07: Thinking UI Debt → scheme-c implementation initiated -->
+
+**状态**: 🔄 **方案C 实施中**（Day 1/12，基线测量与文档同步）
+
+**债务来源**: `docs/roadmap/Hajimi Thinking UI/investigation-report.md`（2026-04-27 代码审计）
+
+**当前得分**（数据诚实）：Thinking 显式化 20/100，操作可视化 15/100
+
+**核心断点**:
+| 断点 | 位置 | 实测证据 | 清偿计划 |
+|:---|:---|:---|:---|
+| Tauri trace_tx 未注入 | `main.rs:1521` | `trace_tx: Mutex::new(None)` | Day 2-3: Step 1 |
+| AgentLoop trace_tx 孤立 | `agent_loop.rs:85` | 独立创建，无 set_trace_tx() | Day 2-3: Step 1 |
+| MCP 模拟数据 | `trace_handler.ts:11` | DEBT-W2-TRACE-DATA-001 | Day 4: Step 2 |
+| Chat 纯动画 | `app.js:2570` | addThinking() 无文本 | Day 7-9: Step 4 |
+| 操作可视化缺失 | — | 无 operation-summary-bar | Day 10-11: Step 5 |
+
+**基线 measured 数据**:
+| 指标 | 实测值 | 验证命令 |
+|:---|:---:|:---|
+| main.rs 行数 | 1588 | `wc -l` |
+| agent_loop.rs 行数 | 327 | `wc -l` |
+| app.js 行数 | 4111 | `wc -l` |
+| .rs 文件数 | 249 | `find src -name "*.rs" | wc -l` |
+| cargo check | 0 errors | `cargo check --workspace` |
+
+**关联 Roadmap**:
+- `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
+- `docs/roadmap/Hajimi Thinking UI/THINKING-UI-DETAILED-DAILY-PLAN.md`
+
 *本文档最后更新于 2026-04-30*

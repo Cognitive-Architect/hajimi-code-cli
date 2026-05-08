@@ -457,4 +457,32 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 
 **架构决策**: ADR-P3-01 Semantic Embedding, ADR-P3-02 HNSW Index, ADR-P3-03 Episodic Persistence
 
+---
+
+## Thinking UI 方案C 架构状态
+
+<!-- THINKING-UI-2026-05-07: scheme-c implementation initiated -->
+
+**状态**: 🔄 **方案C 实施中**（Day 1/12，基线测量与文档同步）
+
+**架构设计**（基于 investigation-report.md + 代码实测）：
+
+| 组件 | 当前状态 | 目标状态 | 关联文件 |
+|:---|:---|:---|:---|
+| AgentLoop 7步循环 | ✅ 完整，`emit_trace()` 就绪 | 数据流桥接激活 | `agent_loop.rs` |
+| TraceEvent 结构 | ✅ 富字段已定义（plan_summary/reflection_key_points/confidence_score/edit_payload） | 新增 operation_summary / thinking_content | `agent_loop.rs:32-43` |
+| Tauri Event Bridge | ⚠️ 骨架完整，trace_tx 未注入 | 打通 AgentLoop → Frontend 通道 | `main.rs:1242-1280` |
+| MCP Trace Handler | ⚠️ 模拟数据（DEBT-W2-TRACE-DATA-001） | 接入真实 AgentLoop 事件 | `trace_handler.ts` |
+| Chat Thinking UI | ⚠️ 纯动画（三跳动点） | Kimi 风格可折叠 Thinking 区块 | `app.js:2570` |
+| 操作可视化 | ❌ 缺失 | Codex 风格操作摘要条 + diff 预览 | `app.js`（新增） |
+
+**架构决策（预备 ADR）**:
+- ADR-THINKING-UI-01: Tauri Event Bridge（`subscribe_agent_trace` 作为唯一通道）
+- ADR-THINKING-UI-02: Thinking Content Pipeline（`<thinking>` 标签作为提取标准）
+- ADR-THINKING-UI-03: Operation Summary Aggregation（`OperationSummary` 作为统一表示）
+
+**分层约束**: 所有 Thinking UI 可视化逻辑仅存在于 Interface 层；Engine/Intelligence 层仅提供结构化事件数据。
+
+**Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
+
 *本架构文档与代码同步维护，最后更新于 2026-04-30*

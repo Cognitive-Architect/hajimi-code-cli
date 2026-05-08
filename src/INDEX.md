@@ -838,4 +838,33 @@ interface/mcp-server/
 
 **技术约束**: 所有新依赖为 optional feature，严格四层分层，数据诚实
 
+---
+
+## Thinking UI 方案C — 进入实施阶段
+
+<!-- THINKING-UI-2026-05-07: based on real code audit, scheme-c implementation initiated -->
+
+**状态**: 🔄 **方案C 实施中**（Day 1/12，基线测量与文档同步）
+
+**核心断点**（来自 `investigation-report.md` 实测）：
+
+| 断点 | 位置 | 实测证据 | 严重度 |
+|:---|:---|:---|:---:|
+| Tauri trace_tx 未注入 | `main.rs:1521` | `trace_tx: std::sync::Mutex::new(None)` | 🔴 P0 |
+| AgentLoop trace_tx 孤立 | `agent_loop.rs:85` | `trace_tx: Some(tokio::sync::broadcast::channel(64).0)`，未暴露给 AppState | 🔴 P0 |
+| MCP 模拟数据 | `trace_handler.ts:11` | `DEBT-W2-TRACE-DATA-001`: LoopState sequence generator | 🔴 P0 |
+| Chat 纯动画 | `app.js:2570` | `addThinking()` 三跳动点，无推理文本 | 🟡 P1 |
+| Trace 渲染不足 | `app.js:1560` | `renderTraceCards()` 仅渲染 `step`+`details` | 🟡 P1 |
+
+**基线数据** (实测 `grep` / `wc`):
+| 指标 | 命令 | 实测值 |
+|:---|:---|:---:|
+| `main.rs` 总行数 | `wc -l` | 1588 |
+| `agent_loop.rs` 总行数 | `wc -l` | 327 |
+| `app.js` 总行数 | `wc -l` | 4111 |
+| Rust 源文件总数 | `find src -name "*.rs" | wc -l` | 249 |
+| `cargo check --workspace` | 编译检查 | 0 errors |
+
+**Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
+
 *本索引文档与代码同步维护，最后更新于 2026-04-30*
