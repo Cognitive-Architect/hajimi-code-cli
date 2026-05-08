@@ -269,6 +269,12 @@ impl AgentLoop {
         self.trace_tx.as_ref().map(|tx| tx.subscribe())
     }
 
+    /// Returns a clone of the broadcast sender for trace events.
+    /// Callers can subscribe to this sender to receive real-time AgentLoop traces.
+    pub fn trace_tx(&self) -> Option<tokio::sync::broadcast::Sender<TraceEvent>> {
+        self.trace_tx.clone()
+    }
+
     fn emit_trace(&self, step: LoopState, details: String, iteration: usize) {
         if let Some(ref tx) = self.trace_tx {
             let step_type = match step {

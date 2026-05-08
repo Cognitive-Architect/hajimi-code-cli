@@ -27,25 +27,15 @@ use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, Emitter, Manager};
+use agent_core::{AgentLoopBuilder, HierarchicalPlanner, AutonomousReflector, AgentContext, TraceEvent};
+use agent_core::agent_loop::TraceStepType;
+use memory::memory_gateway::MemoryGateway as AgentMemoryGateway;
 
 mod audit;
 
 // ------------------------------------------------------------------
 // App State
 // ------------------------------------------------------------------
-#[derive(Clone, serde::Serialize)]
-struct TraceEvent {
-    step: String,
-    details: String,
-    iteration: usize,
-    timestamp: String,
-    step_type: String,
-    plan_summary: Option<String>,
-    reflection_key_points: Vec<String>,
-    confidence_score: Option<f32>,
-    edit_payload: Option<String>,
-}
-
 /// Phase 4 Day 5: Edit history entry for timeline visualization.
 #[derive(Clone, serde::Serialize)]
 struct EditHistoryEntry {
@@ -1265,12 +1255,12 @@ async fn subscribe_agent_trace(
     tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
             // Phase 4 Day 5: Record edit events for history timeline
-            if matches!(event.step_type.as_str(), "EditProposed" | "EditApplied" | "EditRejected") {
+            if matches!(event.step_type, TraceStepType::EditProposed | TraceStepType::EditApplied | TraceStepType::EditRejected) {
                 let mut hist = history_clone.lock().await;
                 let entry = EditHistoryEntry {
                     id: format!("edit_{}_{}", event.iteration, hist.len()),
-                    timestamp: event.timestamp.clone(),
-                    step_type: event.step_type.clone(),
+                    timestamp: event.timestamp.to_rfc3339(),
+                    step_type: format!("{:?}", event.step_type),
                     summary: event.details.clone(),
                     confidence: event.confidence_score,
                     token_before: None,
@@ -1403,8 +1393,8 @@ async fn run_agent_command(
 #[tauri::command]
 async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<(), String> {
     on_event.send(TraceEvent {
-        step: "Resource".to_string(), details: "Resource alerts subscription started".to_string(), iteration: 0,
-        timestamp: chrono::Utc::now().to_rfc3339(), step_type: "Other".to_string(),
+        step: agent_core::LoopState::Idle, details: "Resource alerts subscription started".to_string(), iteration: 0,
+        timestamp: chrono::Utc::now(), step_type: TraceStepType::Other,
         plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None,
     }).map_err(|e| e.to_string())?;
     Ok(())
@@ -1538,9 +1528,34 @@ fn main() {
         token_tracker: Arc::new(TokenUsageTracker::new()),
     };
 
+    // Create production-ready AgentLoop with planner and reflector.
+    // SAFETY: AgentLoop is Send + Sync; safe to hold in AppState and register with Tauri.
+    let agent_loop = {
+        let mem = Arc::new(tokio::sync::Mutex::new(AgentMemoryGateway::new("hajimi-desktop")));
+        let planner = Arc::new(tokio::sync::Mutex::new(
+            HierarchicalPlanner::new(mem.clone(), AgentContext::new())
+        ));
+        let reflector = Arc::new(tokio::sync::Mutex::new(
+            AutonomousReflector::new(mem.clone(), AgentContext::new())
+        ));
+        AgentLoopBuilder::production_ready("hajimi-desktop")
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .build()
+            .expect("AgentLoop build failed")
+    };
+
+    // Inject the broadcast sender so frontend trace panel receives real AgentLoop events.
+    if let Some(tx) = agent_loop.trace_tx() {
+        state.set_trace_tx(tx);
+    }
+
+    let agent_loop_arc = Arc::new(agent_loop);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(state)
+        .manage(agent_loop_arc.clone())
         .invoke_handler(tauri::generate_handler![
             greet,
             read_file,
