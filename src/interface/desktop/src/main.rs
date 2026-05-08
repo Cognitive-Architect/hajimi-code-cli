@@ -26,7 +26,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 use std::path::{Path, PathBuf};
-use tauri::{ipc::Channel, Manager};
+use tauri::{ipc::Channel, Emitter, Manager};
 
 mod audit;
 
@@ -69,6 +69,15 @@ struct AppState {
     edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
     memory_gateway: Arc<MemoryGateway>,
     token_tracker: Arc<TokenUsageTracker>,
+}
+
+impl AppState {
+    /// Inject the AgentLoop broadcast sender to enable trace event streaming.
+    /// Call this after `AgentLoop::from_components()` creates the broadcast channel.
+    pub fn set_trace_tx(&self, tx: tokio::sync::broadcast::Sender<TraceEvent>) {
+        // SAFETY: trace_tx is thread-safe via Mutex; poison recovery via into_inner()
+        *self.trace_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+    }
 }
 
 fn build_registry() -> ToolRegistry {
@@ -1242,19 +1251,17 @@ fn get_audit_logs(limit: Option<usize>, offset: Option<usize>) -> Result<Vec<aud
 async fn subscribe_agent_trace(
     on_event: Channel<TraceEvent>,
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     // SAFETY: Mutex held only for Option clone; poison unlikely in single-threaded Tauri command context
     let tx = state.trace_tx.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if tx.is_none() {
-        on_event.send(TraceEvent {
-            step: "Idle".to_string(), details: "AgentLoop is not running".to_string(), iteration: 0,
-            timestamp: chrono::Utc::now().to_rfc3339(), step_type: "Other".to_string(),
-            plan_summary: None, reflection_key_points: vec![], confidence_score: None, edit_payload: None,
-        }).map_err(|e| e.to_string())?;
+    let Some(tx) = tx else {
+        // AgentLoop trace channel not yet injected; client will retry or use Tauri Event listener
         return Ok(());
-    }
-    let mut rx = tx.unwrap().subscribe();
+    };
+    let mut rx = tx.subscribe();
     let history_clone = state.edit_history.clone();
+    let app_clone = app.clone();
     tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
             // Phase 4 Day 5: Record edit events for history timeline
@@ -1273,7 +1280,8 @@ async fn subscribe_agent_trace(
                 hist.push(entry);
                 if hist.len() > 200 { hist.remove(0); }
             }
-            let _ = on_event.send(event);
+            let _ = on_event.send(event.clone());
+            let _ = app_clone.emit("agent:trace", &event);
         }
     });
     Ok(())
