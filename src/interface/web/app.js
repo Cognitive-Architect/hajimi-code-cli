@@ -1549,6 +1549,14 @@ window.app = {
           if (this.traceEvents.length > 100) this.traceEvents.shift();
           if (this.sidebarView === 'agent-trace') this.renderTraceCards();
           if (event.step_type === 'EditProposed') this.onEditProposed(event);
+          if (event.thinking_content) {
+            const activeThinking = document.querySelector('.chat-message.ai .thinking-block');
+            if (activeThinking) {
+              activeThinking.style.display = 'block';
+              const code = activeThinking.querySelector('.thinking-block-body code');
+              if (code) code.textContent = event.thinking_content;
+            }
+          }
         }
       };
       invoke('subscribe_agent_trace', { onEvent: channel }).catch(() => {});
@@ -2576,13 +2584,16 @@ window.app = {
     div.innerHTML = `
       <div class="chat-message-avatar">H</div>
       <div class="chat-message-body">
-        <div class="thinking">
+        <div class="thinking-indicator">
           <div class="thinking-dot"></div>
           <div class="thinking-dot"></div>
           <div class="thinking-dot"></div>
         </div>
       </div>
     `;
+    const block = this.createThinkingBlock();
+    block.style.display = 'none';
+    div.querySelector('.chat-message-body').appendChild(block);
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
     return id;
@@ -2591,6 +2602,49 @@ window.app = {
   removeThinking(id) {
     const el = document.getElementById(id);
     if (el) el.remove();
+  },
+
+  createThinkingBlock(content) {
+    const block = document.createElement('div');
+    block.className = 'thinking-block';
+    block.innerHTML = `
+      <div class="thinking-block-header">
+        <span class="thinking-block-icon">🧠</span>
+        <span class="thinking-block-title">Thinking</span>
+        <button class="thinking-block-toggle" title="Toggle" aria-label="Toggle">▼</button>
+      </div>
+      <div class="thinking-block-body">
+        <pre><code>${this.escapeHtml(content || '')}</code></pre>
+      </div>`;
+    const btn = block.querySelector('.thinking-block-toggle');
+    btn.addEventListener('click', () => this.toggleThinking(block));
+    block.querySelector('.thinking-block-header').addEventListener('click', (e) => {
+      if (e.target !== btn) this.toggleThinking(block);
+    });
+    return block;
+  },
+
+  toggleThinking(block) {
+    const body = block.querySelector('.thinking-block-body');
+    const btn = block.querySelector('.thinking-block-toggle');
+    const collapsed = !body.classList.contains('visible');
+    if (collapsed) {
+      body.classList.add('visible');
+      btn.textContent = '▲';
+    } else {
+      body.classList.remove('visible');
+      btn.textContent = '▼';
+    }
+  },
+
+  updateThinkingContent(id, content) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const block = el.querySelector('.thinking-block');
+    if (!block) return;
+    const code = block.querySelector('.thinking-block-body code');
+    if (code) code.textContent = content || '';
+    block.style.display = 'block';
   },
 
   async initWorkspace() {
