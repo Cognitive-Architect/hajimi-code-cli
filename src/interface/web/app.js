@@ -1557,6 +1557,9 @@ window.app = {
               if (md) md.innerHTML = this.renderMarkdown(event.thinking_content);
             }
           }
+          if (event.operation_summary) {
+            this.updateOperationSummary(event.operation_summary);
+          }
         }
       };
       invoke('subscribe_agent_trace', { onEvent: channel }).catch(() => {});
@@ -2707,6 +2710,82 @@ window.app = {
     const md = block.querySelector('.thinking-block-markdown');
     if (md) md.innerHTML = this.renderMarkdown(content || '');
     block.style.display = 'block';
+  },
+
+  // ============================================================
+  // Operation Summary Bar (B-10/12)
+  // ============================================================
+
+  /// Create a Codex-style operation summary bar showing tool execution stats.
+  /// Returns null if all stats are zero (hides the bar when no ops performed).
+  createOperationSummaryBar(summary) {
+    const filesEdited = summary.files_edited || 0;
+    const filesCreated = summary.files_created || 0;
+    const filesDeleted = summary.files_deleted || 0;
+    const commandsRun = summary.commands_run || 0;
+    const totalDiffLines = summary.total_diff_lines || 0;
+    const totalOps = filesEdited + filesCreated + filesDeleted + commandsRun;
+    if (totalOps === 0) return null;
+
+    const bar = document.createElement('div');
+    bar.className = 'operation-summary-bar';
+    const parts = [];
+    if (filesEdited > 0) parts.push(`已编辑 ${filesEdited} 个文件`);
+    if (filesCreated > 0) parts.push(`已创建 ${filesCreated} 个文件`);
+    if (filesDeleted > 0) parts.push(`已删除 ${filesDeleted} 个文件`);
+    if (commandsRun > 0) parts.push(`已运行 ${commandsRun} 条命令`);
+    const summaryText = parts.join('，');
+
+    bar.innerHTML = `
+      <div class="operation-summary-header">
+        <span class="operation-summary-icon">⚡</span>
+        <span class="operation-summary-text">${this.escapeHtml(summaryText)}</span>
+        <button class="operation-summary-toggle" title="展开/折叠">▼</button>
+      </div>
+      <div class="operation-summary-details">
+        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>编辑: ${filesEdited}</span></div>
+        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>创建: ${filesCreated}</span></div>
+        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-del">-</span><span>删除: ${filesDeleted}</span></div>
+        <div class="operation-summary-stat"><span class="operation-summary-stat-label">⌘</span><span>命令: ${commandsRun}</span></div>
+        <div class="operation-summary-stat"><span class="operation-summary-stat-label">≡</span><span>Diff 行数: ${totalDiffLines}</span></div>
+      </div>`;
+
+    const toggle = bar.querySelector('.operation-summary-toggle');
+    toggle.addEventListener('click', () => this.toggleDetails(bar));
+    bar.querySelector('.operation-summary-header').addEventListener('click', (e) => {
+      if (e.target !== toggle) this.toggleDetails(bar);
+    });
+    return bar;
+  },
+
+  /// Toggle expand/collapse of operation summary details panel.
+  toggleDetails(bar) {
+    const details = bar.querySelector('.operation-summary-details');
+    const toggle = bar.querySelector('.operation-summary-toggle');
+    const expanded = details.classList.contains('visible');
+    if (expanded) {
+      details.classList.remove('visible');
+      toggle.textContent = '▼';
+    } else {
+      details.classList.add('visible');
+      toggle.textContent = '▲';
+    }
+  },
+
+  /// Update or create the operation summary bar in the most recent AI message.
+  /// Removes existing bar before inserting a new one to avoid duplicates.
+  updateOperationSummary(summary) {
+    if (!summary || typeof summary !== 'object') return;
+    const container = document.getElementById('aiChatMessages');
+    if (!container) return;
+    const lastAi = container.querySelector('.chat-message.ai:last-child');
+    if (!lastAi) return;
+    const body = lastAi.querySelector('.chat-message-body');
+    if (!body) return;
+    const existing = body.querySelector('.operation-summary-bar');
+    if (existing) existing.remove();
+    const bar = this.createOperationSummaryBar(summary);
+    if (bar) body.appendChild(bar);
   },
 
   async initWorkspace() {

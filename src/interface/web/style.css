@@ -2687,3 +2687,102 @@ textarea:disabled {
   word-wrap: break-word;
   white-space: pre-wrap;
 }
+
+/* ── 21. Operation Summary Bar (B-10/12) ── */
+.operation-summary-bar { margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: border-color 200ms ease;
+}
+
+.operation-summary-bar:hover { border-color: var(--fg-cyan);
+}
+
+.operation-summary-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  user-select: none;
+  color: var(--fg-dim);
+  transition: background 150ms ease;
+}
+
+.operation-summary-header:hover {
+  background: var(--bg-hover);
+}
+
+.operation-summary-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.operation-summary-text {
+  flex: 1;
+  font-weight: 600;
+  color: var(--fg-default);
+}
+
+.operation-summary-toggle {
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0;
+  line-height: 1;
+  transition: transform 200ms ease, color 150ms ease;
+}
+
+.operation-summary-toggle:hover {
+  color: var(--fg-cyan);
+}
+
+.operation-summary-details {
+  display: none;
+  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  flex-direction: column;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.operation-summary-details.visible {
+  display: flex;
+  opacity: 1;
+}
+
+.operation-summary-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--fg-default);
+}
+
+.operation-summary-stat-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.operation-summary-stat-label.diff-add {
+  background: var(--diff-add-bg);
+  color: var(--fg-green);
+}
+
+.operation-summary-stat-label.diff-del {
+  background: var(--diff-del-bg);
+  color: var(--fg-red);
+}
