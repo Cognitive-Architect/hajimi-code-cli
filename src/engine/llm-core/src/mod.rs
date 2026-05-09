@@ -147,6 +147,16 @@ pub struct Usage {
     pub completion_tokens: u64,
 }
 
+/// Token-level event for real-time streaming consumers (B-09/12).
+/// Each chunk from the LLM provider maps to one TokenEvent.
+/// Front-end consumers can subscribe to these events for incremental
+/// parsing of thinking tags without waiting for the full response.
+#[derive(Debug, Clone)]
+pub struct TokenEvent {
+    pub text: String,
+    pub timestamp_ms: u64,
+}
+
 /// Unified LLM client trait
 #[async_trait]
 pub trait LlmClient: Send + Sync {

@@ -2450,6 +2450,45 @@ window.app = {
     this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\`, \`/compact\``);
   },
 
+  /// Parse thinking tags from accumulated stream buffer (B-09/12).
+  /// Returns { thinking, response, state } where state is 'idle'|'thinking'|'response'.
+  parseThinkingStream(buffer) {
+    const thinkOpen = '<thinking>';
+    const thinkClose = '</thinking>';
+    const respOpen = '<response>';
+    const respClose = '</response>';
+    const tStart = buffer.indexOf(thinkOpen);
+    if (tStart === -1) {
+      return { thinking: null, response: buffer, state: 'idle' };
+    }
+    const tEnd = buffer.indexOf(thinkClose, tStart);
+    if (tEnd === -1) {
+      const thinking = buffer.slice(tStart + thinkOpen.length);
+      return { thinking, response: null, state: 'thinking' };
+    }
+    const thinking = buffer.slice(tStart + thinkOpen.length, tEnd).trim();
+    let response = '';
+    const rStart = buffer.indexOf(respOpen, tEnd);
+    if (rStart !== -1) {
+      const rEnd = buffer.indexOf(respClose, rStart);
+      response = rEnd !== -1
+        ? buffer.slice(rStart + respOpen.length, rEnd)
+        : buffer.slice(rStart + respOpen.length);
+    } else {
+      response = buffer.slice(tEnd + thinkClose.length);
+    }
+    return { thinking, response, state: 'response' };
+  },
+
+  /// Schedule DOM update via requestAnimationFrame for non-blocking rendering (B-09/12).
+  scheduleDomUpdate(fn) {
+    if (this._pendingRaf) cancelAnimationFrame(this._pendingRaf);
+    this._pendingRaf = requestAnimationFrame(() => {
+      this._pendingRaf = null;
+      fn();
+    });
+  },
+
   async streamChat(provider, prompt, config, messages) {
     const tauri = window.__TAURI__;
     if (!tauri) throw new Error('Tauri not available');
@@ -2465,6 +2504,14 @@ window.app = {
     msgContainer.appendChild(msgDiv);
     msgContainer.scrollTop = msgContainer.scrollHeight;
 
+    // Create thinking block and response container for streaming (B-09/12)
+    const thinkingBlock = this.createThinkingBlock();
+    thinkingBlock.style.display = 'none';
+    body.appendChild(thinkingBlock);
+    const responseDiv = document.createElement('div');
+    responseDiv.className = 'chat-response-body';
+    body.appendChild(responseDiv);
+
     if (!Channel) {
       // Fallback: simulate streaming with local response
       const demoText = this.generateDemoResponse(prompt);
@@ -2472,24 +2519,39 @@ window.app = {
       const chars = demoText.split('');
       for (let i = 0; i < chars.length; i++) {
         fullText += chars[i];
-        body.innerHTML = this.formatText(fullText);
+        responseDiv.innerHTML = this.formatText(fullText);
         msgContainer.scrollTop = msgContainer.scrollHeight;
         await new Promise(r => setTimeout(r, 10));
       }
-      return;
+      return fullText;
     }
 
     const channel = new Channel();
-    let fullText = '';
+    let buffer = '';
+
     channel.onmessage = (event) => {
       if (event.chunk) {
-        fullText += event.chunk;
-        body.innerHTML = this.formatText(fullText);
-        msgContainer.scrollTop = msgContainer.scrollHeight;
+        buffer += event.chunk;
+        this.scheduleDomUpdate(() => {
+          const result = this.parseThinkingStream(buffer);
+          if (result.state === 'idle') {
+            responseDiv.innerHTML = this.formatText(result.response);
+          } else if (result.state === 'thinking') {
+            thinkingBlock.style.display = 'block';
+            const md = thinkingBlock.querySelector('.thinking-block-markdown');
+            if (md) md.innerHTML = this.renderMarkdown(result.thinking);
+          } else if (result.state === 'response') {
+            thinkingBlock.style.display = 'block';
+            const md = thinkingBlock.querySelector('.thinking-block-markdown');
+            if (md) md.innerHTML = this.renderMarkdown(result.thinking);
+            responseDiv.innerHTML = this.formatText(result.response);
+          }
+          msgContainer.scrollTop = msgContainer.scrollHeight;
+        });
       }
-          if (event.error) {
+      if (event.error) {
         this.showErrorToast(event.error);
-        body.innerHTML = this.formatText(`**错误：** ${event.error}`);
+        responseDiv.innerHTML = this.formatText(`**错误：** ${event.error}`);
       }
       if (event.done) {
         // Capture precise token usage from backend
@@ -2509,7 +2571,7 @@ window.app = {
 
     await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
 
-    return fullText;
+    return buffer;
   },
 
   generateDemoResponse(text) {
