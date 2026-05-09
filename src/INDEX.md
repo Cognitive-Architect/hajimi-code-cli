@@ -840,30 +840,33 @@ interface/mcp-server/
 
 ---
 
-## Thinking UI 方案C — 进入实施阶段
+## Thinking UI 方案C — Scheme-C Completed
 
-<!-- THINKING-UI-2026-05-07: based on real code audit, scheme-c implementation initiated -->
+<!-- THINKING-UI-2026-04-30: scheme-c implementation completed B-02~B-12 -->
 
-**状态**: 🔄 **方案C 实施中**（Day 1/12，基线测量与文档同步）
+**状态**: ✅ **方案C 已完成**（B-02~B-12，12 天实施周期闭环）
 
-**核心断点**（来自 `investigation-report.md` 实测）：
+**已实现组件**（实测代码验证）：
 
-| 断点 | 位置 | 实测证据 | 严重度 |
-|:---|:---|:---|:---:|
-| Tauri trace_tx 未注入 | `main.rs:1521` | `trace_tx: std::sync::Mutex::new(None)` | 🔴 P0 |
-| AgentLoop trace_tx 孤立 | `agent_loop.rs:85` | `trace_tx: Some(tokio::sync::broadcast::channel(64).0)`，未暴露给 AppState | 🔴 P0 |
-| MCP 模拟数据 | `trace_handler.ts:11` | `DEBT-W2-TRACE-DATA-001`: LoopState sequence generator | 🔴 P0 |
-| Chat 纯动画 | `app.js:2570` | `addThinking()` 三跳动点，无推理文本 | 🟡 P1 |
-| Trace 渲染不足 | `app.js:1560` | `renderTraceCards()` 仅渲染 `step`+`details` | 🟡 P1 |
+| 组件 | 文件位置 | 功能 | SHA |
+|:---|:---|:---|:---|
+| Tauri trace_tx 桥接 | `main.rs:1521` | AgentLoop trace 事件注入 AppState | `874644f` |
+| TraceEvent 扩展 | `agent_loop.rs:32-43` | OperationSummary + thinking_content 字段 | `d564057` |
+| 工具统计聚合 | `events.rs:104` | process_tool_result 累加 files_edited/commands_run | `a44f6dd` |
+| Thinking 区块 | `app.js:2640` | 可折叠 thinking-block + toggle + Markdown 渲染 | `4cc48ab` |
+| LLM Prompt 工程 | `planner.rs` / `reflector.rs` | THINKING_FORMAT_INSTRUCTION + extract_thinking | `d9958e2` |
+| 流式 Thinking | `app.js:2492` | parseThinkingStream 状态机 + rAF 批量更新 | `3e7640e` |
+| 操作摘要条 | `app.js:2719` | createOperationSummaryBar + toggleDetails | `6364fb5` |
+| Diff 预览 | `app.js` | renderDiffPreview (50行限制) + 理由生成 + 实时进度 | `68282db` |
+| 时间线整合 | `app.js` | TimelineEvent 统一模型 + Session Replay 补全 | B-12 |
 
 **基线数据** (实测 `grep` / `wc`):
 | 指标 | 命令 | 实测值 |
 |:---|:---|:---:|
-| `main.rs` 总行数 | `wc -l` | 1588 |
-| `agent_loop.rs` 总行数 | `wc -l` | 327 |
-| `app.js` 总行数 | `wc -l` | 4111 |
-| Rust 源文件总数 | `find src -name "*.rs" | wc -l` | 249 |
+| `app.js` 总行数 | `wc -l` | ~4435 |
+| `style.css` 总行数 | `wc -l` | ~2830 |
 | `cargo check --workspace` | 编译检查 | 0 errors |
+| Agent Core 测试 | `cargo test -p intelligence-agent-core --lib` | 105 passed |
 
 **Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
 

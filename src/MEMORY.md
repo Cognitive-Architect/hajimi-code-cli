@@ -342,6 +342,44 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 | .rs 文件数 | 249 | `find src -name "*.rs" | wc -l` |
 | cargo check | 0 errors | `cargo check --workspace` |
 
+---
+
+## Thinking UI 方案C 债务清偿（B-02~B-12）
+
+**完成日期**: 2026-04-30  
+**基线 SHA**: `874644f` → `68282db` (B-02~B-11) + B-12  
+**状态**: ✅ 12/12 工单全部完成，0 编译 error，105 Agent Core 测试通过
+
+### 变更 SHA 记录
+
+| 工单 | SHA | 描述 | 实测证据 |
+|:---|:---|:---|:---|
+| B-02 | `874644f` | AgentLoop trace_tx 注入 AppState | `main.rs` trace_tx 不为 None |
+| B-05 | `d564057` | TraceEvent 扩展 OperationSummary + thinking_content | `agent_loop.rs` 字段存在 |
+| B-06 | `a44f6dd` | 工具统计聚合 + thinking 提取 | `events.rs:104` process_tool_result |
+| B-07 | `4cc48ab` | 可折叠 thinking-block 组件 | `app.js` createThinkingBlock |
+| B-08 | `d9958e2` | LLM Prompt 工程 + Markdown 渲染 | `planner.rs` THINKING_FORMAT_INSTRUCTION |
+| B-09 | `3e7640e` | 流式 Thinking + token 级解析 | `app.js` parseThinkingStream |
+| B-10 | `6364fb5` | 操作摘要条组件 | `app.js` createOperationSummaryBar |
+| B-11 | `68282db` | Diff 预览 + 理由生成 + 实时进度 | `app.js` renderDiffPreview |
+| B-12 | TBD | 时间线整合 + Replay 补全 + 文档闭环 | `app.js` buildTimelineEvent |
+
+### 已知债务清单
+
+| 债务ID | 描述 | 状态 | 清偿证据 |
+|:---|:---|:---:|:---|
+| DEBT-B04-001 | AgentLoop 真实事件仅在 Tauri WebView 可用 | ⚠️ 开放 | `subscribe_agent_trace` 通道在独立 MCP 进程不可用 |
+| DEBT-B08-001 | stream_chat_with_context 未使用 | ⚠️ 开放 | `mod.rs` 中定义但未调用 |
+| DEBT-B08-002 | renderMarkdown 为自研轻量解析器 | ⚠️ 开放 | 不支持表格/嵌套列表 |
+| DEBT-B09-001 | parseThinkingStream 不处理跨 chunk 标签切分 | ⚠️ 开放 | 概率极低，已备注 |
+| DEBT-B09-002 | streamChat 与 addThinking 短暂双 div | ⚠️ 开放 | B-09 备注，不影响功能 |
+| DEBT-B09-003 | TokenEvent 尚未被后端 provider 使用 | ⚠️ 开放 | 接口已预留 |
+| DEBT-B10-001 | diff 预览仅统计数字 | ⚠️ 开放 | B-11 扩展为虚拟 diff |
+| DEBT-B11-001 | 虚拟 diff 非真实 git diff | ⚠️ 开放 | 后端 ToolResult 仅返回 "edited" |
+| DEBT-B11-002 | 理由生成基于规则匹配非 LLM | ⚠️ 开放 | 确保 <1ms 不阻塞 UI |
+| DEBT-B12-001 | TimelineEvent 未与后端 Checkpoint 绑定 | ⚠️ 开放 | 前端轻量模型，如需持久化需扩展 Checkpoint |
+| DEBT-B12-002 | Replay thinking/operation 为只读回放 | ⚠️ 开放 | toggleDetails 理论上可用，未专门测试交互 |
+
 **关联 Roadmap**:
 - `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
 - `docs/roadmap/Hajimi Thinking UI/THINKING-UI-DETAILED-DAILY-PLAN.md`

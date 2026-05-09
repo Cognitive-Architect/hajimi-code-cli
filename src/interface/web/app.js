@@ -4273,6 +4273,11 @@ window.app = {
         entry.style.cssText = 'padding:4px 8px;margin:4px 0;background:var(--bg-hover);border-radius:4px;font-size:11px;border-left:3px solid var(--fg-red);';
         entry.innerHTML = `<strong>Replay [${this.replayIndex + 1}/${this.replayEvents.length}]</strong> ${this.escapeHtml(ev.step_type)}: ${this.escapeHtml(ev.summary || '').substring(0, 100)}`;
         panel.insertBefore(entry, panel.firstChild);
+        if (ev.thinking_content) this.renderReplayThinking(entry, ev.thinking_content);
+        if (ev.operation_summary) {
+          const bar = this.createOperationSummaryBar(ev.operation_summary, ev.tool_name);
+          if (bar) { bar.style.marginTop = '4px'; entry.appendChild(bar); }
+        }
       }
     }
   },
@@ -4287,6 +4292,46 @@ window.app = {
   updateReplayStatus() {
     const el = document.getElementById('replayStatus');
     if (el) el.textContent = `${this.replayIndex + 1} / ${this.replayEvents.length}`;
+  },
+
+  // ============================================================
+  // Timeline Event Model (B-12/12)
+  // ============================================================
+
+  /// Build a unified TimelineEvent from type and payload.
+  /// Types: user_message, agent_thinking, agent_action, trace_step, tool_result.
+  buildTimelineEvent(type, payload) {
+    return {
+      id: 'tl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      timestamp: Date.now(),
+      type: type || 'trace_step',
+      payload: payload || {},
+      source: payload?.agent_id || 'unknown'
+    };
+  },
+
+  /// Convert traceEvents into a unified timeline, optionally filtered.
+  /// filter: 'all' | 'thinking' | 'action'.
+  getTimelineEvents(filter) {
+    const events = this.traceEvents.map(ev => {
+      let type = 'trace_step';
+      if (ev.thinking_content) type = 'agent_thinking';
+      else if (ev.operation_summary) type = 'agent_action';
+      else if (ev.tool_name) type = 'tool_result';
+      return this.buildTimelineEvent(type, ev);
+    });
+    if (filter === 'thinking') return events.filter(e => e.type === 'agent_thinking');
+    if (filter === 'action') return events.filter(e => e.type === 'agent_action' || e.type === 'tool_result');
+    return events;
+  },
+
+  /// Render thinking content inside a Replay entry (B-12/12).
+  renderReplayThinking(container, thinking) {
+    if (!container || !thinking) return;
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-top:4px;padding:4px;border-left:2px solid var(--fg-cyan);font-size:11px;color:var(--fg-dim);';
+    div.innerHTML = `<strong>Thinking:</strong> ${this.renderMarkdown(thinking.substring(0, 200))}`;
+    container.appendChild(div);
   },
 
   async updateMetrics() {
