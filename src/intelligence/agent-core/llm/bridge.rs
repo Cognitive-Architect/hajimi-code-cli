@@ -48,8 +48,15 @@ impl PlannerLlmBridge {
                 self.clients.get(&entry.value).unwrap_or(&self.inner)
             } else { &self.inner }
         } else { &self.inner };
+        let prompt = format!("{}\n\n{}", crate::planner::THINKING_FORMAT_INSTRUCTION, prompt);
         let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
-        collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))
+        let text = collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))?;
+        if let Some(thinking) = crate::planner::extract_thinking(&text) {
+            if let Some(ref bb) = self.blackboard {
+                bb.write("__hajimi_thinking", &thinking, "planner").await;
+            }
+        }
+        Ok(crate::planner::remove_thinking_tags(&text))
     }
 }
 
@@ -94,8 +101,15 @@ impl ReflectorLlmBridge {
                 self.clients.get(&entry.value).unwrap_or(&self.inner)
             } else { &self.inner }
         } else { &self.inner };
+        let prompt = format!("{}\n\n{}", crate::reflector::THINKING_FORMAT_INSTRUCTION, prompt);
         let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
-        collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))
+        let text = collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))?;
+        if let Some(thinking) = crate::reflector::extract_thinking(&text) {
+            if let Some(ref bb) = self.blackboard {
+                bb.write("__hajimi_thinking", &thinking, "reflector").await;
+            }
+        }
+        Ok(crate::planner::remove_thinking_tags(&text))
     }
 }
 

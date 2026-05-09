@@ -1553,8 +1553,8 @@ window.app = {
             const activeThinking = document.querySelector('.chat-message.ai .thinking-block');
             if (activeThinking) {
               activeThinking.style.display = 'block';
-              const code = activeThinking.querySelector('.thinking-block-body code');
-              if (code) code.textContent = event.thinking_content;
+              const md = activeThinking.querySelector('.thinking-block-markdown');
+              if (md) md.innerHTML = this.renderMarkdown(event.thinking_content);
             }
           }
         }
@@ -2614,7 +2614,7 @@ window.app = {
         <button class="thinking-block-toggle" title="Toggle" aria-label="Toggle">▼</button>
       </div>
       <div class="thinking-block-body">
-        <pre><code>${this.escapeHtml(content || '')}</code></pre>
+        <div class="thinking-block-markdown">${this.renderMarkdown(content || '')}</div>
       </div>`;
     const btn = block.querySelector('.thinking-block-toggle');
     btn.addEventListener('click', () => this.toggleThinking(block));
@@ -2642,8 +2642,8 @@ window.app = {
     if (!el) return;
     const block = el.querySelector('.thinking-block');
     if (!block) return;
-    const code = block.querySelector('.thinking-block-body code');
-    if (code) code.textContent = content || '';
+    const md = block.querySelector('.thinking-block-markdown');
+    if (md) md.innerHTML = this.renderMarkdown(content || '');
     block.style.display = 'block';
   },
 
@@ -3640,6 +3640,50 @@ window.app = {
     html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
     html = html.replace(/\n/g, '<br>');
     return html;
+  },
+
+  /// Render Markdown to HTML with XSS-safe URL sanitization (B-08/12).
+  renderMarkdown(text) {
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^# (.+)$/gm, '<h3>$1</h3>');
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Inline code
+    html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+    // Code blocks
+    html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+    // Unordered lists
+    html = html.replace(/(?:^|\n)(?:[-*] (.+)(?:\n|$))+/g, (match) => {
+      const items = match.trim().split(/\n/).map(line => {
+        const m = line.match(/^[-*] (.+)$/);
+        return m ? `<li>${m[1]}</li>` : '';
+      }).join('');
+      return `<ul>${items}</ul>`;
+    });
+    // Links with URL sanitization
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+      const safe = this.sanitizeUrl(url);
+      return safe ? `<a href="${safe}" target="_blank" rel="noopener">${label}</a>` : `<span>${label}</span>`;
+    });
+    // Line breaks
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  },
+
+  /// Sanitize URL to prevent javascript: XSS (B-08/12).
+  sanitizeUrl(url) {
+    if (!url) return null;
+    const trimmed = url.trim().toLowerCase();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
+      return url.trim();
+    }
+    return null;
   },
 
   // ============================================================

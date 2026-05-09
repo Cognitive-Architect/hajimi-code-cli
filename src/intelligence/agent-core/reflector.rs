@@ -27,6 +27,9 @@ pub fn extract_thinking(text: &str) -> Option<String> {
     }
 }
 
+/// Format instruction appended to LLM prompts to elicit structured thinking output.
+pub const THINKING_FORMAT_INSTRUCTION: &str = r#"Before responding, wrap your reasoning in <thinking>...</thinking> tags, then provide your final answer in <response>...</response> tags."#;
+
 /// Maximum reflection iterations to prevent infinite loops.
 const MAX_REFLECTION_STEPS: usize = 10;
 /// Token budget for reflection to prevent resource exhaustion.

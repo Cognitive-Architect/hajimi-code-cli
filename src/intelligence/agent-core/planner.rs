@@ -183,6 +183,34 @@ pub fn extract_thinking(text: &str) -> Option<String> {
     }
 }
 
+/// Format instruction appended to LLM prompts to elicit structured thinking output.
+pub const THINKING_FORMAT_INSTRUCTION: &str = r#"Before responding, wrap your reasoning in <thinking>...</thinking> tags, then provide your final answer in <response>...</response> tags."#;
+
+/// Remove <thinking>...</thinking> blocks from text, returning clean content.
+/// If <response>...</response> tags are present, returns only the response content.
+pub fn remove_thinking_tags(text: &str) -> String {
+    let mut result = text.to_string();
+    // Remove thinking blocks
+    while let Some(start) = result.find("<thinking>") {
+        if let Some(end) = result.find("</thinking>") {
+            if end > start {
+                result.replace_range(start..end + 11, "");
+                continue;
+            }
+        }
+        break;
+    }
+    // Extract response content if present
+    if let Some(start) = result.find("<response>") {
+        if let Some(end) = result.find("</response>") {
+            if end > start {
+                return result[start + 10..end].trim().to_string();
+            }
+        }
+    }
+    result.trim().to_string()
+}
+
 /// Extract potential symbol names (PascalCase / camelCase / snake_case) from a goal description.
 /// Used by plan_with_ast() to inject AST query hints into the blackboard.
 fn extract_symbol_candidates(description: &str) -> Vec<String> {

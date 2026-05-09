@@ -363,3 +363,6 @@ pub enum LoopOutcome { InProgress, Success, Aborted, BudgetExceeded, ActFailed(S
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DecisionOutcome { Continue, Complete, Abort }
+
+/// Re-export thinking extraction for AgentLoop consumers (B-08/12).
+pub use crate::planner::extract_thinking as extract_thinking_content;
