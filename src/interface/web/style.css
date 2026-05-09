@@ -2786,3 +2786,69 @@ textarea:disabled {
   background: var(--diff-del-bg);
   color: var(--fg-red);
 }
+
+/* ── 22. Operation Summary Bar Extensions (B-11/12) ── */
+.operation-summary-reason { margin-left: var(--space-2);
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-style: italic;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-summary-progress { margin-left: var(--space-2);
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  min-width: 48px;
+  text-align: right;
+}
+
+.operation-summary-progress.active { color: var(--fg-cyan);
+  animation: progress-pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.operation-summary-diff-preview { margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diff-preview-line { padding: 1px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-preview-line.diff-add { background: var(--diff-add-bg); color: var(--fg-green); }
+.diff-preview-line.diff-del { background: var(--diff-del-bg); color: var(--fg-red); }
+.diff-preview-line.diff-hunk { color: var(--fg-cyan); }
+
+.diff-preview-more { padding: var(--space-1) 0;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.diff-preview-footer { padding-top: var(--space-2);
+  text-align: right;
+}
+
+.diff-preview-link { color: var(--fg-cyan);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: opacity 150ms ease;
+}
+
+.diff-preview-link:hover { opacity: 0.8;
+}

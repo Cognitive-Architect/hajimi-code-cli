@@ -1558,7 +1558,15 @@ window.app = {
             }
           }
           if (event.operation_summary) {
-            this.updateOperationSummary(event.operation_summary);
+            this.updateOperationSummary(event.operation_summary, event.tool_name);
+          }
+          if (event.step_type === 'Act') {
+            const lower = (event.tool_name || '').toLowerCase();
+            let status = '执行中...';
+            if (lower.includes('edit')) status = '编辑中...';
+            else if (lower.includes('delete')) status = '删除中...';
+            else if (lower.includes('create')) status = '创建中...';
+            this.updateOperationProgress(status);
           }
         }
       };
@@ -2718,7 +2726,7 @@ window.app = {
 
   /// Create a Codex-style operation summary bar showing tool execution stats.
   /// Returns null if all stats are zero (hides the bar when no ops performed).
-  createOperationSummaryBar(summary) {
+  createOperationSummaryBar(summary, toolName) {
     const filesEdited = summary.files_edited || 0;
     const filesCreated = summary.files_created || 0;
     const filesDeleted = summary.files_deleted || 0;
@@ -2729,25 +2737,30 @@ window.app = {
 
     const bar = document.createElement('div');
     bar.className = 'operation-summary-bar';
+    bar._summary = summary;
     const parts = [];
     if (filesEdited > 0) parts.push(`已编辑 ${filesEdited} 个文件`);
     if (filesCreated > 0) parts.push(`已创建 ${filesCreated} 个文件`);
     if (filesDeleted > 0) parts.push(`已删除 ${filesDeleted} 个文件`);
     if (commandsRun > 0) parts.push(`已运行 ${commandsRun} 条命令`);
     const summaryText = parts.join('，');
+    const reason = this.generateOperationReason(summary, toolName);
 
     bar.innerHTML = `
       <div class="operation-summary-header">
         <span class="operation-summary-icon">⚡</span>
         <span class="operation-summary-text">${this.escapeHtml(summaryText)}</span>
+        ${reason ? `<span class="operation-summary-reason">${this.escapeHtml(reason)}</span>` : ''}
+        <span class="operation-summary-progress"></span>
         <button class="operation-summary-toggle" title="展开/折叠">▼</button>
       </div>
-      <div class="operation-summary-details">
+      <div class="operation-summary-details" data-lazy="true">
         <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>编辑: ${filesEdited}</span></div>
         <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>创建: ${filesCreated}</span></div>
         <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-del">-</span><span>删除: ${filesDeleted}</span></div>
         <div class="operation-summary-stat"><span class="operation-summary-stat-label">⌘</span><span>命令: ${commandsRun}</span></div>
         <div class="operation-summary-stat"><span class="operation-summary-stat-label">≡</span><span>Diff 行数: ${totalDiffLines}</span></div>
+        <div class="operation-summary-diff-preview"></div>
       </div>`;
 
     const toggle = bar.querySelector('.operation-summary-toggle');
@@ -2759,6 +2772,7 @@ window.app = {
   },
 
   /// Toggle expand/collapse of operation summary details panel.
+  /// Lazy-loads diff preview on first expand (B-11/12).
   toggleDetails(bar) {
     const details = bar.querySelector('.operation-summary-details');
     const toggle = bar.querySelector('.operation-summary-toggle');
@@ -2769,12 +2783,16 @@ window.app = {
     } else {
       details.classList.add('visible');
       toggle.textContent = '▲';
+      if (details.dataset.lazy === 'true') {
+        this.renderDiffPreview(details.querySelector('.operation-summary-diff-preview'), bar._summary);
+        details.dataset.lazy = 'false';
+      }
     }
   },
 
   /// Update or create the operation summary bar in the most recent AI message.
   /// Removes existing bar before inserting a new one to avoid duplicates.
-  updateOperationSummary(summary) {
+  updateOperationSummary(summary, toolName) {
     if (!summary || typeof summary !== 'object') return;
     const container = document.getElementById('aiChatMessages');
     if (!container) return;
@@ -2784,8 +2802,73 @@ window.app = {
     if (!body) return;
     const existing = body.querySelector('.operation-summary-bar');
     if (existing) existing.remove();
-    const bar = this.createOperationSummaryBar(summary);
+    const bar = this.createOperationSummaryBar(summary, toolName);
     if (bar) body.appendChild(bar);
+  },
+
+  /// Generate natural-language operation reason from stats and tool name (B-11/12).
+  generateOperationReason(summary, toolName) {
+    const edited = summary.files_edited || 0;
+    const created = summary.files_created || 0;
+    const deleted = summary.files_deleted || 0;
+    const commands = summary.commands_run || 0;
+    const parts = [];
+    if (edited > 0) parts.push(`编辑 ${edited} 个文件`);
+    if (created > 0) parts.push(`创建 ${created} 个新文件`);
+    if (deleted > 0) parts.push(`删除 ${deleted} 个旧文件`);
+    if (commands > 0) parts.push(`运行 ${commands} 条命令`);
+    if (parts.length === 0) return '';
+    let reason = '我准备' + parts.join('，');
+    if (toolName) {
+      const lower = (toolName + '').toLowerCase();
+      if (lower.includes('edit')) reason += '以优化代码结构';
+      else if (lower.includes('delete')) reason += '以清理冗余代码';
+      else if (lower.includes('create')) reason += '以添加新功能';
+      else if (lower.includes('test')) reason += '以验证正确性';
+      else reason += '以完成任务';
+    } else {
+      reason += '以完成任务';
+    }
+    return reason;
+  },
+
+  /// Render a virtual diff preview inside the operation summary bar (B-11/12).
+  /// Limits output to 50 lines; excess hidden behind a "view full file" link.
+  renderDiffPreview(container, summary) {
+    if (!container || !summary) return;
+    const edited = summary.files_edited || 0;
+    const created = summary.files_created || 0;
+    const deleted = summary.files_deleted || 0;
+    const lines = [];
+    for (let i = 0; i < created; i++) lines.push(`+ 新建文件 #${i + 1}`);
+    for (let i = 0; i < edited; i++) lines.push(`~ 修改文件 #${i + 1}`);
+    for (let i = 0; i < deleted; i++) lines.push(`- 删除文件 #${i + 1}`);
+    const limit = 50;
+    const visible = lines.slice(0, limit);
+    let html = visible.map(l => {
+      const cls = l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : 'diff-hunk';
+      return `<div class="diff-preview-line ${cls}">${this.escapeHtml(l)}</div>`;
+    }).join('');
+    if (lines.length > limit) {
+      html += `<div class="diff-preview-more">... 以及 ${lines.length - limit} 行更多</div>`;
+    }
+    html += `<div class="diff-preview-footer"><span class="diff-preview-link">查看完整文件</span></div>`;
+    container.innerHTML = html;
+  },
+
+  /// Update real-time progress text on the active operation summary bar (B-11/12).
+  updateOperationProgress(text) {
+    if (!text) return;
+    const container = document.getElementById('aiChatMessages');
+    if (!container) return;
+    const lastAi = container.querySelector('.chat-message.ai:last-child');
+    if (!lastAi) return;
+    const bar = lastAi.querySelector('.operation-summary-bar');
+    if (!bar) return;
+    const progress = bar.querySelector('.operation-summary-progress');
+    if (!progress) return;
+    progress.textContent = text;
+    progress.classList.add('active');
   },
 
   async initWorkspace() {
