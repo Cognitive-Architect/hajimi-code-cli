@@ -26,6 +26,8 @@ window.app = {
   },
   chatContextFiles: [],
   chatMessages: [],
+  chatSessions: [],
+  activeSessionId: null,
   autoCompact: true,
   isAutoCompacting: false,
   tokenStats: { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 },
@@ -61,6 +63,7 @@ window.app = {
     this.initWorkspace().then(() => {
       this.loadFileTree();
     });
+    this.loadChatSessions();
     this.loadProviders();
     this.setupModelPicker();
     this.setupProviderSettings();
@@ -2091,6 +2094,11 @@ window.app = {
       this.newChatSession();
     });
 
+    const newSessionBtn = document.getElementById('newSessionBtn');
+    if (newSessionBtn) {
+      newSessionBtn.addEventListener('click', () => this.newChatSession());
+    }
+
     this.updateTokenDisplay();
   },
 
@@ -2130,6 +2138,8 @@ window.app = {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.saveChatSessions();
+        this.renderSessionList();
       }
       return;
     }
@@ -2179,6 +2189,8 @@ window.app = {
         this.updateTokenDisplay();
         this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
+        this.saveChatSessions();
+        this.renderSessionList();
       }
     } else {
       // Fallback to local demo
@@ -2193,6 +2205,8 @@ window.app = {
         this.updateTokenDisplay();
         this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
+        this.saveChatSessions();
+        this.renderSessionList();
       }, 1200);
     }
   },
@@ -2883,12 +2897,131 @@ window.app = {
   },
 
   newChatSession() {
+    // Save current session before creating new one
+    if (this.chatMessages.length > 0 && this.activeSessionId) {
+      const session = this.chatSessions.find(s => s.id === this.activeSessionId);
+      if (session) {
+        session.messages = [...this.chatMessages];
+        session.updatedAt = Date.now();
+      }
+    }
+    this.activeSessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     this.chatMessages = [];
     this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
     this.cumulativeStats = { promptTokens: 0, completionTokens: 0, requestCount: 0 };
     document.getElementById('aiChatMessages').innerHTML = '';
     this.addChatMessage('ai', '新会话已开始。有什么可以帮您的？');
     this.updateTokenDisplay();
+    // Add to sessions list
+    this.chatSessions.unshift({
+      id: this.activeSessionId,
+      title: '新会话',
+      preview: '有什么可以帮您的？',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    this.saveChatSessions();
+    this.renderSessionList();
+  },
+
+  loadChatSessions() {
+    try {
+      const raw = localStorage.getItem('hajimi_chat_sessions');
+      if (raw) {
+        this.chatSessions = JSON.parse(raw);
+        if (this.chatSessions.length > 0) {
+          // Restore the most recent session
+          const latest = this.chatSessions[0];
+          this.activeSessionId = latest.id;
+          this.chatMessages = latest.messages || [];
+          this.renderChatMessages();
+          this.renderSessionList();
+        } else {
+          this.newChatSession();
+        }
+      } else {
+        this.newChatSession();
+      }
+    } catch (e) {
+      console.error('loadChatSessions error:', e);
+      this.newChatSession();
+    }
+  },
+
+  saveChatSessions() {
+    try {
+      // Update current session messages before saving
+      if (this.activeSessionId) {
+        const session = this.chatSessions.find(s => s.id === this.activeSessionId);
+        if (session) {
+          session.messages = [...this.chatMessages];
+          session.updatedAt = Date.now();
+          // Update title/preview from first user message or assistant response
+          const firstUser = this.chatMessages.find(m => m.role === 'user');
+          const firstAi = this.chatMessages.find(m => m.role === 'assistant');
+          if (firstUser) {
+            session.title = firstUser.content.slice(0, 30);
+            session.preview = firstUser.content.slice(0, 60);
+          } else if (firstAi) {
+            session.title = firstAi.content.slice(0, 30);
+            session.preview = firstAi.content.slice(0, 60);
+          }
+        }
+      }
+      localStorage.setItem('hajimi_chat_sessions', JSON.stringify(this.chatSessions));
+    } catch (e) {
+      console.error('saveChatSessions error:', e);
+    }
+  },
+
+  switchSession(id) {
+    // Save current session first
+    if (this.activeSessionId) {
+      const current = this.chatSessions.find(s => s.id === this.activeSessionId);
+      if (current) {
+        current.messages = [...this.chatMessages];
+        current.updatedAt = Date.now();
+      }
+    }
+    // Switch to target session
+    const target = this.chatSessions.find(s => s.id === id);
+    if (target) {
+      this.activeSessionId = id;
+      this.chatMessages = target.messages || [];
+      this.renderChatMessages();
+      this.updateTokenDisplay();
+      this.renderSessionList();
+      this.saveChatSessions();
+    }
+  },
+
+  renderChatMessages() {
+    const container = document.getElementById('aiChatMessages');
+    container.innerHTML = '';
+    for (const msg of this.chatMessages) {
+      this.addChatMessage(msg.role, msg.content, false);
+    }
+  },
+
+  renderSessionList() {
+    const list = document.getElementById('sessionList');
+    if (!list) return;
+    list.innerHTML = this.chatSessions.map(s => `
+      <div class="session-item ${s.id === this.activeSessionId ? 'active' : ''}" data-session="${s.id}">
+        <div class="session-title">${this.escapeHtml(s.title || '会话')}</div>
+        <div class="session-preview">${this.escapeHtml(s.preview || '')}</div>
+      </div>
+    `).join('');
+    // Re-bind click handlers
+    list.querySelectorAll('.session-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.session;
+        if (id && id !== this.activeSessionId) {
+          this.switchSession(id);
+        }
+      });
+    });
   },
 
   // ============================================================

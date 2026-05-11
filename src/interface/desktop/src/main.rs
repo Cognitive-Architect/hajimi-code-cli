@@ -712,8 +712,8 @@ fn get_providers(workspace_path: Option<String>, state: tauri::State<'_, AppStat
 }
 
 #[tauri::command]
-fn get_current_workspace() -> Option<String> {
-    std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())
+fn get_current_workspace(app_handle: tauri::AppHandle) -> Option<String> {
+    get_workspace_dir(&app_handle).ok().map(|p| p.to_string_lossy().to_string())
 }
 
 /// # Safety: API key from OS keyring, response validated via real HTTP before UI green status
