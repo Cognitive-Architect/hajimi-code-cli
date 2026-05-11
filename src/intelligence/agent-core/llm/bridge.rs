@@ -49,7 +49,26 @@ impl PlannerLlmBridge {
             } else { &self.inner }
         } else { &self.inner };
         let prompt = format!("{}\n\n{}", crate::planner::THINKING_FORMAT_INSTRUCTION, prompt);
-        let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
+
+        // Phase 1 (AGENT-PROMPT-CORE-001): Inject Agent Persona as system prompt
+        let mut stream = if crate::prompts::is_persona_enabled() {
+            let messages = vec![
+                engine_llm_core::ChatMessage {
+                    role: "system".into(),
+                    content: crate::prompts::load_agent_persona().into(),
+                    timestamp: None,
+                },
+                engine_llm_core::ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                    timestamp: None,
+                },
+            ];
+            client.stream_chat_with_context(messages, None).await
+        } else {
+            client.stream_chat(prompt).await
+        }.map_err(|e| ReplError::Session(e.to_string()))?;
+
         let text = collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))?;
         if let Some(thinking) = crate::planner::extract_thinking(&text) {
             if let Some(ref bb) = self.blackboard {
@@ -102,7 +121,26 @@ impl ReflectorLlmBridge {
             } else { &self.inner }
         } else { &self.inner };
         let prompt = format!("{}\n\n{}", crate::reflector::THINKING_FORMAT_INSTRUCTION, prompt);
-        let mut stream = client.stream_chat(prompt).await.map_err(|e| ReplError::Session(e.to_string()))?;
+
+        // Phase 1 (AGENT-PROMPT-CORE-001): Inject Agent Persona as system prompt
+        let mut stream = if crate::prompts::is_persona_enabled() {
+            let messages = vec![
+                engine_llm_core::ChatMessage {
+                    role: "system".into(),
+                    content: crate::prompts::load_agent_persona().into(),
+                    timestamp: None,
+                },
+                engine_llm_core::ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                    timestamp: None,
+                },
+            ];
+            client.stream_chat_with_context(messages, None).await
+        } else {
+            client.stream_chat(prompt).await
+        }.map_err(|e| ReplError::Session(e.to_string()))?;
+
         let text = collect_stream(&mut stream).await.map_err(|e| ReplError::Session(e.to_string()))?;
         if let Some(thinking) = crate::reflector::extract_thinking(&text) {
             if let Some(ref bb) = self.blackboard {

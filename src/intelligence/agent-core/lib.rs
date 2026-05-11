@@ -15,6 +15,7 @@ pub mod agent_loop_builder;
 pub mod ports;
 pub mod degrade;
 pub mod llm;
+pub mod prompts;
 pub mod swarm_delegate;
 pub mod multi_worker_aggregator;
 pub mod worker_lifecycle_manager;
