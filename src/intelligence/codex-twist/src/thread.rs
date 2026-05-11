@@ -154,9 +154,16 @@ impl Thread {
     }
 
     /// 获取系统消息
+    /// Phase 1 (AGENT-PROMPT-CORE-001): Default persona replaced from generic assistant
+    /// to Hajimi IDE Agent context-aware description.
     pub fn system_message(&self) -> String {
         self.config.system_prompt.clone()
-            .unwrap_or_else(|| "You are a helpful AI assistant.".to_string())
+            .unwrap_or_else(|| {
+                "You are Hajimi Agent Core, a local-first autonomous software development agent running inside Hajimi IDE. \
+                 You help users complete software engineering tasks through observation, planning, controlled tool use, and reflection. \
+                 You are not a generic chatbot — files, tools, tests, Git state, LSP context, memory, and governance rules matter in your decisions."
+                    .to_string()
+            })
     }
 
     /// 更新配置

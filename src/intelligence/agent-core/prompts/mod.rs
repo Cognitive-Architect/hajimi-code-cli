@@ -8,9 +8,10 @@ pub fn load_agent_persona() -> &'static str {
 }
 
 /// Feature-gate for Persona injection.
-/// TODO: Connect to runtime config in Phase 2 (AGENT-PROMPT-CORE-001).
+/// Reads from environment variable `HAJIMI_PROMPT_PERSONA_ENABLED`.
+/// Defaults to `true` if unset.
 pub fn is_persona_enabled() -> bool {
-    // When config integration is ready, read from:
-    // config.agent_core.prompt_persona_enabled.unwrap_or(true)
-    true
+    std::env::var("HAJIMI_PROMPT_PERSONA_ENABLED")
+        .map(|v| v != "false" && v != "0")
+        .unwrap_or(true)
 }
