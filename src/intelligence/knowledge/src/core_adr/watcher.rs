@@ -10,16 +10,24 @@ pub struct AdrWatcher {
 
 impl AdrWatcher {
     pub async fn watch_adr_dir<F>(dir: &Path, callback: F) -> Result<Self>
-    where F: Fn(notify::Event) + Send + 'static {
-        if !dir.exists() { std::fs::create_dir_all(dir).map_err(AdrError::Io)?; }
+    where
+        F: Fn(notify::Event) + Send + 'static,
+    {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir).map_err(AdrError::Io)?;
+        }
         let watcher = RecommendedWatcher::new(
             move |res: std::result::Result<notify::Event, notify::Error>| {
-                if let Ok(event) = res { callback(event); }
+                if let Ok(event) = res {
+                    callback(event);
+                }
             },
             Config::default().with_poll_interval(Duration::from_millis(500)),
-        ).map_err(|e| AdrError::Io(std::io::Error::other(e)))?;
+        )
+        .map_err(|e| AdrError::Io(std::io::Error::other(e)))?;
         let mut watcher = watcher;
-        watcher.watch(dir, RecursiveMode::NonRecursive)
+        watcher
+            .watch(dir, RecursiveMode::NonRecursive)
             .map_err(|e| AdrError::Io(std::io::Error::other(e)))?;
         Ok(Self { _watcher: watcher })
     }
@@ -44,7 +52,8 @@ mod tests {
         let counter_clone = counter.clone();
         let _watcher = AdrWatcher::watch_adr_dir(tmp.path(), move |_event| {
             counter_clone.fetch_add(1, Ordering::SeqCst);
-        }).await?;
+        })
+        .await?;
         sleep(Duration::from_millis(100)).await;
         assert!(tmp.path().exists());
         Ok(())

@@ -8,7 +8,7 @@
 
 use crate::agent_loop::{LoopState, TraceEvent, TraceStepType};
 use crate::checkpoint::CheckpointManager;
-use crate::governance::{AgentGovernance, GovernanceRequest, ApprovalLevel, Decision};
+use crate::governance::{AgentGovernance, ApprovalLevel, Decision, GovernanceRequest};
 use crate::{AgentContext, AgentId};
 use chimera_repl::traits::{ReplError, ReplResult};
 use serde::{Deserialize, Serialize};
@@ -95,12 +95,19 @@ impl EditApplier {
         self
     }
 
-    pub fn with_resource_monitor(mut self, monitor: Arc<crate::resource_monitor::ResourceMonitor>) -> Self {
+    pub fn with_resource_monitor(
+        mut self,
+        monitor: Arc<crate::resource_monitor::ResourceMonitor>,
+    ) -> Self {
         self.resource_monitor = Some(monitor);
         self
     }
 
-    pub async fn propose(&self, mut edit: ProposedEdit, agent_id: &AgentId) -> ReplResult<ProposedEdit> {
+    pub async fn propose(
+        &self,
+        mut edit: ProposedEdit,
+        agent_id: &AgentId,
+    ) -> ReplResult<ProposedEdit> {
         let req = GovernanceRequest {
             requester: agent_id.clone(),
             action_type: "propose_edit".to_string(),
@@ -109,17 +116,36 @@ impl EditApplier {
             level: ApprovalLevel::Advisory,
         };
 
-        match self.governance.approve(&self.context, &req).await.map_err(|e| ReplError::Session(format!("Governance: {}", e)))? {
+        match self
+            .governance
+            .approve(&self.context, &req)
+            .await
+            .map_err(|e| ReplError::Session(format!("Governance: {}", e)))?
+        {
             Decision::Approved => {
                 *self.current_state.lock().await = EditState::Proposed;
-                self.emit_edit_trace(TraceStepType::EditProposed, &edit.summary, agent_id, edit.confidence_score, edit.hunks.len()).await;
-                info!("Edit proposed: {} ({} hunks, confidence {:.2})", edit.id, edit.hunks.len(), edit.confidence_score);
+                self.emit_edit_trace(
+                    TraceStepType::EditProposed,
+                    &edit.summary,
+                    agent_id,
+                    edit.confidence_score,
+                    edit.hunks.len(),
+                )
+                .await;
+                info!(
+                    "Edit proposed: {} ({} hunks, confidence {:.2})",
+                    edit.id,
+                    edit.hunks.len(),
+                    edit.confidence_score
+                );
                 if edit.id.is_empty() {
                     edit.id = format!("edit_{}", uuid::Uuid::new_v4().simple());
                 }
                 Ok(edit)
             }
-            _ => Err(ReplError::Session("Edit proposal rejected by governance".to_string())),
+            _ => Err(ReplError::Session(
+                "Edit proposal rejected by governance".to_string(),
+            )),
         }
     }
 
@@ -128,14 +154,33 @@ impl EditApplier {
         if !matches!(state, EditState::Proposed) {
             return Err(ReplError::Session("Invalid state for review".to_string()));
         }
-        let next = if accept { EditState::Reviewed } else { EditState::Rejected };
+        let next = if accept {
+            EditState::Reviewed
+        } else {
+            EditState::Rejected
+        };
         *self.current_state.lock().await = next;
-        let step_type = if accept { TraceStepType::EditApplied } else { TraceStepType::EditRejected };
-        self.emit_edit_trace(step_type, "review decision", agent_id, if accept { 0.9 } else { 0.0 }, 0).await;
+        let step_type = if accept {
+            TraceStepType::EditApplied
+        } else {
+            TraceStepType::EditRejected
+        };
+        self.emit_edit_trace(
+            step_type,
+            "review decision",
+            agent_id,
+            if accept { 0.9 } else { 0.0 },
+            0,
+        )
+        .await;
         Ok(accept)
     }
 
-    pub async fn apply(&self, proposed: &ProposedEdit, agent_id: &AgentId) -> ReplResult<AppliedEdit> {
+    pub async fn apply(
+        &self,
+        proposed: &ProposedEdit,
+        agent_id: &AgentId,
+    ) -> ReplResult<AppliedEdit> {
         let state = *self.current_state.lock().await;
         if !matches!(state, EditState::Reviewed) {
             return Err(ReplError::Session("Must review before apply".to_string()));
@@ -145,7 +190,8 @@ impl EditApplier {
         if proposed.hunks.len() > MAX_HUNKS_PER_EDIT {
             return Err(ReplError::Session(format!(
                 "Edit has {} hunks, exceeding maximum {}",
-                proposed.hunks.len(), MAX_HUNKS_PER_EDIT
+                proposed.hunks.len(),
+                MAX_HUNKS_PER_EDIT
             )));
         }
 
@@ -153,19 +199,36 @@ impl EditApplier {
             requester: agent_id.clone(),
             action_type: "apply_edit".to_string(),
             risk_score: 0.1,
-            description: format!("Apply edit with {} hunks: {}", proposed.hunks.len(), proposed.summary),
+            description: format!(
+                "Apply edit with {} hunks: {}",
+                proposed.hunks.len(),
+                proposed.summary
+            ),
             level: ApprovalLevel::Auto,
         };
 
-        match self.governance.approve(&self.context, &req).await.map_err(|e| ReplError::Session(format!("Governance: {}", e)))? {
+        match self
+            .governance
+            .approve(&self.context, &req)
+            .await
+            .map_err(|e| ReplError::Session(format!("Governance: {}", e)))?
+        {
             Decision::Approved => {}
-            _ => return Err(ReplError::Session("Apply rejected by governance".to_string())),
+            _ => {
+                return Err(ReplError::Session(
+                    "Apply rejected by governance".to_string(),
+                ))
+            }
         }
 
         // Group hunks by file and apply each file atomically
-        let mut file_hunks: std::collections::HashMap<String, Vec<&EditHunk>> = std::collections::HashMap::new();
+        let mut file_hunks: std::collections::HashMap<String, Vec<&EditHunk>> =
+            std::collections::HashMap::new();
         for hunk in &proposed.hunks {
-            file_hunks.entry(hunk.file_path.clone()).or_default().push(hunk);
+            file_hunks
+                .entry(hunk.file_path.clone())
+                .or_default()
+                .push(hunk);
         }
 
         // Concurrency guard: mark files as being edited
@@ -173,7 +236,10 @@ impl EditApplier {
             let mut active = self.active_edits.lock().await;
             for path in file_hunks.keys() {
                 if active.contains(path) {
-                    return Err(ReplError::Session(format!("Concurrent edit in progress for {}", path)));
+                    return Err(ReplError::Session(format!(
+                        "Concurrent edit in progress for {}",
+                        path
+                    )));
                 }
                 active.insert(path.clone());
             }
@@ -184,7 +250,12 @@ impl EditApplier {
         // Always release active edits
         {
             let mut active = self.active_edits.lock().await;
-            for path in proposed.hunks.iter().map(|h| &h.file_path).collect::<HashSet<_>>() {
+            for path in proposed
+                .hunks
+                .iter()
+                .map(|h| &h.file_path)
+                .collect::<HashSet<_>>()
+            {
                 active.remove(path);
             }
         }
@@ -215,7 +286,9 @@ impl EditApplier {
                 if meta.len() as usize > MAX_FILE_SIZE_BYTES {
                     return Err(ReplError::Session(format!(
                         "File {} is {} bytes, exceeding maximum {}",
-                        file_path, meta.len(), MAX_FILE_SIZE_BYTES
+                        file_path,
+                        meta.len(),
+                        MAX_FILE_SIZE_BYTES
                     )));
                 }
             }
@@ -241,7 +314,10 @@ impl EditApplier {
             // Verify all hunks match before applying any
             for hunk in &hunks {
                 if let Err(e) = verify_hunk_match(&lines, hunk) {
-                    return Err(ReplError::Session(format!("Conflict in {}: {}", file_path, e)));
+                    return Err(ReplError::Session(format!(
+                        "Conflict in {}: {}",
+                        file_path, e
+                    )));
                 }
             }
 
@@ -269,18 +345,27 @@ impl EditApplier {
             let new_content = modified.join("\n");
             let maybe_backup = match atomic_write_file(&file_path, &new_content).await {
                 Ok(b) => b,
-                Err(e) => return Err(ReplError::Session(format!("Failed to write {}: {}", file_path, e))),
+                Err(e) => {
+                    return Err(ReplError::Session(format!(
+                        "Failed to write {}: {}",
+                        file_path, e
+                    )))
+                }
             };
             backup_paths.insert(file_path, maybe_backup);
         }
 
-        let checkpoint = self.checkpoint_mgr.save(
-            agent_id,
-            None,
-            vec![],
-            vec![],
-            &crate::blackboard::Blackboard::new(),
-        ).await.map_err(|e| ReplError::Session(format!("Checkpoint: {}", e)))?;
+        let checkpoint = self
+            .checkpoint_mgr
+            .save(
+                agent_id,
+                None,
+                vec![],
+                vec![],
+                &crate::blackboard::Blackboard::new(),
+            )
+            .await
+            .map_err(|e| ReplError::Session(format!("Checkpoint: {}", e)))?;
 
         let applied = AppliedEdit {
             edit_id: proposed.id.clone(),
@@ -298,10 +383,8 @@ impl EditApplier {
             if stack.len() >= MAX_UNDO_STACK_SIZE {
                 if let Some(evicted) = stack.pop_front() {
                     // Clean up evicted entry's backup files
-                    for (_, maybe_backup) in &evicted.backup_paths {
-                        if let Some(ref backup) = maybe_backup {
-                            let _ = tokio::fs::remove_file(backup).await;
-                        }
+                    for ref backup in evicted.backup_paths.values().flatten() {
+                        let _ = tokio::fs::remove_file(backup).await;
                     }
                 }
             }
@@ -310,8 +393,19 @@ impl EditApplier {
 
         *self.current_state.lock().await = EditState::Applied;
 
-        self.emit_edit_trace(TraceStepType::EditApplied, &proposed.summary, agent_id, proposed.confidence_score, proposed.hunks.len()).await;
-        info!("Edit applied successfully: {} hunks, checkpoint {}", proposed.hunks.len(), checkpoint.id);
+        self.emit_edit_trace(
+            TraceStepType::EditApplied,
+            &proposed.summary,
+            agent_id,
+            proposed.confidence_score,
+            proposed.hunks.len(),
+        )
+        .await;
+        info!(
+            "Edit applied successfully: {} hunks, checkpoint {}",
+            proposed.hunks.len(),
+            checkpoint.id
+        );
 
         Ok(applied)
     }
@@ -325,7 +419,8 @@ impl EditApplier {
                     Some(backup_path) => {
                         if let Err(e) = tokio::fs::copy(backup_path, file_path).await {
                             return Err(ReplError::Session(format!(
-                                "Undo restore failed for {}: {}", file_path, e
+                                "Undo restore failed for {}: {}",
+                                file_path, e
                             )));
                         }
                         let _ = tokio::fs::remove_file(backup_path).await;
@@ -337,7 +432,14 @@ impl EditApplier {
                 }
             }
             *self.current_state.lock().await = EditState::RolledBack;
-            self.emit_edit_trace(TraceStepType::EditApplied, &applied.edit_id, agent_id, 1.0, applied.hunks_applied).await;
+            self.emit_edit_trace(
+                TraceStepType::EditApplied,
+                &applied.edit_id,
+                agent_id,
+                1.0,
+                applied.hunks_applied,
+            )
+            .await;
             info!("Undo performed for edit {}", applied.edit_id);
             Ok(Some(applied))
         } else {
@@ -352,14 +454,24 @@ impl EditApplier {
         }
     }
 
-    async fn emit_edit_trace(&self, step_type: TraceStepType, details: &str, _agent_id: &AgentId, confidence: f32, hunks: usize) {
+    async fn emit_edit_trace(
+        &self,
+        step_type: TraceStepType,
+        details: &str,
+        _agent_id: &AgentId,
+        confidence: f32,
+        hunks: usize,
+    ) {
         let name = step_type_name(&step_type);
         let edit_payload = if matches!(step_type, TraceStepType::EditProposed) {
-            Some(serde_json::json!({
-                "summary": details,
-                "hunks": hunks,
-                "confidence": confidence,
-            }).to_string())
+            Some(
+                serde_json::json!({
+                    "summary": details,
+                    "hunks": hunks,
+                    "confidence": confidence,
+                })
+                .to_string(),
+            )
         } else {
             None
         };
@@ -406,7 +518,12 @@ fn verify_hunk_match(file_lines: &[String], hunk: &EditHunk) -> Result<(), Strin
     let start = hunk.start_line.saturating_sub(1);
     let end = start + hunk.old_lines.len();
     if end > file_lines.len() {
-        return Err(format!("Hunk out of range: lines {}..{} exceed file length {}", start + 1, end, file_lines.len()));
+        return Err(format!(
+            "Hunk out of range: lines {}..{} exceed file length {}",
+            start + 1,
+            end,
+            file_lines.len()
+        ));
     }
     let actual: Vec<String> = file_lines[start..end].to_vec();
     if actual != hunk.old_lines {
@@ -460,15 +577,20 @@ async fn atomic_write_file(path: &str, content: &str) -> Result<Option<String>, 
 }
 
 pub fn edit_summary(applied: &AppliedEdit) -> String {
-    format!("Applied {} hunks (tokens: {}→{}), checkpoint: {}",
-            applied.hunks_applied, applied.before_token_count, applied.after_token_count, applied.checkpoint_id)
+    format!(
+        "Applied {} hunks (tokens: {}→{}), checkpoint: {}",
+        applied.hunks_applied,
+        applied.before_token_count,
+        applied.after_token_count,
+        applied.checkpoint_id
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::governance::DefaultGovernance;
     use crate::checkpoint::CheckpointManager;
+    use crate::governance::DefaultGovernance;
     use crate::AgentContext;
 
     #[tokio::test]
@@ -497,9 +619,15 @@ mod tests {
         let agent_id: AgentId = "test-agent-001".to_string();
 
         // SAFETY: test-only expect; applier is fresh and test data is valid
-        let proposed = applier.propose(proposed, &agent_id).await.expect("propose should succeed");
+        let proposed = applier
+            .propose(proposed, &agent_id)
+            .await
+            .expect("propose should succeed");
         // SAFETY: test-only expect; review follows successful propose
-        let accepted = applier.review(true, &agent_id).await.expect("review should succeed");
+        let accepted = applier
+            .review(true, &agent_id)
+            .await
+            .expect("review should succeed");
         assert!(accepted);
         assert_eq!(applier.current_edit_state(), EditState::Reviewed);
     }
@@ -602,7 +730,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_count_real() {
-        let lines = vec!["fn main() {".to_string(), "    println!(\"hello\");".to_string(), "}".to_string()];
+        let lines = vec![
+            "fn main() {".to_string(),
+            "    println!(\"hello\");".to_string(),
+            "}".to_string(),
+        ];
         let count = count_tokens(&lines);
         assert_eq!(count, 5); // fn + main() { + println!("hello"); + }
     }
@@ -615,9 +747,13 @@ mod tests {
         let content = "Hello, atomic world!";
 
         // SAFETY: test-only expect; atomic write to temp file should succeed
-        atomic_write_file(path_str, content).await.expect("atomic write should succeed");
+        atomic_write_file(path_str, content)
+            .await
+            .expect("atomic write should succeed");
         // SAFETY: test-only expect; read immediately after successful write
-        let read = tokio::fs::read_to_string(path_str).await.expect("read should succeed");
+        let read = tokio::fs::read_to_string(path_str)
+            .await
+            .expect("read should succeed");
         assert_eq!(read, content);
 
         // Cleanup
@@ -650,18 +786,53 @@ mod tests {
 
     #[tokio::test]
     async fn test_governance_reject_propose() {
-        use crate::governance::{AgentGovernance, GovernancePolicy, Decision, Vote};
+        use crate::governance::{AgentGovernance, Decision, GovernancePolicy, Vote};
         use async_trait::async_trait;
 
         struct RejectAllGovernance;
         #[async_trait]
         impl AgentGovernance for RejectAllGovernance {
-            async fn policy(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> ApprovalLevel { ApprovalLevel::Auto }
-            async fn approve(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> ReplResult<Decision> { Ok(Decision::Rejected("test".to_string())) }
-            async fn vote(&self, _voter_id: &str, _proposal_id: &str, _vote: Vote) -> ReplResult<()> { Ok(()) }
-            async fn escalate(&self, req: &GovernanceRequest, _to_level: ApprovalLevel) -> ReplResult<GovernanceRequest> { Ok(req.clone()) }
-            async fn register_policy(&mut self, _name: &str, _policy: Arc<dyn GovernancePolicy>, _caller: &str, _required_level: crate::governance::PermissionLevel) -> ReplResult<()> { Ok(()) }
-            async fn record_feedback(&self, _ctx: &AgentContext, _feedback: &crate::governance::UserFeedback) -> ReplResult<()> { Ok(()) }
+            async fn policy(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> ApprovalLevel {
+                ApprovalLevel::Auto
+            }
+            async fn approve(
+                &self,
+                _ctx: &AgentContext,
+                _req: &GovernanceRequest,
+            ) -> ReplResult<Decision> {
+                Ok(Decision::Rejected("test".to_string()))
+            }
+            async fn vote(
+                &self,
+                _voter_id: &str,
+                _proposal_id: &str,
+                _vote: Vote,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
+            async fn escalate(
+                &self,
+                req: &GovernanceRequest,
+                _to_level: ApprovalLevel,
+            ) -> ReplResult<GovernanceRequest> {
+                Ok(req.clone())
+            }
+            async fn register_policy(
+                &mut self,
+                _name: &str,
+                _policy: Arc<dyn GovernancePolicy>,
+                _caller: &str,
+                _required_level: crate::governance::PermissionLevel,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
+            async fn record_feedback(
+                &self,
+                _ctx: &AgentContext,
+                _feedback: &crate::governance::UserFeedback,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
         }
 
         let governance: Arc<dyn AgentGovernance> = Arc::new(RejectAllGovernance);

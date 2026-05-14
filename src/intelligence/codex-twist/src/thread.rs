@@ -1,13 +1,13 @@
 //! Thread管理 - 轻量级移植自Codex
 //! 参考: codex-twist/codex-rs/core/src/codex_thread.rs
-//! 
+//!
 //! Thread是Codex的核心概念：一个有状态的对话会话容器
 //! 本实现将云端存储替换为LCR本地.hctx存储
 
-use std::path::{Path, PathBuf};
+use crate::approval::{ApprovalPolicy, ApprovalRequest};
 use crate::storage::{HctxStorage, StorageError};
 use crate::turn::{Turn, TurnStatus};
-use crate::approval::{ApprovalPolicy, ApprovalRequest};
+use std::path::{Path, PathBuf};
 
 /// Thread ID类型
 pub type ThreadId = String;
@@ -42,7 +42,7 @@ impl Default for ThreadConfig {
 }
 
 /// Thread结构 - 对话会话容器
-/// 
+///
 /// 移植自Codex的CodexThread，但改为本地优先架构
 pub struct Thread {
     /// Thread ID
@@ -83,7 +83,7 @@ impl Thread {
     pub fn new_with_storage(storage_dir: PathBuf) -> Result<Self, StorageError> {
         let id = generate_thread_id();
         let storage_path = storage_dir.join(".hctx");
-        
+
         Ok(Self::new(id, storage_path))
     }
 
@@ -95,7 +95,7 @@ impl Thread {
     }
 
     /// 创建新Turn
-    /// 
+    ///
     /// # Arguments
     /// * `prompt` - 用户输入
     pub fn create_turn(&mut self, prompt: String) -> &mut Turn {
@@ -193,7 +193,7 @@ impl Thread {
     }
 
     /// 保存到LCR存储
-    /// 
+    ///
     /// 将Thread序列化为.hctx格式并保存
     pub fn save_to_lcr(&self) -> Result<(), StorageError> {
         // 确保路径以.hctx结尾，如果是目录则在目录下创建.hctx文件
@@ -211,11 +211,11 @@ impl Thread {
     pub fn load_from_lcr(&mut self) -> Result<(), StorageError> {
         let storage = HctxStorage::new(self.storage_path.clone())?;
         let chunks = storage.load_context()?;
-        
+
         // 使用lcr_adapter解析
         let loaded = crate::lcr_adapter::hctx_to_thread(&chunks, self.storage_path.clone())
             .map_err(|e| StorageError::ParseError(e.to_string()))?;
-        
+
         *self = loaded;
         Ok(())
     }
@@ -223,13 +223,13 @@ impl Thread {
     /// 导出为纯文本
     pub fn export_text(&self) -> String {
         let mut output = format!("# {}\n\n", self.name);
-        
+
         for (i, turn) in self.turns.iter().enumerate() {
             output.push_str(&format!("## Turn {}\n\n", i + 1));
             output.push_str(&format!("**User:** {}\n\n", turn.prompt));
             output.push_str(&format!("**Assistant:** {}\n\n", turn.response_content()));
         }
-        
+
         output
     }
 }
@@ -276,7 +276,7 @@ mod tests {
     fn test_thread_lifecycle() {
         let mut thread = Thread::new(
             "test-001".to_string(),
-            std::env::temp_dir().join("test-codex-001")
+            std::env::temp_dir().join("test-codex-001"),
         );
 
         // 创建Turn
@@ -295,11 +295,14 @@ mod tests {
 
     #[test]
     fn test_thread_history() {
-        let mut thread = Thread::new("test-002".to_string(), std::env::temp_dir().join("test-codex-002"));
-        
+        let mut thread = Thread::new(
+            "test-002".to_string(),
+            std::env::temp_dir().join("test-codex-002"),
+        );
+
         thread.create_turn("Q1".to_string());
         thread.complete_turn("A1".to_string());
-        
+
         thread.create_turn("Q2".to_string());
         thread.complete_turn("A2".to_string());
 
@@ -311,9 +314,12 @@ mod tests {
 
     #[test]
     fn test_thread_export() {
-        let mut thread = Thread::new("test-003".to_string(), std::env::temp_dir().join("test-codex-003"));
+        let mut thread = Thread::new(
+            "test-003".to_string(),
+            std::env::temp_dir().join("test-codex-003"),
+        );
         thread.name = "Test Thread".to_string();
-        
+
         thread.create_turn("Question".to_string());
         thread.complete_turn("Answer".to_string());
 

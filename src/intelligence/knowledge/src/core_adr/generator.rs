@@ -26,10 +26,16 @@ impl AdrGenerator {
                 }
             }
         }
-        Ok(Self { next_id: Mutex::new(max_id + 1), dir })
+        Ok(Self {
+            next_id: Mutex::new(max_id + 1),
+            dir,
+        })
     }
     pub fn next_id(&self) -> Result<String> {
-        let mut guard = self.next_id.lock().map_err(|e| AdrError::Lock(e.to_string()))?;
+        let mut guard = self
+            .next_id
+            .lock()
+            .map_err(|e| AdrError::Lock(e.to_string()))?;
         let id = *guard;
         *guard += 1;
         Ok(format!("ADR-{:04}", id))
@@ -40,7 +46,9 @@ impl AdrGenerator {
         let path = self.dir.join(&filename);
         let content = generate_frontmatter(title, AdrStatus::Proposed);
         if let Some(parent) = path.parent() {
-            if !parent.exists() { std::fs::create_dir_all(parent).map_err(AdrError::Io)?; }
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(AdrError::Io)?;
+            }
         }
         let temp_path = path.with_extension("tmp");
         std::fs::write(&temp_path, content).map_err(AdrError::Io)?;

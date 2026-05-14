@@ -48,10 +48,7 @@ impl AstSymbolIndex {
                             let file_symbols = extract_symbols(&file, &path_str);
                             count += file_symbols.len();
                             for sym in file_symbols {
-                                self.symbols
-                                    .entry(sym.name.clone())
-                                    .or_default()
-                                    .push(sym);
+                                self.symbols.entry(sym.name.clone()).or_default().push(sym);
                             }
                         }
                     }
@@ -79,12 +76,18 @@ impl AstSymbolIndex {
             .collect()
     }
 
-    pub fn is_indexed(&self) -> bool { self.indexed }
-    pub fn symbol_count(&self) -> usize { self.symbols.len() }
+    pub fn is_indexed(&self) -> bool {
+        self.indexed
+    }
+    pub fn symbol_count(&self) -> usize {
+        self.symbols.len()
+    }
 }
 
 impl Default for AstSymbolIndex {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Extract symbols from a single parsed Rust file.
@@ -182,9 +185,15 @@ mod tests {
         "#;
         let file = syn::parse_file(source).unwrap();
         let symbols = extract_symbols(&file, "test.rs");
-        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == "function"));
-        assert!(symbols.iter().any(|s| s.name == "Config" && s.kind == "struct"));
-        assert!(symbols.iter().any(|s| s.name == "impl Config" && s.kind == "impl"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "main" && s.kind == "function"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Config" && s.kind == "struct"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "impl Config" && s.kind == "impl"));
     }
 
     #[test]

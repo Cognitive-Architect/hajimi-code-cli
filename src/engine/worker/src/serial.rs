@@ -1,11 +1,11 @@
+use crate::error::EngineError;
+use crate::query::{Query, QueryResult};
+use crate::Executor;
+use engine_tool_system::{ToolArgs, ToolRegistry};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{info, warn};
-use engine_tool_system::{ToolRegistry, ToolArgs};
-use crate::error::EngineError;
-use crate::Executor;
-use crate::query::{Query, QueryResult};
 
 pub struct SerialExecutor {
     tool_registry: Option<Arc<tokio::sync::Mutex<ToolRegistry>>>,
@@ -14,7 +14,10 @@ pub struct SerialExecutor {
 
 impl SerialExecutor {
     pub fn new() -> Self {
-        Self { tool_registry: None, callback: None }
+        Self {
+            tool_registry: None,
+            callback: None,
+        }
     }
 
     /// Attach a tool registry for real tool execution.
@@ -29,11 +32,16 @@ impl SerialExecutor {
         self
     }
 
-    async fn run_query(query: Query, registry: Option<Arc<tokio::sync::Mutex<ToolRegistry>>>) -> Result<QueryResult, EngineError> {
+    async fn run_query(
+        query: Query,
+        registry: Option<Arc<tokio::sync::Mutex<ToolRegistry>>>,
+    ) -> Result<QueryResult, EngineError> {
         let start = Instant::now();
 
         if query.content.is_empty() {
-            return Err(EngineError::InvalidParameters("Query content is empty".to_string()));
+            return Err(EngineError::InvalidParameters(
+                "Query content is empty".to_string(),
+            ));
         }
 
         let result = timeout(
@@ -95,7 +103,10 @@ impl Executor for SerialExecutor {
         // Notify callback if registered.
         if let Some(ref cb) = self.callback {
             match &result {
-                Ok(ref r) if r.success => cb.on_success(&r.query_id, &r.content, r.execution_time_ms).await,
+                Ok(ref r) if r.success => {
+                    cb.on_success(&r.query_id, &r.content, r.execution_time_ms)
+                        .await
+                }
                 Ok(ref r) => cb.on_failure(&r.query_id, &r.content).await,
                 Err(ref e) => cb.on_failure(&query_id, &e.to_string()).await,
             }

@@ -44,7 +44,11 @@ fn estimate_tokens(content: &str) -> usize {
 
 impl SessionMemory {
     pub fn new() -> Self {
-        Self { entries: HashMap::new(), lru: VecDeque::new(), token_counter: 0 }
+        Self {
+            entries: HashMap::new(),
+            lru: VecDeque::new(),
+            token_counter: 0,
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<&SessionEntry> {
@@ -62,22 +66,40 @@ impl SessionMemory {
 
     fn evict_lru(&mut self, required: usize) -> Result<(), SessionError> {
         while self.token_counter + required > MAX_SESSION_TOKENS {
-            let key = self.lru.pop_front().ok_or(SessionError::TokenLimitExceeded)?;
-            if let Some(e) = self.entries.remove(&key) { self.token_counter -= e.tokens; }
+            let key = self
+                .lru
+                .pop_front()
+                .ok_or(SessionError::TokenLimitExceeded)?;
+            if let Some(e) = self.entries.remove(&key) {
+                self.token_counter -= e.tokens;
+            }
         }
         Ok(())
     }
 
     pub fn insert(&mut self, key: String, content: String) -> Result<(), SessionError> {
-        if content.is_empty() { return Err(SessionError::EmptyContent); }
+        if content.is_empty() {
+            return Err(SessionError::EmptyContent);
+        }
         let tokens = estimate_tokens(&content);
-        if tokens > MAX_SESSION_TOKENS { return Err(SessionError::TokenLimitExceeded); }
+        if tokens > MAX_SESSION_TOKENS {
+            return Err(SessionError::TokenLimitExceeded);
+        }
         if self.entries.contains_key(&key) {
-            if let Some(e) = self.entries.remove(&key) { self.token_counter -= e.tokens; }
-            if let Some(p) = self.lru.iter().position(|k| k == &key) { self.lru.remove(p); }
+            if let Some(e) = self.entries.remove(&key) {
+                self.token_counter -= e.tokens;
+            }
+            if let Some(p) = self.lru.iter().position(|k| k == &key) {
+                self.lru.remove(p);
+            }
         }
         self.evict_lru(tokens)?;
-        let entry = SessionEntry { content, tokens, timestamp: Instant::now(), access_count: 0 };
+        let entry = SessionEntry {
+            content,
+            tokens,
+            timestamp: Instant::now(),
+            access_count: 0,
+        };
         self.entries.insert(key.clone(), entry);
         self.lru.push_back(key);
         self.token_counter += tokens;
@@ -88,7 +110,9 @@ impl SessionMemory {
         match self.entries.remove(key) {
             Some(e) => {
                 self.token_counter -= e.tokens;
-                if let Some(p) = self.lru.iter().position(|k| k == key) { self.lru.remove(p); }
+                if let Some(p) = self.lru.iter().position(|k| k == key) {
+                    self.lru.remove(p);
+                }
                 Ok(())
             }
             None => Err(SessionError::KeyNotFound),
@@ -101,14 +125,28 @@ impl SessionMemory {
         self.token_counter = 0;
     }
 
-    pub fn total_tokens(&self) -> usize { self.token_counter }
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
-    pub fn keys(&self) -> impl Iterator<Item = &String> { self.lru.iter() }
-    pub fn contains_key(&self, key: &str) -> bool { self.entries.contains_key(key) }
+    pub fn total_tokens(&self) -> usize {
+        self.token_counter
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.lru.iter()
+    }
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
 }
 
-impl Default for SessionMemory { fn default() -> Self { Self::new() } }
+impl Default for SessionMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -142,7 +180,9 @@ mod tests {
     fn test_lru_eviction() {
         let mut s = SessionMemory::new();
         let c = "a".repeat(1000);
-        for i in 0..20 { let _ = s.insert(format!("k{}", i), c.clone()); }
+        for i in 0..20 {
+            let _ = s.insert(format!("k{}", i), c.clone());
+        }
         assert!(s.total_tokens() <= MAX_SESSION_TOKENS);
         assert!(s.len() < 20);
     }
@@ -177,7 +217,10 @@ mod tests {
     #[test]
     fn test_empty_content_error() {
         let mut s = SessionMemory::new();
-        assert_eq!(s.insert("k1".into(), "".into()), Err(SessionError::EmptyContent));
+        assert_eq!(
+            s.insert("k1".into(), "".into()),
+            Err(SessionError::EmptyContent)
+        );
     }
 
     #[test]

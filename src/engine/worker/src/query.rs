@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Query representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,12 +37,12 @@ impl Query {
             timeout_ms: 30000, // default 30s
         }
     }
-    
+
     pub fn with_context(mut self, context: QueryContext) -> Self {
         self.context = Some(context);
         self
     }
-    
+
     pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = timeout_ms;
         self
@@ -60,7 +59,7 @@ impl QueryResult {
             success: true,
         }
     }
-    
+
     /// Create a successful result (defaults success=true).
     pub fn ok(content: impl Into<String>, elapsed_ms: u64) -> Self {
         Self {
@@ -71,7 +70,7 @@ impl QueryResult {
             success: true,
         }
     }
-    
+
     pub fn with_query_id(mut self, query_id: impl Into<String>) -> Self {
         self.query_id = query_id.into();
         self

@@ -1,6 +1,6 @@
 //! HNSW → Tantivy vector-to-text hybrid module with zero-copy optimization
-use std::time::Instant;
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 /// Strategy marker for zero-copy transfer paths
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,7 +118,10 @@ pub fn bench_serialization_overhead(neighbors: &[HnswNeighbor]) -> Serialization
     stat_serialization(count, elapsed.as_micros())
 }
 
-pub fn profile_copy(neighbors: &[HnswNeighbor], text_query: &str) -> (VectorTextQuery, SerializationStats) {
+pub fn profile_copy(
+    neighbors: &[HnswNeighbor],
+    text_query: &str,
+) -> (VectorTextQuery, SerializationStats) {
     let start = Instant::now();
     let output = HnswOutput::from_neighbors(neighbors.to_vec());
     let bridge = HnswOutputToTantivyInput::new(&output);
@@ -163,8 +166,14 @@ mod tests {
     #[test]
     fn test_vector_to_text_zero_copy() {
         let neighbors = vec![
-            HnswNeighbor { doc_id: 1, score: 0.9 },
-            HnswNeighbor { doc_id: 2, score: 0.8 },
+            HnswNeighbor {
+                doc_id: 1,
+                score: 0.9,
+            },
+            HnswNeighbor {
+                doc_id: 2,
+                score: 0.8,
+            },
         ];
         let output = HnswOutput::from_neighbors(neighbors);
         let bridge = HnswOutputToTantivyInput::new(&output);
@@ -186,7 +195,10 @@ mod tests {
 
     #[test]
     fn test_serialization_fallback() {
-        let neighbors = vec![HnswNeighbor { doc_id: 42, score: 0.95 }];
+        let neighbors = vec![HnswNeighbor {
+            doc_id: 42,
+            score: 0.95,
+        }];
         let (query, stats) = profile_copy(&neighbors, "test");
         assert!(!query.neighbor_ids.is_empty());
         assert_eq!(stats.bytes_copied, metric_bytes_copied(1));
@@ -197,7 +209,10 @@ mod tests {
     #[test]
     fn test_memory_leak_hybrid() {
         for i in 0..1000 {
-            let neighbors = vec![HnswNeighbor { doc_id: i as u64, score: 0.5 }];
+            let neighbors = vec![HnswNeighbor {
+                doc_id: i as u64,
+                score: 0.5,
+            }];
             let output = HnswOutput::from_neighbors(neighbors);
             let bridge = HnswOutputToTantivyInput::new(&output);
             let _query = bridge.to_query("stress");

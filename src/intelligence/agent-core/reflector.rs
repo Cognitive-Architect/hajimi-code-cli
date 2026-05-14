@@ -2,15 +2,15 @@
 //! Day 4: Reflection cycle (analysis → critique → optimization → Dream/Graph persistence)
 //! DEBT: Swarm coordination deferred to Phase 5.
 
-use crate::AgentContext;
+use crate::governance::{AgentGovernance, DefaultGovernance};
 use crate::multi_worker_aggregator::MultiWorkerAggregator;
 use crate::plan_optimizer::PlanOptimizer;
+use crate::planner::{Goal, Plan, TaskResult};
 use crate::reflection_persistence::ReflectionPersistence;
 use crate::swarm::WorkerResult;
-use chimera_repl::traits::{ReplError, ReplResult};
-use crate::planner::{Goal, Plan, TaskResult};
-use crate::governance::{AgentGovernance, DefaultGovernance};
+use crate::AgentContext;
 use async_trait::async_trait;
+use chimera_repl::traits::{ReplError, ReplResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -58,7 +58,12 @@ pub struct Critique {
 
 /// Severity levels for critique issues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CritiqueSeverity { Low, Medium, High, Critical }
+pub enum CritiqueSeverity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
 
 /// Core Reflector trait for autonomous reflection.
 #[async_trait]
@@ -66,7 +71,11 @@ pub trait Reflector: Send + Sync {
     /// Execute full reflection cycle on execution result.
     async fn reflect(&mut self, goal: &Goal, result: &TaskResult) -> ReplResult<Reflection>;
     /// Execute reflection cycle on multiple worker results.
-    async fn reflect_multi(&mut self, goal: &Goal, results: &[WorkerResult]) -> ReplResult<Reflection>;
+    async fn reflect_multi(
+        &mut self,
+        goal: &Goal,
+        results: &[WorkerResult],
+    ) -> ReplResult<Reflection>;
     /// Critique execution result (LLM-driven or rule-based).
     async fn critique(&self, goal: &Goal, result: &TaskResult) -> ReplResult<Critique>;
     /// Generate optimized plan based on critique.
@@ -102,13 +111,28 @@ pub struct AutonomousReflector {
 
 impl AutonomousReflector {
     /// Create new reflector with memory gateway.
-    pub fn new(memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>, context: AgentContext) -> Self {
+    pub fn new(
+        memory: Arc<Mutex<memory::memory_gateway::MemoryGateway>>,
+        context: AgentContext,
+    ) -> Self {
         let persistence = ReflectionPersistence::new(memory);
         let plan_optimizer = PlanOptimizer::new(None);
-        Self { context, llm: None, reflection_count: 0, token_used: 0, governance: Arc::new(DefaultGovernance::new()), persistence, plan_optimizer, thinking_content: None }
+        Self {
+            context,
+            llm: None,
+            reflection_count: 0,
+            token_used: 0,
+            governance: Arc::new(DefaultGovernance::new()),
+            persistence,
+            plan_optimizer,
+            thinking_content: None,
+        }
     }
     /// Attach governance engine for reflection approval.
-    pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self { self.governance = gov; self }
+    pub fn with_governance(mut self, gov: Arc<dyn AgentGovernance>) -> Self {
+        self.governance = gov;
+        self
+    }
 
     /// Attach LLM client for dynamic critique.
     pub fn with_llm(mut self, llm: Arc<dyn ReflectionLlmClient>) -> Self {
@@ -125,9 +149,19 @@ impl AutonomousReflector {
     /// Rule-based critique when LLM unavailable.
     fn critique_rule_based(&self, _goal: &Goal, result: &TaskResult) -> Critique {
         if result.success {
-            Critique { success: true, issues: vec![], suggestions: vec!["Continue with next task".to_string()], severity: CritiqueSeverity::Low }
+            Critique {
+                success: true,
+                issues: vec![],
+                suggestions: vec!["Continue with next task".to_string()],
+                severity: CritiqueSeverity::Low,
+            }
         } else {
-            Critique { success: false, issues: vec![result.output.clone()], suggestions: vec!["Retry with modified parameters".to_string()], severity: CritiqueSeverity::High }
+            Critique {
+                success: false,
+                issues: vec![result.output.clone()],
+                suggestions: vec!["Retry with modified parameters".to_string()],
+                severity: CritiqueSeverity::High,
+            }
         }
     }
 }
@@ -137,7 +171,9 @@ impl Reflector for AutonomousReflector {
     /// Execute full reflection cycle: analyze → critique → optimize → persist.
     async fn reflect(&mut self, goal: &Goal, result: &TaskResult) -> ReplResult<Reflection> {
         if self.budget_exhausted() {
-            return Err(ReplError::Session("Reflection budget exhausted".to_string()));
+            return Err(ReplError::Session(
+                "Reflection budget exhausted".to_string(),
+            ));
         }
         self.reflection_count += 1;
 
@@ -155,7 +191,9 @@ impl Reflector for AutonomousReflector {
         };
 
         if !self.approve_reflection(&reflection).await? {
-            return Err(ReplError::Session("Reflection rejected by governance".to_string()));
+            return Err(ReplError::Session(
+                "Reflection rejected by governance".to_string(),
+            ));
         }
 
         self.persist_reflection(&reflection).await?;
@@ -163,9 +201,15 @@ impl Reflector for AutonomousReflector {
     }
 
     /// Execute reflection cycle on multiple worker results: aggregate → critique → optimize → persist.
-    async fn reflect_multi(&mut self, goal: &Goal, results: &[WorkerResult]) -> ReplResult<Reflection> {
+    async fn reflect_multi(
+        &mut self,
+        goal: &Goal,
+        results: &[WorkerResult],
+    ) -> ReplResult<Reflection> {
         if self.budget_exhausted() {
-            return Err(ReplError::Session("Reflection budget exhausted".to_string()));
+            return Err(ReplError::Session(
+                "Reflection budget exhausted".to_string(),
+            ));
         }
         self.reflection_count += 1;
 
@@ -173,15 +217,27 @@ impl Reflector for AutonomousReflector {
             return Ok(Reflection {
                 reflection_id: uuid::Uuid::new_v4().to_string(),
                 original_goal_id: goal.id.clone(),
-                execution_result: TaskResult { success: false, output: "No worker results".to_string(), timestamp: chrono::Utc::now() },
-                critique: Critique { success: false, issues: vec!["Empty worker result set".to_string()], suggestions: vec!["Dispatch workers before reflecting".to_string()], severity: CritiqueSeverity::Low },
+                execution_result: TaskResult {
+                    success: false,
+                    output: "No worker results".to_string(),
+                    timestamp: chrono::Utc::now(),
+                },
+                critique: Critique {
+                    success: false,
+                    issues: vec!["Empty worker result set".to_string()],
+                    suggestions: vec!["Dispatch workers before reflecting".to_string()],
+                    severity: CritiqueSeverity::Low,
+                },
                 optimized_plan: None,
                 confidence: 0.0,
                 timestamp: chrono::Utc::now(),
             });
         }
 
-        let total_time: u64 = results.iter().filter_map(|r| r.metrics.as_ref().map(|m| m.execution_time_ms)).sum();
+        let total_time: u64 = results
+            .iter()
+            .filter_map(|r| r.metrics.as_ref().map(|m| m.execution_time_ms))
+            .sum();
         let avg_time = total_time as f32 / results.len().max(1) as f32;
         let success_count = results.iter().filter(|r| r.success).count();
 
@@ -191,12 +247,26 @@ impl Reflector for AutonomousReflector {
         let reflection = Reflection {
             reflection_id: uuid::Uuid::new_v4().to_string(),
             original_goal_id: goal.id.clone(),
-            execution_result: TaskResult { success: confidence > 0.5, output: format!("Multi-worker: {}/{} succeeded, avg_time={:.1}ms", success_count, results.len(), avg_time), timestamp: chrono::Utc::now() },
-            critique, optimized_plan, confidence, timestamp: chrono::Utc::now(),
+            execution_result: TaskResult {
+                success: confidence > 0.5,
+                output: format!(
+                    "Multi-worker: {}/{} succeeded, avg_time={:.1}ms",
+                    success_count,
+                    results.len(),
+                    avg_time
+                ),
+                timestamp: chrono::Utc::now(),
+            },
+            critique,
+            optimized_plan,
+            confidence,
+            timestamp: chrono::Utc::now(),
         };
 
         if !self.approve_reflection(&reflection).await? {
-            return Err(ReplError::Session("Reflection rejected by governance".to_string()));
+            return Err(ReplError::Session(
+                "Reflection rejected by governance".to_string(),
+            ));
         }
         self.persist_reflection(&reflection).await?;
         Ok(reflection)
@@ -224,7 +294,9 @@ impl Reflector for AutonomousReflector {
 
     /// Governance hook for reflection approval - integrated with AgentGovernance trait.
     async fn approve_reflection(&self, reflection: &Reflection) -> ReplResult<bool> {
-        self.persistence.approve(reflection, self.governance.as_ref(), &self.context).await
+        self.persistence
+            .approve(reflection, self.governance.as_ref(), &self.context)
+            .await
     }
 }
 

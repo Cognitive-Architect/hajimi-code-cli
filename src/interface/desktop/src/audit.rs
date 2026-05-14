@@ -23,8 +23,7 @@ pub fn audit_log_path() -> PathBuf {
         PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library/Application Support/Hajimi/audit.jsonl")
     } else {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default())
-            .join(".config/hajimi/audit.jsonl")
+        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/hajimi/audit.jsonl")
     }
 }
 

@@ -55,24 +55,38 @@ impl AutoMemory {
         let home = dirs::home_dir().ok_or(AutoError::NoHomeDir)?;
         let storage_dir = home.join(".hajimi").join("memory").join(project_id);
         fs::create_dir_all(&storage_dir)?;
-        Ok(Self { storage_dir, entries: HashMap::new(), dirty: false })
+        Ok(Self {
+            storage_dir,
+            entries: HashMap::new(),
+            dirty: false,
+        })
     }
 
     /// 获取存储目录
-    pub fn storage_dir(&self) -> &PathBuf { &self.storage_dir }
+    pub fn storage_dir(&self) -> &PathBuf {
+        &self.storage_dir
+    }
 
     /// 检查是否脏
-    pub fn is_dirty(&self) -> bool { self.dirty }
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
 
     /// 获取条目数
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
 
     /// 是否为空
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     /// 原子持久化 - NamedTempFile + fs::rename
     pub fn persist(&mut self) -> Result<(), AutoError> {
-        if !self.dirty { return Ok(()); }
+        if !self.dirty {
+            return Ok(());
+        }
         let persist_file = self.storage_dir.join("memory.jsonl");
         let mut temp = NamedTempFile::new_in(&self.storage_dir)?;
         for (k, v) in &self.entries {
@@ -87,7 +101,9 @@ impl AutoMemory {
         temp.flush()?;
         fs::rename(temp.path(), &persist_file)?;
         let now = Utc::now();
-        for e in self.entries.values_mut() { e.last_persisted = now; }
+        for e in self.entries.values_mut() {
+            e.last_persisted = now;
+        }
         self.dirty = false;
         Ok(())
     }
@@ -95,11 +111,15 @@ impl AutoMemory {
     /// 从JSONL加载
     pub fn load(&mut self) -> Result<(), AutoError> {
         let file = self.storage_dir.join("memory.jsonl");
-        if !file.exists() { return Ok(()); }
+        if !file.exists() {
+            return Ok(());
+        }
         let content = fs::read_to_string(&file)?;
         self.entries.clear();
         for line in content.lines() {
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let p: PersistedEntry = serde_json::from_str(line)?;
             let entry = SessionEntry {
                 content: p.content,
@@ -110,12 +130,15 @@ impl AutoMemory {
             let ts = DateTime::parse_from_rfc3339(&p.timestamp)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
                 .with_timezone(&Utc);
-            self.entries.insert(p.id, AutoEntry {
-                session_entry: entry,
-                file_path: file.clone(),
-                last_persisted: ts,
-                embedding: None, // 384维embedding预留，默认None
-            });
+            self.entries.insert(
+                p.id,
+                AutoEntry {
+                    session_entry: entry,
+                    file_path: file.clone(),
+                    last_persisted: ts,
+                    embedding: None, // 384维embedding预留，默认None
+                },
+            );
         }
         self.dirty = false;
         Ok(())
@@ -123,32 +146,43 @@ impl AutoMemory {
 
     /// 插入条目（延迟写入）
     pub fn insert(&mut self, key: String, entry: SessionEntry) -> Result<(), AutoError> {
-        self.entries.insert(key, AutoEntry {
-            session_entry: entry,
-            file_path: self.storage_dir.join("memory.jsonl"),
-            last_persisted: Utc::now(),
-            embedding: None, // 384维embedding预留，默认None
-        });
+        self.entries.insert(
+            key,
+            AutoEntry {
+                session_entry: entry,
+                file_path: self.storage_dir.join("memory.jsonl"),
+                last_persisted: Utc::now(),
+                embedding: None, // 384维embedding预留，默认None
+            },
+        );
         self.dirty = true;
         Ok(())
     }
 
     /// 获取条目
-    pub fn get(&self, key: &str) -> Option<&AutoEntry> { self.entries.get(key) }
+    pub fn get(&self, key: &str) -> Option<&AutoEntry> {
+        self.entries.get(key)
+    }
 
     /// 获取可变条目
     pub fn get_mut(&mut self, key: &str) -> Option<&mut AutoEntry> {
-        self.entries.get_mut(key).inspect(|_| { self.dirty = true; })
+        self.entries.get_mut(key).inspect(|_| {
+            self.dirty = true;
+        })
     }
 
     /// 删除条目（延迟写入）
     pub fn remove(&mut self, key: &str) -> Option<AutoEntry> {
-        self.entries.remove(key).inspect(|_| { self.dirty = true; })
+        self.entries.remove(key).inspect(|_| {
+            self.dirty = true;
+        })
     }
 
     /// 清空（延迟写入）
     pub fn clear(&mut self) {
-        if !self.entries.is_empty() { self.dirty = true; }
+        if !self.entries.is_empty() {
+            self.dirty = true;
+        }
         self.entries.clear();
     }
 
@@ -158,19 +192,28 @@ impl AutoMemory {
             if let Some(se) = session.get(key) {
                 let need = match self.entries.get(key) {
                     None => true,
-                    Some(ae) => ae.session_entry.content != se.content || ae.session_entry.tokens != se.tokens,
+                    Some(ae) => {
+                        ae.session_entry.content != se.content
+                            || ae.session_entry.tokens != se.tokens
+                    }
                 };
-                if need { self.insert(key.clone(), se.clone())?; }
+                if need {
+                    self.insert(key.clone(), se.clone())?;
+                }
             }
         }
         Ok(())
     }
 
     /// 获取所有键
-    pub fn keys(&self) -> impl Iterator<Item = &String> { self.entries.keys() }
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.keys()
+    }
 
     /// 是否包含键
-    pub fn contains_key(&self, key: &str) -> bool { self.entries.contains_key(key) }
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
 }
 
 /// W27-AUDIT-001: Drop自动persist（数据安全）
@@ -189,7 +232,12 @@ mod tests {
     use std::time::Instant;
 
     fn entry(content: &str, tokens: usize) -> SessionEntry {
-        SessionEntry { content: content.to_string(), tokens, timestamp: Instant::now(), access_count: 0 }
+        SessionEntry {
+            content: content.to_string(),
+            tokens,
+            timestamp: Instant::now(),
+            access_count: 0,
+        }
     }
 
     #[test]
@@ -211,7 +259,13 @@ mod tests {
         let mut auto = AutoMemory::new("test_insert")?;
         auto.insert("k1".to_string(), entry("test", 10))?;
         assert!(auto.is_dirty());
-        assert_eq!(auto.get("k1").ok_or(AutoError::InvalidProjectId)?.session_entry.content, "test");
+        assert_eq!(
+            auto.get("k1")
+                .ok_or(AutoError::InvalidProjectId)?
+                .session_entry
+                .content,
+            "test"
+        );
         Ok(())
     }
 
@@ -231,7 +285,13 @@ mod tests {
         assert!(!a.is_dirty());
         let mut b = AutoMemory::new(pid)?;
         b.load()?;
-        assert_eq!(b.get("k1").ok_or(AutoError::InvalidProjectId)?.session_entry.content, "data");
+        assert_eq!(
+            b.get("k1")
+                .ok_or(AutoError::InvalidProjectId)?
+                .session_entry
+                .content,
+            "data"
+        );
         Ok(())
     }
 
@@ -268,7 +328,13 @@ mod tests {
         auto.insert("k1".to_string(), entry("old", 5))?;
         auto.persist()?;
         auto.insert("k1".to_string(), entry("new", 10))?;
-        assert_eq!(auto.get("k1").ok_or(AutoError::InvalidProjectId)?.session_entry.tokens, 10);
+        assert_eq!(
+            auto.get("k1")
+                .ok_or(AutoError::InvalidProjectId)?
+                .session_entry
+                .tokens,
+            10
+        );
         Ok(())
     }
 }

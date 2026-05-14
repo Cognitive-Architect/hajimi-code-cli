@@ -15,7 +15,9 @@ pub struct StdinInput {
 
 impl Default for StdinInput {
     fn default() -> Self {
-        Self { reader: tokio::io::BufReader::new(tokio::io::stdin()) }
+        Self {
+            reader: tokio::io::BufReader::new(tokio::io::stdin()),
+        }
     }
 }
 

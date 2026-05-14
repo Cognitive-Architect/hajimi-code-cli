@@ -1,11 +1,13 @@
 //! Governance control tests: pause/resume, approval level, memory injection, plan update.
 
 use agent_core::{AgentOrchestrator, ApprovalLevel, DefaultGovernance};
+use memory::memory_gateway::MemoryGateway;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use memory::memory_gateway::MemoryGateway;
 
-fn tm() -> Arc<Mutex<MemoryGateway>> { Arc::new(Mutex::new(MemoryGateway::new("gt"))) }
+fn tm() -> Arc<Mutex<MemoryGateway>> {
+    Arc::new(Mutex::new(MemoryGateway::new("gt")))
+}
 
 #[tokio::test]
 async fn test_pause_sets_paused_true() {
@@ -26,35 +28,51 @@ async fn test_resume_sets_paused_false() {
 #[tokio::test]
 async fn test_pause_resume_cycle() {
     let lp = AgentOrchestrator::new(tm()).create_agent_loop();
-    for _ in 0..3 { lp.pause(); assert!(lp.is_paused()); lp.resume(); assert!(!lp.is_paused()); }
+    for _ in 0..3 {
+        lp.pause();
+        assert!(lp.is_paused());
+        lp.resume();
+        assert!(!lp.is_paused());
+    }
 }
 
 #[tokio::test]
 async fn test_governance_set_approval_level_auto_to_critical() {
     let mut gov = DefaultGovernance::new();
     assert_eq!(gov.current_approval_level(), ApprovalLevel::Auto);
-    gov.set_approval_level(ApprovalLevel::Critical).await.unwrap();
+    gov.set_approval_level(ApprovalLevel::Critical)
+        .await
+        .unwrap();
     assert_eq!(gov.current_approval_level(), ApprovalLevel::Critical);
 }
 
 #[tokio::test]
 async fn test_governance_set_approval_level_advisory() {
     let mut gov = DefaultGovernance::new();
-    gov.set_approval_level(ApprovalLevel::Advisory).await.unwrap();
+    gov.set_approval_level(ApprovalLevel::Advisory)
+        .await
+        .unwrap();
     assert_eq!(gov.current_approval_level(), ApprovalLevel::Advisory);
 }
 
 #[tokio::test]
 async fn test_governance_set_approval_level_required() {
     let mut gov = DefaultGovernance::new();
-    gov.set_approval_level(ApprovalLevel::Required).await.unwrap();
+    gov.set_approval_level(ApprovalLevel::Required)
+        .await
+        .unwrap();
     assert_eq!(gov.current_approval_level(), ApprovalLevel::Required);
 }
 
 #[tokio::test]
 async fn test_governance_current_level_persists() {
     let mut gov = DefaultGovernance::new();
-    for level in [ApprovalLevel::Advisory, ApprovalLevel::Required, ApprovalLevel::Critical, ApprovalLevel::Auto] {
+    for level in [
+        ApprovalLevel::Advisory,
+        ApprovalLevel::Required,
+        ApprovalLevel::Critical,
+        ApprovalLevel::Auto,
+    ] {
         gov.set_approval_level(level).await.unwrap();
         assert_eq!(gov.current_approval_level(), level);
     }

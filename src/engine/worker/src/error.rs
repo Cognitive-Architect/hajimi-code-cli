@@ -19,7 +19,7 @@ pub enum EngineError {
 
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
-    
+
     #[error("Query error: {0}")]
     QueryError(String),
 }

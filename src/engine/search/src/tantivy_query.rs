@@ -1,12 +1,12 @@
 //! Tantivy Query Interface - Chinese Tokenization + Code Symbol Search
-use tantivy::query::{QueryParser, TermQuery};
-use tantivy::collector::TopDocs;
-use tantivy::schema::*;
-use tantivy::Term;
-use crate::tantivy_index::{TantivyIndexManager, SearchDoc, ShardIndex};
+use crate::tantivy_index::{SearchDoc, ShardIndex, TantivyIndexManager};
+use lru::LruCache;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use lru::LruCache;
+use tantivy::collector::TopDocs;
+use tantivy::query::{QueryParser, TermQuery};
+use tantivy::schema::*;
+use tantivy::Term;
 
 /// Query builder for full-text search with parallel shard querying and LRU caching
 type QueryCache = Arc<Mutex<LruCache<(String, usize), Vec<SearchResult>>>>;
@@ -67,7 +67,11 @@ impl TantivyQueryBuilder {
         for h in handles {
             results.extend(h.await??);
         }
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
 
         let _elapsed = start.elapsed();
@@ -98,7 +102,11 @@ impl TantivyQueryBuilder {
         for h in handles {
             results.extend(h.await??);
         }
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let _elapsed = start.elapsed();
         self.put_cache(cache_key, results.clone());
@@ -195,7 +203,11 @@ pub struct BatchIndexer {
 
 impl BatchIndexer {
     pub fn new(manager: TantivyIndexManager, buffer_size: usize) -> Self {
-        Self { manager, buffer: Vec::with_capacity(buffer_size), buffer_size }
+        Self {
+            manager,
+            buffer: Vec::with_capacity(buffer_size),
+            buffer_size,
+        }
     }
 
     pub async fn add(&mut self, doc: SearchDoc) -> anyhow::Result<()> {
@@ -225,7 +237,7 @@ mod tests {
     fn setup_test_index() -> anyhow::Result<(tempfile::TempDir, TantivyIndexManager)> {
         let dir = tempfile::tempdir()?;
         let manager = TantivyIndexManager::new_with_path(
-            dir.path().to_str().ok_or_else(|| anyhow::anyhow!("path"))?
+            dir.path().to_str().ok_or_else(|| anyhow::anyhow!("path"))?,
         )?;
         Ok((dir, manager))
     }
@@ -246,7 +258,11 @@ mod tests {
         let start = Instant::now();
         let results = builder.search("latency", 10).await?;
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() < 200, "query too slow: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 200,
+            "query too slow: {}ms",
+            elapsed.as_millis()
+        );
         assert!(!results.is_empty());
         Ok(())
     }
@@ -300,7 +316,11 @@ mod tests {
         let start = Instant::now();
         let results = builder.search("中华人民共和国", 10).await?;
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() < 200, "chinese query too slow: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 200,
+            "chinese query too slow: {}ms",
+            elapsed.as_millis()
+        );
         assert!(!results.is_empty());
         Ok(())
     }

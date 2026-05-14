@@ -1,13 +1,13 @@
 //! Tantivy Full-Text Index Integration with SimHash-64 Sharding
 //! Reuses existing 16-shard SQLite architecture
 //! Week 8: Added JiebaTokenizer Chinese tokenizer support
-use tantivy::schema::*;
-use tantivy::{Index, IndexWriter, IndexReader, TantivyError};
-use tantivy::tokenizer::{TokenizerManager, TextAnalyzer, Tokenizer};
+use foundation_hash::{get_shard_id, NUM_SHARDS};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tantivy::schema::*;
+use tantivy::tokenizer::{TextAnalyzer, Tokenizer, TokenizerManager};
+use tantivy::{Index, IndexReader, IndexWriter, TantivyError};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use foundation_hash::{simhash64, get_shard_id, NUM_SHARDS};
 
 pub struct TantivyIndexManager {
     shards: Vec<Arc<RwLock<ShardIndex>>>,
@@ -37,13 +37,25 @@ pub struct JiebaTokenizer {
 }
 
 impl Clone for JiebaTokenizer {
-    fn clone(&self) -> Self { Self { jieba: Arc::clone(&self.jieba) } }
+    fn clone(&self) -> Self {
+        Self {
+            jieba: Arc::clone(&self.jieba),
+        }
+    }
 }
 
 impl JiebaTokenizer {
-    pub fn new() -> Self { Self { jieba: Arc::new(jieba_rs::Jieba::new()) } }
+    pub fn new() -> Self {
+        Self {
+            jieba: Arc::new(jieba_rs::Jieba::new()),
+        }
+    }
     pub fn tokenize(&self, text: &str) -> Vec<String> {
-        self.jieba.cut(text, true).into_iter().map(|s| s.to_string()).collect()
+        self.jieba
+            .cut(text, true)
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect()
     }
     pub fn has_chinese(&self, text: &str) -> bool {
         text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
@@ -51,14 +63,28 @@ impl JiebaTokenizer {
 }
 
 impl Default for JiebaTokenizer {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Tokenizer for JiebaTokenizer {
     type TokenStream<'a> = JiebaTokenStream<'a>;
     fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
         let tokens = self.tokenize(text);
-        JiebaTokenStream { tokens, current: 0, offset_from: 0, token: tantivy::tokenizer::Token { offset_from: 0, offset_to: 0, position: 0, text: String::new(), position_length: 1 }, _marker: std::marker::PhantomData }
+        JiebaTokenStream {
+            tokens,
+            current: 0,
+            offset_from: 0,
+            token: tantivy::tokenizer::Token {
+                offset_from: 0,
+                offset_to: 0,
+                position: 0,
+                text: String::new(),
+                position_length: 1,
+            },
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -81,10 +107,16 @@ impl<'a> tantivy::tokenizer::TokenStream for JiebaTokenStream<'a> {
             self.offset_from += text.len();
             self.current += 1;
             true
-        } else { false }
+        } else {
+            false
+        }
     }
-    fn token(&self) -> &tantivy::tokenizer::Token { &self.token }
-    fn token_mut(&mut self) -> &mut tantivy::tokenizer::Token { &mut self.token }
+    fn token(&self) -> &tantivy::tokenizer::Token {
+        &self.token
+    }
+    fn token_mut(&mut self) -> &mut tantivy::tokenizer::Token {
+        &mut self.token
+    }
 }
 
 impl TantivyIndexManager {
@@ -118,9 +150,18 @@ impl TantivyIndexManager {
             index.tokenizers().register("jieba", jieba_analyzer.clone());
             let writer = index.writer(50_000_000)?;
             let reader = index.reader()?;
-            shards.push(Arc::new(RwLock::new(ShardIndex { index, writer, reader, shard_id })));
+            shards.push(Arc::new(RwLock::new(ShardIndex {
+                index,
+                writer,
+                reader,
+                shard_id,
+            })));
         }
-        Ok(Self { shards, schema, tokenizer_manager })
+        Ok(Self {
+            shards,
+            schema,
+            tokenizer_manager,
+        })
     }
 
     pub async fn add_document(&self, doc: SearchDoc) -> Result<(), TantivyError> {
@@ -156,7 +197,9 @@ impl TantivyIndexManager {
         self.shards.get(shard_id).cloned()
     }
 
-    pub fn shard_count(&self) -> usize { self.shards.len() }
+    pub fn shard_count(&self) -> usize {
+        self.shards.len()
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +209,10 @@ mod tests {
     #[test]
     fn test_simhash_routing() {
         assert!(get_shard_id("test_doc_1") < NUM_SHARDS);
-        assert_eq!(get_shard_id("consistent_doc"), get_shard_id("consistent_doc"));
+        assert_eq!(
+            get_shard_id("consistent_doc"),
+            get_shard_id("consistent_doc")
+        );
     }
 
     #[test]
@@ -204,14 +250,17 @@ mod tests {
         assert!(!tokenizer.has_chinese("Hello World"));
         let tokens = tokenizer.tokenize("中华人民共和国");
         assert!(!tokens.is_empty());
-        assert!(tokens.iter().any(|t| t.contains("中华") || t.contains("人民") || t.contains("共和")));
+        assert!(tokens
+            .iter()
+            .any(|t| t.contains("中华") || t.contains("人民") || t.contains("共和")));
         assert!(tokens.len() < "中华人民共和国".chars().count());
     }
 
     #[tokio::test]
     async fn test_manager_creation_and_document() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let manager = TantivyIndexManager::new_with_path(dir.path().to_str().unwrap()).expect("create");
+        let manager =
+            TantivyIndexManager::new_with_path(dir.path().to_str().unwrap()).expect("create");
         assert_eq!(manager.shard_count(), NUM_SHARDS);
         let doc = SearchDoc {
             id: "doc_1".to_string(),
@@ -227,7 +276,8 @@ mod tests {
     #[test]
     fn test_shard_access() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let manager = TantivyIndexManager::new_with_path(dir.path().to_str().unwrap()).expect("create");
+        let manager =
+            TantivyIndexManager::new_with_path(dir.path().to_str().unwrap()).expect("create");
         assert!(manager.get_shard(0).is_some());
         assert!(manager.get_shard(NUM_SHARDS).is_none());
         assert_eq!(manager.shard_count(), NUM_SHARDS);

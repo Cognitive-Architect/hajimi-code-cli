@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// Embedding向量维度常量 - 384维用于轻量级语义检索
 pub const EMBEDDING_DIMENSION: usize = 384;

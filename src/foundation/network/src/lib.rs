@@ -6,8 +6,8 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, warn};
 
 pub mod handlers;
@@ -15,8 +15,8 @@ pub mod protocol;
 
 use crate::handlers::HandlerRegistry;
 use crate::protocol::{
-    error_codes, ConnectionState, JsonRpcRequest, JsonRpcResponse,
-    ProtocolError, ServerConfig, WsMessage,
+    error_codes, ConnectionState, JsonRpcRequest, JsonRpcResponse, ProtocolError, ServerConfig,
+    WsMessage,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -107,12 +107,16 @@ impl WebSocketServer {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let connection_id = format!("{}-{:016x}", ts, CONN_COUNTER.fetch_add(1, Ordering::SeqCst));
-        
+        let connection_id = format!(
+            "{}-{:016x}",
+            ts,
+            CONN_COUNTER.fetch_add(1, Ordering::SeqCst)
+        );
+
         info!("New connection {} from {}", connection_id, remote_addr);
 
         let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
-        
+
         let connection = Connection {
             id: connection_id.clone(),
             remote_addr,
@@ -150,7 +154,7 @@ impl WebSocketServer {
                             WsMessage::Binary(b) => Message::Binary(b),
                             WsMessage::Ping(p) => Message::Ping(p),
                             WsMessage::Pong(p) => Message::Pong(p),
-                            WsMessage::Close(c, r) => Message::Close(c.map(|code| 
+                            WsMessage::Close(c, r) => Message::Close(c.map(|code|
                                 tokio_tungstenite::tungstenite::protocol::CloseFrame {
                                     code: code.into(),
                                     reason: r.into(),

@@ -4,10 +4,10 @@
 //! across 16 shards. Part of the 5-tier memory cascade:
 //! Session → Auto → Dream → Graph → Knowledge
 
+use foundation_hash::{get_shard_id, NUM_SHARDS};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use foundation_hash::{simhash64, get_shard_id, NUM_SHARDS};
 
 /// Represents an extracted ADR pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +87,8 @@ impl KnowledgeGraphIndex {
 
 /// Extracts ADR patterns from raw markdown content.
 pub fn extract_adr_patterns(content: &str) -> Vec<AdrPattern> {
-    let title = content.lines()
+    let title = content
+        .lines()
         .find(|l| l.starts_with("title:"))
         .map(|l| l.trim_start_matches("title:").trim().to_string())
         .unwrap_or_default();
@@ -108,12 +109,19 @@ pub fn extract_adr_patterns(content: &str) -> Vec<AdrPattern> {
     }
     keywords.sort();
     keywords.dedup();
-    let id = content.lines()
+    let id = content
+        .lines()
         .find(|l| l.starts_with("id:"))
         .map(|l| l.trim_start_matches("id:").trim().to_string())
         .unwrap_or_default();
     let shard_id = if id.is_empty() { 0 } else { get_shard_id(&id) };
-    vec![AdrPattern { id, title, keywords, shard_id, path: String::new() }]
+    vec![AdrPattern {
+        id,
+        title,
+        keywords,
+        shard_id,
+        path: String::new(),
+    }]
 }
 
 /// Builds a `KnowledgeGraphIndex` by scanning a directory for `.md` files.

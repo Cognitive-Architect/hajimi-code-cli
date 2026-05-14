@@ -40,31 +40,69 @@ pub enum ReplEvent {
 
     /// Observation received from environment or tool execution.
     /// Carries structured observation data for agent processing.
-    ObservationReceived { agent_id: String, observation: String, source: String },
+    ObservationReceived {
+        agent_id: String,
+        observation: String,
+        source: String,
+    },
 
     /// Tool execution result available.
     /// Contains tool name, result payload, and success status.
-    ToolResult { agent_id: String, tool_name: String, result: String, success: bool },
+    ToolResult {
+        agent_id: String,
+        tool_name: String,
+        result: String,
+        success: bool,
+    },
 
     /// Reflection cycle completed.
     /// Signals agent has finished self-critique and learning.
-    ReflectionComplete { agent_id: String, insights: Vec<String>, confidence: f32 },
+    ReflectionComplete {
+        agent_id: String,
+        insights: Vec<String>,
+        confidence: f32,
+    },
 
     /// Plan update event - plan created or modified.
     /// Contains serialized plan structure and version.
-    PlanUpdate { agent_id: String, plan_version: u32, description: String, subtasks: Vec<String> },
+    PlanUpdate {
+        agent_id: String,
+        plan_version: u32,
+        description: String,
+        subtasks: Vec<String>,
+    },
 
     // === Phase 2 Day 1: Swarm Worker Events ===
     /// A swarm task has been delegated to a worker.
-    SwarmTaskDelegated { agent_id: String, task_id: String, worker_id: String, priority: u8 },
+    SwarmTaskDelegated {
+        agent_id: String,
+        task_id: String,
+        worker_id: String,
+        priority: u8,
+    },
     /// A swarm task has completed (success or failure).
-    SwarmTaskCompleted { agent_id: String, task_id: String, worker_id: String, success: bool, output: String },
+    SwarmTaskCompleted {
+        agent_id: String,
+        task_id: String,
+        worker_id: String,
+        success: bool,
+        output: String,
+    },
     /// A tool execution has completed within a worker.
-    ToolExecutionCompleted { agent_id: String, tool_name: String, task_id: String, result: String, success: bool },
+    ToolExecutionCompleted {
+        agent_id: String,
+        tool_name: String,
+        task_id: String,
+        result: String,
+        success: bool,
+    },
 
     // === B-05/12: Thinking UI Data Structures ===
     /// Operation summary event for UI visualization.
-    OperationSummary { agent_id: String, summary: OperationSummary },
+    OperationSummary {
+        agent_id: String,
+        summary: OperationSummary,
+    },
     /// Thinking content event for reasoning trace display.
     ThinkingContent { agent_id: String, content: String },
 }
@@ -149,7 +187,13 @@ mod tests {
 
     #[test]
     fn test_event_should_persist() {
-        assert!(ReplEvent::AgentTick { agent_id: "a".to_string(), cycle: 1 }.should_persist());
+        assert!(
+            ReplEvent::AgentTick {
+                agent_id: "a".to_string(),
+                cycle: 1
+            }
+            .should_persist()
+        );
         assert!(!ReplEvent::Input("test".to_string()).should_persist());
     }
 }

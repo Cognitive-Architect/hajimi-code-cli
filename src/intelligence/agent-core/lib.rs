@@ -1,54 +1,72 @@
 //! Agent Core: Autonomous multi-agent orchestration system.
 //! Extends ReplEngineCore with proactive reasoning capabilities.
 
-pub mod orchestrator;
-pub mod events;
-pub mod planner;
-pub mod reflector;
-pub mod governance;
-pub mod swarm;
-pub mod blackboard;
-pub mod checkpoint;
-pub mod tools;
+pub mod act_dto;
+pub mod act_executor;
 pub mod agent_loop;
 pub mod agent_loop_builder;
-pub mod ports;
+pub mod blackboard;
+pub mod checkpoint;
+pub mod context_window_manager;
 pub mod degrade;
-pub mod llm;
-pub mod prompts;
-pub mod swarm_delegate;
-pub mod multi_worker_aggregator;
-pub mod worker_lifecycle_manager;
-pub mod event_tracing;
-pub mod memory_retriever;
-pub mod loop_state_machine;
-pub mod reflection_persistence;
-pub mod plan_optimizer;
-pub mod resource_monitor;
 pub mod edit_applier;
-pub mod workflow_orchestrator;
+pub mod event_tracing;
+pub mod events;
+pub mod governance;
+pub mod llm;
+pub mod loop_state_machine;
 pub mod memory_bootstrapper;
-pub use edit_applier::{EditApplier, ProposedEdit, AppliedEdit, EditHunk, EditState, edit_summary};
+pub mod memory_retriever;
+pub mod multi_worker_aggregator;
+pub mod orchestrator;
+pub mod plan_optimizer;
+pub mod planner;
+pub mod planner_dto;
+pub mod ports;
+pub mod prompts;
+pub mod reflection_persistence;
+pub mod reflector;
+pub mod reflector_dto;
+pub mod resource_monitor;
+pub mod swarm;
+pub mod swarm_delegate;
+pub mod tool_manifest;
+pub mod tools;
+pub mod worker_lifecycle_manager;
+pub mod workflow_orchestrator;
+pub use edit_applier::{edit_summary, AppliedEdit, EditApplier, EditHunk, EditState, ProposedEdit};
 pub use workflow_orchestrator::{WorkflowOrchestrator, WorkflowOutcome};
 
 // Phase 4 Day 2: AST context re-exports from engine layer (strict layering)
-pub use engine_tool_system::lsp_integration::{ASTContextProvider, LspContextProvider, SymbolContext};
-pub use engine_tool_system::ast_provider::{AstSymbolIndex, CodeSymbol};
-pub use blackboard::Blackboard;
-pub use orchestrator::AgentOrchestrator;
-pub use planner::{HierarchicalPlanner, Goal, SubGoal, Task, Plan, Priority, PlanStatus, TaskResult};
-pub use reflector::{AutonomousReflector, Reflection, Critique, CritiqueSeverity};
-pub use governance::{DefaultGovernance, GovernanceRequest, GovernancePolicy, ApprovalLevel, Decision, Vote, PermissionLevel};
-pub use swarm::{Supervisor, Worker, TaskAssignment, WorkerResult, SwarmMessage, WorkerStatus, SwarmCoordinator, SupervisorMetrics};
-pub use checkpoint::{CheckpointManager, Checkpoint, WorkerState};
-pub use agent_loop::{AgentLoop, LoopState, LoopOutcome, Observation, TraceEvent, OperationSummary};
+pub use agent_loop::{
+    AgentLoop, LoopOutcome, LoopState, Observation, OperationSummary, TraceEvent,
+};
 pub use agent_loop_builder::AgentLoopBuilder;
-pub use memory_bootstrapper::{MemoryBootstrapper, BootstrapResult};
+pub use blackboard::Blackboard;
+pub use checkpoint::{Checkpoint, CheckpointManager, WorkerState};
+pub use engine_tool_system::ast_provider::{AstSymbolIndex, CodeSymbol};
+pub use engine_tool_system::lsp_integration::{
+    ASTContextProvider, LspContextProvider, SymbolContext,
+};
+pub use governance::{
+    ApprovalLevel, Decision, DefaultGovernance, GovernancePolicy, GovernanceRequest,
+    PermissionLevel, Vote,
+};
+pub use memory_bootstrapper::{BootstrapResult, MemoryBootstrapper};
+pub use orchestrator::AgentOrchestrator;
+pub use planner::{
+    Goal, HierarchicalPlanner, Plan, PlanStatus, Priority, SubGoal, Task, TaskResult,
+};
+pub use reflector::{AutonomousReflector, Critique, CritiqueSeverity, Reflection};
+pub use swarm::{
+    Supervisor, SupervisorMetrics, SwarmCoordinator, SwarmMessage, TaskAssignment, Worker,
+    WorkerResult, WorkerStatus,
+};
 
 #[cfg(test)]
 mod agent_loop_tests;
-pub use ports::{AgentError, AgentResult};
 pub use degrade::degrade_warn;
+pub use ports::{AgentError, AgentResult};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

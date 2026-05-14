@@ -1,13 +1,13 @@
+use crate::error::EngineError;
+use crate::query::{Query, QueryResult};
+use crate::Executor;
+use engine_tool_system::{ToolArgs, ToolRegistry};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{info, warn};
-use engine_tool_system::{ToolRegistry, ToolArgs};
-use crate::error::EngineError;
-use crate::Executor;
-use crate::query::{Query, QueryResult};
 
 pub struct ParallelExecutor {
     max_concurrency: usize,
@@ -17,7 +17,11 @@ pub struct ParallelExecutor {
 
 impl ParallelExecutor {
     pub fn new() -> Self {
-        Self { max_concurrency: 10, tool_registry: None, callback: None }
+        Self {
+            max_concurrency: 10,
+            tool_registry: None,
+            callback: None,
+        }
     }
 
     pub fn with_max_concurrency(mut self, max: usize) -> Self {
@@ -37,18 +41,23 @@ impl ParallelExecutor {
         self
     }
 
-    async fn run_query(query: Query, registry: Option<Arc<tokio::sync::Mutex<ToolRegistry>>>) -> Result<QueryResult, EngineError> {
+    async fn run_query(
+        query: Query,
+        registry: Option<Arc<tokio::sync::Mutex<ToolRegistry>>>,
+    ) -> Result<QueryResult, EngineError> {
         let start = Instant::now();
 
         // Validate query content.
         if query.content.is_empty() {
-            return Err(EngineError::InvalidParameters("Query content is empty".to_string()));
+            return Err(EngineError::InvalidParameters(
+                "Query content is empty".to_string(),
+            ));
         }
 
         let result = timeout(
             Duration::from_millis(query.timeout_ms),
             async {
-                let elapsed = start.elapsed().as_millis() as u64;
+                let _elapsed = start.elapsed().as_millis() as u64;
 
                 // If a tool registry is attached, attempt real tool execution.
                 if let Some(reg_arc) = registry {
@@ -109,7 +118,10 @@ impl Executor for ParallelExecutor {
         // Notify callback if registered.
         if let Some(ref cb) = self.callback {
             match &result {
-                Ok(ref r) if r.success => cb.on_success(&r.query_id, &r.content, r.execution_time_ms).await,
+                Ok(ref r) if r.success => {
+                    cb.on_success(&r.query_id, &r.content, r.execution_time_ms)
+                        .await
+                }
                 Ok(ref r) => cb.on_failure(&r.query_id, &r.content).await,
                 Err(ref e) => cb.on_failure(&query_id, &e.to_string()).await,
             }
@@ -127,7 +139,10 @@ impl Executor for ParallelExecutor {
                 Ok(p) => p,
                 Err(_) => {
                     join_set.spawn(async move {
-                        (idx, Err(EngineError::ExecutionFailed("Semaphore closed".to_string())))
+                        (
+                            idx,
+                            Err(EngineError::ExecutionFailed("Semaphore closed".to_string())),
+                        )
                     });
                     continue;
                 }

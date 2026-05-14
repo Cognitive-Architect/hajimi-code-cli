@@ -20,10 +20,10 @@ pub enum EngineError {
 
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
-    
+
     #[error("Tool error: {0}")]
     ToolError(String),
-    
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 }

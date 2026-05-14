@@ -36,8 +36,14 @@ impl MemoryScheduler {
 
     fn seconds_until_2am() -> u64 {
         let now = chrono::Local::now();
-        let target = now.date_naive().and_hms_opt(2, 0, 0).unwrap_or(now.naive_local());
-        let target = chrono::Local.from_local_datetime(&target).single().unwrap_or(now);
+        let target = now
+            .date_naive()
+            .and_hms_opt(2, 0, 0)
+            .unwrap_or(now.naive_local());
+        let target = chrono::Local
+            .from_local_datetime(&target)
+            .single()
+            .unwrap_or(now);
         if target > now {
             target.signed_duration_since(now).num_seconds() as u64
         } else {
@@ -62,7 +68,9 @@ impl MemoryScheduler {
                 }
             }
         });
-        tokio::spawn(async move { handles.write().await.push(handle); });
+        tokio::spawn(async move {
+            handles.write().await.push(handle);
+        });
         Ok(())
     }
 
@@ -84,7 +92,9 @@ impl MemoryScheduler {
                 }
             }
         });
-        tokio::spawn(async move { handles.write().await.push(handle); });
+        tokio::spawn(async move {
+            handles.write().await.push(handle);
+        });
         Ok(())
     }
 
@@ -92,13 +102,17 @@ impl MemoryScheduler {
     pub async fn shutdown(&self) -> Result<(), SchedulerError> {
         let _ = self.shutdown_tx.send(true);
         let mut handles = self.handles.write().await;
-        while let Some(h) = handles.pop() { let _ = h.await; }
+        while let Some(h) = handles.pop() {
+            let _ = h.await;
+        }
         Ok(())
     }
 }
 
 impl Default for MemoryScheduler {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

@@ -1,15 +1,15 @@
 //! RAGIndex - 检索增强生成向量索引层
-//! 
+//!
 //! 特性:
 //! - 向量维度: 384（默认，可配置）
 //! - 相似度: 余弦相似度
 //! - 索引: HNSW近似最近邻
 //! - **性能特征: 非O(1)，向量计算密集型**
 
-use std::sync::Arc;
+use super::{MemoryLevel, MemoryStats, MemoryTier};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use super::{MemoryStats, MemoryLevel, MemoryTier};
 
 /// 向量维度常量
 pub const DEFAULT_DIMENSION: usize = 384;
@@ -22,7 +22,7 @@ pub struct VectorEntry {
 }
 
 /// RAG向量索引层
-/// 
+///
 /// # 性能特征
 /// - **向量检索**: HNSW近似最近邻，O(log n)
 /// - **余弦相似度**: 计算密集型
@@ -36,14 +36,14 @@ impl RAGIndex {
     pub fn new() -> Self {
         Self::with_dimension(DEFAULT_DIMENSION)
     }
-    
+
     pub fn with_dimension(dim: usize) -> Self {
         Self {
             vectors: Arc::new(RwLock::new(HashMap::new())),
             dimension: dim,
         }
     }
-    
+
     /// 计算余弦相似度
     fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
@@ -51,7 +51,7 @@ impl RAGIndex {
         let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
         dot / (norm_a * norm_b + 1e-8)
     }
-    
+
     /// 搜索最相似向量（暴力搜索，Sprint 5可升级HNSW）
     async fn search_similar(&self, query: &[f32], top_k: usize) -> Vec<(String, f32)> {
         let vectors = self.vectors.read().await;
@@ -66,38 +66,42 @@ impl RAGIndex {
 }
 
 impl Default for RAGIndex {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MemoryTier for RAGIndex {
     type Error = std::io::Error;
     type Key = String;
     type Value = String;
-    
+
     async fn get(&self, key: &Self::Key) -> Result<Option<Self::Value>, Self::Error> {
         let vectors = self.vectors.read().await;
         Ok(vectors.get(key).map(|e| e.value.clone()))
     }
-    
+
     async fn put(&self, key: Self::Key, value: Self::Value) -> Result<(), Self::Error> {
         // 生成随机向量（实际应调用embedding模型）
-        let embedding: Vec<f32> = (0..self.dimension).map(|i| ((i * 7) % 100) as f32 / 100.0).collect();
+        let embedding: Vec<f32> = (0..self.dimension)
+            .map(|i| ((i * 7) % 100) as f32 / 100.0)
+            .collect();
         let mut vectors = self.vectors.write().await;
         vectors.insert(key, VectorEntry { value, embedding });
         Ok(())
     }
-    
+
     async fn delete(&self, key: &Self::Key) -> Result<(), Self::Error> {
         let mut vectors = self.vectors.write().await;
         vectors.remove(key);
         Ok(())
     }
-    
+
     async fn list_keys(&self) -> Result<Vec<Self::Key>, Self::Error> {
         let vectors = self.vectors.read().await;
         Ok(vectors.keys().cloned().collect())
     }
-    
+
     async fn stats(&self) -> Result<MemoryStats, Self::Error> {
         let vectors = self.vectors.read().await;
         let n = vectors.len();
@@ -108,8 +112,10 @@ impl MemoryTier for RAGIndex {
             level: MemoryLevel::Rag,
         })
     }
-    
-    fn memory_level(&self) -> MemoryLevel { MemoryLevel::Rag }
+
+    fn memory_level(&self) -> MemoryLevel {
+        MemoryLevel::Rag
+    }
 }
 
 impl RAGIndex {
@@ -125,14 +131,16 @@ impl RAGIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[tokio::test] async fn test_rag_basic() {
+
+    #[tokio::test]
+    async fn test_rag_basic() {
         let rag = RAGIndex::new();
         rag.put("k1".into(), "v1".into()).await.unwrap();
         assert_eq!(rag.get(&"k1".into()).await.unwrap(), Some("v1".into()));
     }
-    
-    #[tokio::test] async fn test_rag_search() {
+
+    #[tokio::test]
+    async fn test_rag_search() {
         let rag = RAGIndex::new();
         rag.put("doc1".into(), "content1".into()).await.unwrap();
         rag.put("doc2".into(), "content2".into()).await.unwrap();
@@ -140,8 +148,9 @@ mod tests {
         let results = rag.search(query, 2).await;
         assert_eq!(results.len(), 2);
     }
-    
-    #[test] fn test_dimension() {
+
+    #[test]
+    fn test_dimension() {
         assert_eq!(DEFAULT_DIMENSION, 384);
     }
 }

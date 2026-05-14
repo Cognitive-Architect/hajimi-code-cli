@@ -11,9 +11,16 @@ pub struct AdrCli {
 
 #[derive(Subcommand)]
 pub enum AdrCommands {
-    List { #[arg(short, long)] status: Option<AdrStatus> },
-    Create { title: String },
-    Query { id: String },
+    List {
+        #[arg(short, long)]
+        status: Option<AdrStatus>,
+    },
+    Create {
+        title: String,
+    },
+    Query {
+        id: String,
+    },
 }
 
 impl AdrCli {
@@ -22,19 +29,37 @@ impl AdrCli {
             AdrCommands::List { status } => {
                 println!("{:<10} {:<12} {:<32} Date", "ID", "Status", "Title");
                 for entry in &index.entries {
-                    if let Some(s) = status { if entry.status != *s { continue; } }
+                    if let Some(s) = status {
+                        if entry.status != *s {
+                            continue;
+                        }
+                    }
                     let date = entry.date.format("%Y-%m-%d").to_string();
                     let status_str = format!("{:?}", entry.status).to_lowercase();
-                    let title = if entry.title.len() > 30 { &entry.title[..30] } else { &entry.title };
+                    let title = if entry.title.len() > 30 {
+                        &entry.title[..30]
+                    } else {
+                        &entry.title
+                    };
                     println!("{:<10} {:<12} {:<32} {}", entry.id, status_str, title, date);
                 }
             }
-            AdrCommands::Create { title } => { println!("创建ADR: {}", title); }
+            AdrCommands::Create { title } => {
+                println!("创建ADR: {}", title);
+            }
             AdrCommands::Query { id } => {
                 if let Some(entry) = index.entries.iter().find(|e| e.id == *id) {
-                    println!("ID: {}\nTitle: {}\nStatus: {:?}\nDate: {}\nTags: {:?}",
-                        entry.id, entry.title, entry.status, entry.date.format("%Y-%m-%d"), entry.tags);
-                } else { return Err(anyhow::anyhow!("ADR not found: {}", id)); }
+                    println!(
+                        "ID: {}\nTitle: {}\nStatus: {:?}\nDate: {}\nTags: {:?}",
+                        entry.id,
+                        entry.title,
+                        entry.status,
+                        entry.date.format("%Y-%m-%d"),
+                        entry.tags
+                    );
+                } else {
+                    return Err(anyhow::anyhow!("ADR not found: {}", id));
+                }
             }
         }
         Ok(())
@@ -51,8 +76,12 @@ mod tests {
         use crate::core_adr::AdrEntry;
         let mut index = AdrIndex::default();
         index.entries.push(AdrEntry {
-            id: "ADR-001".to_string(), title: "Test".to_string(),
-            status: AdrStatus::Accepted, date: Utc::now(), tags: vec![], content: "test".to_string(),
+            id: "ADR-001".to_string(),
+            title: "Test".to_string(),
+            status: AdrStatus::Accepted,
+            date: Utc::now(),
+            tags: vec![],
+            content: "test".to_string(),
         });
         assert_eq!(index.entries.len(), 1);
     }

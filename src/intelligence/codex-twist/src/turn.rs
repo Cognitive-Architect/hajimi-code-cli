@@ -1,6 +1,6 @@
 //! Turn管理 - 轻量级移植自Codex
 //! 参考: codex-twist/codex-rs/protocol/src/protocol.rs
-//! 
+//!
 //! Turn = 单次"用户提问 -> AI回复"的完整交互
 
 /// Turn ID类型
@@ -50,7 +50,7 @@ pub enum ResponseContent {
 }
 
 /// Turn结构 - 单次对话回合
-/// 
+///
 /// 对应Codex的Turn概念，但移除了云端同步字段
 #[derive(Default)]
 pub struct Turn {
@@ -84,7 +84,7 @@ pub struct ToolResult {
 
 impl Turn {
     /// 创建新Turn
-    /// 
+    ///
     /// # Arguments
     /// * `thread_id` - 所属Thread
     /// * `prompt` - 用户输入
@@ -117,7 +117,7 @@ impl Turn {
     /// 流式追加响应
     pub fn append_response(&mut self, chunk: String) {
         self.status = TurnStatus::Streaming;
-        
+
         // 追加到最后一个文本响应，或创建新响应
         if let Some(ResponseContent::Text(ref mut text)) = self.responses.last_mut() {
             text.push_str(&chunk);
@@ -166,7 +166,9 @@ impl Turn {
 
     /// 检查是否包含工具调用
     pub fn has_tool_calls(&self) -> bool {
-        self.responses.iter().any(|r| matches!(r, ResponseContent::ToolCall(_)))
+        self.responses
+            .iter()
+            .any(|r| matches!(r, ResponseContent::ToolCall(_)))
     }
 
     /// 获取工具调用列表
@@ -241,12 +243,12 @@ mod tests {
     #[test]
     fn test_turn_lifecycle() {
         let mut turn = Turn::new("thread-001".to_string(), "Hello".to_string());
-        
+
         assert_eq!(turn.status, TurnStatus::Pending);
-        
+
         turn.append_response("Hi".to_string());
         assert_eq!(turn.status, TurnStatus::Streaming);
-        
+
         turn.complete("Hi there!".to_string());
         assert_eq!(turn.status, TurnStatus::Completed);
         assert_eq!(turn.response_content(), "HiHi there!");
@@ -255,13 +257,13 @@ mod tests {
     #[test]
     fn test_tool_calls() {
         let mut turn = Turn::new("thread-002".to_string(), "Run ls".to_string());
-        
+
         turn.add_tool_call(ToolCall {
             id: "call_1".to_string(),
             name: "shell".to_string(),
             arguments: r#"{"command": "ls -la"}"#.to_string(),
         });
-        
+
         assert!(turn.has_tool_calls());
         assert_eq!(turn.get_tool_calls().len(), 1);
     }
@@ -270,7 +272,7 @@ mod tests {
     fn test_turn_cancel() {
         let mut turn = Turn::new("thread-003".to_string(), "Test".to_string());
         turn.cancel();
-        
+
         assert_eq!(turn.status, TurnStatus::Cancelled);
         assert!(turn.completed_at.is_some());
     }

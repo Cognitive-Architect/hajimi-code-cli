@@ -24,7 +24,7 @@ impl ChannelStream {
         let (tx, rx) = mpsc::channel(capacity);
         (Self { receiver: rx }, tx)
     }
-    
+
     /// Receive next chunk
     pub async fn next(&mut self) -> Option<StreamChunk> {
         self.receiver.recv().await
@@ -32,5 +32,5 @@ impl ChannelStream {
 }
 
 pub mod channel_stream {
-    pub use super::{ChannelStream, StreamChunk};
+    pub use super::ChannelStream;
 }

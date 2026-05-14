@@ -1,8 +1,8 @@
 //! Agent Core local error types — decouples from chimera-repl interface layer.
 //! Phase 2 Day 1: Added WorkerCallback trait for Swarm result propagation.
 
-use std::fmt;
 use chimera_repl::traits::ReplError;
+use std::fmt;
 
 /// AgentCore-local error type, decoupled from ReplError.
 #[derive(Debug, Clone)]
@@ -55,8 +55,7 @@ pub type AgentResult<T> = Result<T, AgentError>;
 
 // SyncMemoryGateway re-exports from memory crate (port-adapter boundary).
 pub use memory::sync_gateway::{
-    BlackboardSnapshot, GatewayEvent, MemoryTier, SyncGatewayError,
-    SyncMemoryGateway, TierHealth,
+    BlackboardSnapshot, GatewayEvent, MemoryTier, SyncGatewayError, SyncMemoryGateway, TierHealth,
 };
 
 // ============================================================================
@@ -113,9 +112,21 @@ impl WorkerMetrics {
 #[async_trait]
 pub trait WorkerCallback: Send + Sync {
     /// Called when a worker task completes successfully.
-    async fn on_success(&self, task_id: &str, worker_id: &str, output: &str, metrics: &WorkerMetrics);
+    async fn on_success(
+        &self,
+        task_id: &str,
+        worker_id: &str,
+        output: &str,
+        metrics: &WorkerMetrics,
+    );
     /// Called when a worker task fails.
-    async fn on_failure(&self, task_id: &str, worker_id: &str, error: &str, metrics: &WorkerMetrics);
+    async fn on_failure(
+        &self,
+        task_id: &str,
+        worker_id: &str,
+        error: &str,
+        metrics: &WorkerMetrics,
+    );
     /// Called when a worker task times out.
     async fn on_timeout(&self, task_id: &str, worker_id: &str, elapsed_ms: u64);
 }

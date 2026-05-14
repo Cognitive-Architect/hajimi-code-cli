@@ -90,7 +90,8 @@ impl EndToEndPipeline {
     /// `from_raw_parts` call.
     async fn tantivy_stage(&self, vectors: Vec<f32>) -> Vec<String> {
         // SAFETY: we own the Vec and it is valid for the duration of this block.
-        let _raw = unsafe { std::slice::from_raw_parts(vectors.as_ptr() as *const u8, vectors.len() * 4) };
+        let _raw =
+            unsafe { std::slice::from_raw_parts(vectors.as_ptr() as *const u8, vectors.len() * 4) };
         tokio::time::sleep(Duration::from_millis(5)).await;
         vec!["tantivy_doc".into()]
     }

@@ -1,24 +1,24 @@
 //! EventLoop-Chimera Integration Tests
-//! 
+//!
 //! Validates that Chimera REPL correctly uses EventLoop primitives
 //! instead of direct tokio calls.
 
 use chimera_repl::eventloop_adapter::*;
 use chimera_repl::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// FUNC-001: Verify Chimera uses EventLoop::spawn
 #[tokio::test]
 async fn test_eventloop_spawn_integration() {
     let counter = Arc::new(AtomicUsize::new(0));
     let counter_clone = counter.clone();
-    
+
     let handle = spawn(async move {
         counter_clone.fetch_add(1, Ordering::SeqCst);
         42
     });
-    
+
     let result = handle.await.unwrap();
     assert_eq!(result, 42);
     assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -34,7 +34,9 @@ async fn test_eventloop_block_on_integration() {
             sleep(Duration::from_millis(1)).await;
             "blocked"
         })
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(result, "blocked");
 }
 
@@ -46,10 +48,10 @@ async fn test_adapter_channel_and_rwlock() {
     spawn(async move {
         tx.send("hello".to_string()).await.unwrap();
     });
-    
+
     let msg = rx.recv().await.unwrap();
     assert_eq!(msg, "hello");
-    
+
     // Test RwLock
     let lock = rwlock(0u32);
     *write(&lock).await = 42;
@@ -63,8 +65,9 @@ async fn test_eventloop_timeout() {
     let result = timeout(Duration::from_millis(10), async {
         sleep(Duration::from_millis(100)).await;
         "completed"
-    }).await;
-    
+    })
+    .await;
+
     assert!(result.is_err());
 }
 
@@ -73,12 +76,12 @@ async fn test_eventloop_timeout() {
 async fn test_spawn_detached() {
     let counter = Arc::new(AtomicUsize::new(0));
     let counter_clone = counter.clone();
-    
+
     spawn_detached(async move {
         sleep(Duration::from_millis(1)).await;
         counter_clone.fetch_add(1, Ordering::SeqCst);
     });
-    
+
     sleep(Duration::from_millis(20)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 }
@@ -87,17 +90,17 @@ async fn test_spawn_detached() {
 #[tokio::test]
 async fn test_repl_e2e_integration() {
     let config = ReplConfig::default();
-    
+
     // Create engine using EventLoop primitives
     let engine = ReplEngine::new(config).await.unwrap();
-    
+
     // Verify engine uses EventLoop-backed RwLock
     assert!(!*read(&engine.running).await);
-    
+
     // Start engine
     *write(&engine.running).await = true;
     assert!(*read(&engine.running).await);
-    
+
     // Shutdown
     *write(&engine.running).await = false;
     assert!(!*read(&engine.running).await);

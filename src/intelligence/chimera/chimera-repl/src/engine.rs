@@ -3,15 +3,10 @@
 //! Provides the main event loop and command processing logic
 //! without TUI dependencies.
 
-
-
-use crate::eventloop_adapter::{rwlock, write, ArcRwLock};
+use crate::eventloop_adapter::{ArcRwLock, rwlock, write};
 use tracing::{debug, info};
 
-use crate::{
-    ReplResult,
-    SessionState,
-};
+use crate::{ReplResult, SessionState};
 
 /// Engine state machine for REPL lifecycle management.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

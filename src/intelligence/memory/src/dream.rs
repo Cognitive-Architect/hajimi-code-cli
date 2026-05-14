@@ -3,24 +3,24 @@
 
 use crate::auto::{AutoEntry, AutoMemory};
 use chrono::{DateTime, Utc};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use log::{debug, trace};
 use thiserror::Error;
 
 #[cfg(feature = "hnsw-index")]
-use std::collections::HashMap;
-#[cfg(feature = "hnsw-index")]
 use hnsw_rs::prelude::*;
+#[cfg(feature = "hnsw-index")]
+use std::collections::HashMap;
 
 #[cfg(feature = "semantic-memory")]
-use std::sync::Arc;
+use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 #[cfg(feature = "semantic-memory")]
-use fastembed::{TextEmbedding, TextInitOptions, EmbeddingModel};
+use std::sync::Arc;
 
 pub const EMBEDDING_DIM: usize = 384;
 pub const MAX_CACHE: usize = 1000;
@@ -76,9 +76,15 @@ pub struct DreamEntry {
 impl DreamEntry {
     pub fn new(auto_entry: AutoEntry, embedding: Vec<f32>) -> Result<Self, DreamError> {
         if embedding.len() != EMBEDDING_DIM {
-            return Err(DreamError::InvalidDimension { actual: embedding.len() });
+            return Err(DreamError::InvalidDimension {
+                actual: embedding.len(),
+            });
         }
-        Ok(Self { auto_entry, embedding, similarity_score: 0.0 })
+        Ok(Self {
+            auto_entry,
+            embedding,
+            similarity_score: 0.0,
+        })
     }
 
     pub fn with_similarity(mut self, score: f32) -> Self {
@@ -136,19 +142,19 @@ impl DreamMemory {
                 tokens INTEGER NOT NULL,
                 embedding_blob BLOB NOT NULL,
                 timestamp TEXT NOT NULL
-            )", [],
+            )",
+            [],
         )?;
         db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_dream_timestamp ON dream_entries(timestamp)", [],
+            "CREATE INDEX IF NOT EXISTS idx_dream_timestamp ON dream_entries(timestamp)",
+            [],
         )?;
         let memory_dir = config_dir.join("hajimi").join("memory").join(project_id);
         std::fs::create_dir_all(&memory_dir)?;
         let jsonl_path = memory_dir.join("dream.jsonl");
         let mut dream = Self {
             db,
-            embedding_cache: Mutex::new(EmbeddingCache::new(
-                NonZeroUsize::new(MAX_CACHE).unwrap()
-            )),
+            embedding_cache: Mutex::new(EmbeddingCache::new(NonZeroUsize::new(MAX_CACHE).unwrap())),
             project_id: project_id.to_string(),
             db_path,
             jsonl_path,
@@ -168,15 +174,22 @@ impl DreamMemory {
         Ok(dream)
     }
 
-    pub fn db_path(&self) -> &PathBuf { &self.db_path }
-    pub fn project_id(&self) -> &str { &self.project_id }
+    pub fn db_path(&self) -> &PathBuf {
+        &self.db_path
+    }
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
 
     /// Create a DreamMemory with optional fastembed semantic embedding support.
     /// If `model_path` is provided, verifies that `model.onnx` exists and attempts
     /// to initialize a `TextEmbedding`. On any failure, gracefully falls back to
     /// hash-based embeddings (semantic_embedder remains None).
     #[cfg(feature = "semantic-memory")]
-    pub fn new_with_semantic(project_id: &str, model_path: Option<PathBuf>) -> Result<Self, DreamError> {
+    pub fn new_with_semantic(
+        project_id: &str,
+        model_path: Option<PathBuf>,
+    ) -> Result<Self, DreamError> {
         let mut mem = Self::new(project_id)?;
         match Self::init_semantic(model_path.clone()) {
             Ok(embedder) => {
@@ -192,8 +205,8 @@ impl DreamMemory {
 
     #[cfg(feature = "semantic-memory")]
     fn init_semantic(model_path: Option<PathBuf>) -> Result<TextEmbedding, DreamError> {
-        let mut opts = TextInitOptions::new(EmbeddingModel::AllMiniLML6V2)
-            .with_show_download_progress(true);
+        let mut opts =
+            TextInitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true);
         if let Some(ref path) = model_path {
             let onnx_path = path.join("model.onnx");
             if !onnx_path.exists() {
@@ -204,11 +217,12 @@ impl DreamMemory {
             }
             opts = opts.with_cache_dir(path.clone());
         }
-        TextEmbedding::try_new(opts)
-            .map_err(|e| DreamError::Io(std::io::Error::new(
+        TextEmbedding::try_new(opts).map_err(|e| {
+            DreamError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("fastembed initialization failed: {}", e),
-            )))
+            ))
+        })
     }
 
     /// Returns true if a semantic embedder is active.
@@ -240,7 +254,10 @@ impl DreamMemory {
     pub fn new_with_hnsw(project_id: &str) -> Result<Self, DreamError> {
         let mut mem = Self::new(project_id)?;
         if let Err(e) = mem.rebuild_hnsw() {
-            debug!("HNSW rebuild failed on startup ({}), continuing without index", e);
+            debug!(
+                "HNSW rebuild failed on startup ({}), continuing without index",
+                e
+            );
             // Graceful degradation: hnsw_index remains None, falls back to linear scan.
         }
         Ok(mem)
@@ -270,7 +287,9 @@ impl DreamMemory {
     pub fn embed(&self, text: &str) -> Vec<f32> {
         // Tier 1: LRU cache
         {
-            let mut cache = self.embedding_cache.lock()
+            let mut cache = self
+                .embedding_cache
+                .lock()
                 .unwrap_or_else(|e| e.into_inner());
             if let Some(cached) = cache.get(text) {
                 trace!("embed cache hit: text_len={}", text.len());
@@ -288,7 +307,9 @@ impl DreamMemory {
                         Ok(mut guard) => match guard.embed(docs, None) {
                             Ok(embeddings) if !embeddings.is_empty() => {
                                 let vec = embeddings[0].clone();
-                                let mut cache = self.embedding_cache.lock()
+                                let mut cache = self
+                                    .embedding_cache
+                                    .lock()
                                     .unwrap_or_else(|e| e.into_inner());
                                 cache.put(text.to_string(), vec.clone());
                                 debug!("embed semantic: text_len={}", text.len());
@@ -309,7 +330,9 @@ impl DreamMemory {
 
         // Tier 3: hash-based fallback
         let vec = self.hash_embed(text);
-        let mut cache = self.embedding_cache.lock()
+        let mut cache = self
+            .embedding_cache
+            .lock()
             .unwrap_or_else(|e| e.into_inner());
         cache.put(text.to_string(), vec.clone());
         vec
@@ -320,11 +343,13 @@ impl DreamMemory {
     fn hash_embed(&self, text: &str) -> Vec<f32> {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hasher::write(&mut hasher, text.as_bytes());
-        let seed = std::hash::Hasher::finish(&mut hasher);
+        let seed = std::hash::Hasher::finish(&hasher);
         let mut vec = Vec::with_capacity(EMBEDDING_DIM);
         let mut state = seed;
         for _ in 0..EMBEDDING_DIM {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let val = ((state >> 32) as u32) as f32 / u32::MAX as f32;
             vec.push(val * 2.0 - 1.0);
         }
@@ -333,7 +358,9 @@ impl DreamMemory {
 
     pub fn search(&self, query_embedding: &[f32], k: usize) -> Result<Vec<DreamEntry>, DreamError> {
         if query_embedding.len() != EMBEDDING_DIM {
-            return Err(DreamError::InvalidDimension { actual: query_embedding.len() });
+            return Err(DreamError::InvalidDimension {
+                actual: query_embedding.len(),
+            });
         }
         #[cfg(feature = "hnsw-index")]
         {
@@ -341,9 +368,9 @@ impl DreamMemory {
                 return self.search_hnsw(query_embedding, k);
             }
         }
-        let mut stmt = self.db.prepare(
-            "SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries"
-        )?;
+        let mut stmt = self
+            .db
+            .prepare("SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries")?;
         let rows = stmt.query_map([], |row| {
             let id: String = row.get(0)?;
             let content: String = row.get(1)?;
@@ -355,9 +382,13 @@ impl DreamMemory {
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
             let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                    4, rusqlite::types::Type::Text, Box::new(e),
-                ))?
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?
                 .with_timezone(&Utc);
             Ok((id, content, tokens, embedding, timestamp))
         })?;
@@ -367,8 +398,10 @@ impl DreamMemory {
             if embedding.len() == EMBEDDING_DIM {
                 let similarity = cosine_similarity(query_embedding, &embedding);
                 let session_entry = crate::session::SessionEntry {
-                    content: content.clone(), tokens,
-                    timestamp: std::time::Instant::now(), access_count: 0,
+                    content: content.clone(),
+                    tokens,
+                    timestamp: std::time::Instant::now(),
+                    access_count: 0,
                 };
                 let auto_entry = AutoEntry {
                     session_entry,
@@ -376,7 +409,11 @@ impl DreamMemory {
                     last_persisted: timestamp,
                     embedding: None,
                 };
-                let dream_entry = DreamEntry { auto_entry, embedding, similarity_score: similarity };
+                let dream_entry = DreamEntry {
+                    auto_entry,
+                    embedding,
+                    similarity_score: similarity,
+                };
                 scored_entries.push((dream_entry, similarity));
             }
         }
@@ -389,7 +426,11 @@ impl DreamMemory {
     /// Translates hnsw_rs cosine distance into similarity score (1.0 - distance).
     /// Falls back to empty results if id mapping is missing.
     #[cfg(feature = "hnsw-index")]
-    fn search_hnsw(&self, query_embedding: &[f32], k: usize) -> Result<Vec<DreamEntry>, DreamError> {
+    fn search_hnsw(
+        &self,
+        query_embedding: &[f32],
+        k: usize,
+    ) -> Result<Vec<DreamEntry>, DreamError> {
         let hnsw = self.hnsw_index.as_ref().unwrap();
         let ef = k.max(16);
         let neighbours = hnsw.search(query_embedding, k, ef);
@@ -401,8 +442,10 @@ impl DreamMemory {
                 if let Some((content, _emb)) = self.get(db_id)? {
                     let tokens = content.split_whitespace().count();
                     let session_entry = crate::session::SessionEntry {
-                        content: content.clone(), tokens,
-                        timestamp: std::time::Instant::now(), access_count: 0,
+                        content: content.clone(),
+                        tokens,
+                        timestamp: std::time::Instant::now(),
+                        access_count: 0,
                     };
                     let auto_entry = AutoEntry {
                         session_entry,
@@ -410,7 +453,11 @@ impl DreamMemory {
                         last_persisted: Utc::now(),
                         embedding: None,
                     };
-                    results.push(DreamEntry { auto_entry, embedding: vec![], similarity_score: similarity });
+                    results.push(DreamEntry {
+                        auto_entry,
+                        embedding: vec![],
+                        similarity_score: similarity,
+                    });
                 }
             }
         }
@@ -432,7 +479,9 @@ impl DreamMemory {
         // Step 1: collect valid entries from db (avoids borrow conflicts)
         let mut entries: Vec<(String, Vec<f32>)> = Vec::new();
         {
-            let mut stmt = self.db.prepare("SELECT id, embedding_blob FROM dream_entries")?;
+            let mut stmt = self
+                .db
+                .prepare("SELECT id, embedding_blob FROM dream_entries")?;
             let rows = stmt.query_map([], |row| {
                 let id: String = row.get(0)?;
                 let embedding_blob: Vec<u8> = row.get(1)?;
@@ -472,9 +521,17 @@ impl DreamMemory {
         Ok(())
     }
 
-    pub fn insert(&mut self, id: &str, content: &str, tokens: usize, embedding: &[f32]) -> Result<(), DreamError> {
+    pub fn insert(
+        &mut self,
+        id: &str,
+        content: &str,
+        tokens: usize,
+        embedding: &[f32],
+    ) -> Result<(), DreamError> {
         if embedding.len() != EMBEDDING_DIM {
-            return Err(DreamError::InvalidDimension { actual: embedding.len() });
+            return Err(DreamError::InvalidDimension {
+                actual: embedding.len(),
+            });
         }
         let embedding_blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
         let timestamp = Utc::now().to_rfc3339();
@@ -504,7 +561,13 @@ impl DreamMemory {
     /// Store a dream entry, delegating to [`insert`](DreamMemory::insert).
     /// This is the HNSW-aware storage entry-point; when hnsw-index is enabled
     /// the underlying `insert` also updates the HNSW graph.
-    pub fn store(&mut self, id: &str, content: &str, tokens: usize, embedding: &[f32]) -> Result<(), DreamError> {
+    pub fn store(
+        &mut self,
+        id: &str,
+        content: &str,
+        tokens: usize,
+        embedding: &[f32],
+    ) -> Result<(), DreamError> {
         self.insert(id, content, tokens, embedding)
     }
 
@@ -526,11 +589,11 @@ impl DreamMemory {
             std::fs::create_dir_all(parent)?;
         }
         let mut temp = tempfile::NamedTempFile::new_in(
-            jsonl_path.parent().unwrap_or(std::path::Path::new("."))
+            jsonl_path.parent().unwrap_or(std::path::Path::new(".")),
         )?;
-        let mut stmt = self.db.prepare(
-            "SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries"
-        )?;
+        let mut stmt = self
+            .db
+            .prepare("SELECT id, content, tokens, embedding_blob, timestamp FROM dream_entries")?;
         let rows = stmt.query_map([], |row| {
             let id: String = row.get(0)?;
             let content: String = row.get(1)?;
@@ -545,9 +608,16 @@ impl DreamMemory {
         })?;
         for row in rows {
             let (id, content, tokens, embedding, timestamp) = row?;
-            let entry = DreamPersistedEntry { id, content, tokens, embedding, timestamp };
-            let json = serde_json::to_string(&entry)
-                .map_err(|e| DreamError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+            let entry = DreamPersistedEntry {
+                id,
+                content,
+                tokens,
+                embedding,
+                timestamp,
+            };
+            let json = serde_json::to_string(&entry).map_err(|e| {
+                DreamError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            })?;
             writeln!(temp, "{}", json)?;
         }
         temp.flush()?;
@@ -556,17 +626,25 @@ impl DreamMemory {
     }
 
     pub fn load_from_disk(&mut self) -> Result<(), DreamError> {
-        if !self.jsonl_path.exists() { return Ok(()); }
+        if !self.jsonl_path.exists() {
+            return Ok(());
+        }
         let content = std::fs::read_to_string(&self.jsonl_path)?;
         for line in content.lines() {
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let entry: DreamPersistedEntry = match serde_json::from_str(line) {
                 Ok(e) => e,
                 Err(_) => continue,
             };
             // Backward compat: re-embed if old dimension mismatches
             let embedding = if entry.embedding.len() != EMBEDDING_DIM {
-                debug!("dimension compat: re-embed {} (old dim={})", entry.id, entry.embedding.len());
+                debug!(
+                    "dimension compat: re-embed {} (old dim={})",
+                    entry.id,
+                    entry.embedding.len()
+                );
                 self.embed(&entry.content)
             } else {
                 entry.embedding
@@ -579,9 +657,9 @@ impl DreamMemory {
     }
 
     pub fn get(&self, id: &str) -> Result<Option<(String, Vec<f32>)>, DreamError> {
-        let mut stmt = self.db.prepare(
-            "SELECT content, embedding_blob FROM dream_entries WHERE id = ?1"
-        )?;
+        let mut stmt = self
+            .db
+            .prepare("SELECT content, embedding_blob FROM dream_entries WHERE id = ?1")?;
         let result = stmt.query_row([id], |row| {
             let content: String = row.get(0)?;
             let embedding_blob: Vec<u8> = row.get(1)?;
@@ -599,12 +677,15 @@ impl DreamMemory {
     }
 
     pub fn delete(&mut self, id: &str) -> Result<(), DreamError> {
-        self.db.execute("DELETE FROM dream_entries WHERE id = ?1", [id])?;
+        self.db
+            .execute("DELETE FROM dream_entries WHERE id = ?1", [id])?;
         Ok(())
     }
 
     pub fn len(&self) -> Result<usize, DreamError> {
-        let count: i64 = self.db.query_row("SELECT COUNT(*) FROM dream_entries", [], |row| row.get(0))?;
+        let count: i64 = self
+            .db
+            .query_row("SELECT COUNT(*) FROM dream_entries", [], |row| row.get(0))?;
         Ok(count as usize)
     }
 
@@ -619,14 +700,18 @@ impl DreamMemory {
 
     /// Returns current cache size and capacity.
     pub fn cache_stats(&self) -> (usize, usize) {
-        let cache = self.embedding_cache.lock()
+        let cache = self
+            .embedding_cache
+            .lock()
             .unwrap_or_else(|e| e.into_inner());
         (cache.len(), cache.cap().into())
     }
 
     /// Clears the embedding cache.
     pub fn clear_cache(&self) {
-        let mut cache = self.embedding_cache.lock()
+        let mut cache = self
+            .embedding_cache
+            .lock()
             .unwrap_or_else(|e| e.into_inner());
         cache.clear();
         debug!("embedding cache cleared");
@@ -656,16 +741,26 @@ mod tests {
 
     fn create_test_auto_entry(content: &str, tokens: usize) -> AutoEntry {
         let session_entry = crate::session::SessionEntry {
-            content: content.to_string(), tokens,
-            timestamp: Instant::now(), access_count: 0,
+            content: content.to_string(),
+            tokens,
+            timestamp: Instant::now(),
+            access_count: 0,
         };
-        AutoEntry { session_entry, file_path: PathBuf::from("/tmp/test"), last_persisted: Utc::now(), embedding: None }
+        AutoEntry {
+            session_entry,
+            file_path: PathBuf::from("/tmp/test"),
+            last_persisted: Utc::now(),
+            embedding: None,
+        }
     }
 
     #[test]
     fn test_dream_new_valid() {
         let result = DreamMemory::new("test_dream_new_valid");
-        assert!(result.is_ok(), "DreamMemory::new should succeed for valid project_id");
+        assert!(
+            result.is_ok(),
+            "DreamMemory::new should succeed for valid project_id"
+        );
     }
 
     #[test]
@@ -677,7 +772,8 @@ mod tests {
 
     #[test]
     fn test_dream_embed_deterministic() {
-        let dream = DreamMemory::new("test_embed_deterministic").expect("DreamMemory::new should succeed");
+        let dream =
+            DreamMemory::new("test_embed_deterministic").expect("DreamMemory::new should succeed");
         let a = dream.embed("hello world");
         let b = dream.embed("hello world");
         assert_eq!(a, b, "same text should produce identical embeddings");
@@ -695,10 +791,14 @@ mod tests {
 
     #[test]
     fn test_dream_sync_from_auto() {
-        let mut dream = DreamMemory::new("test_sync_auto").expect("DreamMemory::new should succeed");
+        let mut dream =
+            DreamMemory::new("test_sync_auto").expect("DreamMemory::new should succeed");
         let auto = AutoMemory::new("test_auto_for_dream").expect("AutoMemory::new should succeed");
         let sync_result = dream.sync_from_auto(&auto);
-        assert!(sync_result.is_ok(), "sync_from_auto should succeed for empty auto memory");
+        assert!(
+            sync_result.is_ok(),
+            "sync_from_auto should succeed for empty auto memory"
+        );
     }
 
     #[test]
@@ -720,12 +820,16 @@ mod tests {
 
     #[test]
     fn test_dream_recall_similarity() {
-        let mut dream = DreamMemory::new("test_recall_similarity").expect("DreamMemory::new should succeed");
+        let mut dream =
+            DreamMemory::new("test_recall_similarity").expect("DreamMemory::new should succeed");
         let text = "the quick brown fox jumps over the lazy dog";
         let embedding = dream.embed(text);
         dream.insert("k1", text, 9, &embedding).unwrap();
         let results = dream.search(&embedding, 5).unwrap();
-        assert!(!results.is_empty(), "search should return at least one result");
+        assert!(
+            !results.is_empty(),
+            "search should return at least one result"
+        );
         assert!(
             results[0].similarity_score >= 0.7,
             "same-text recall should be >= 0.7, got {}",
@@ -751,14 +855,19 @@ mod tests {
         let invalid = vec![0.0f32; 100];
         let auto_entry = create_test_auto_entry("test", 10);
         assert!(DreamEntry::new(auto_entry.clone(), valid).is_ok());
-        assert!(matches!(DreamEntry::new(auto_entry, invalid), Err(DreamError::InvalidDimension { .. })));
+        assert!(matches!(
+            DreamEntry::new(auto_entry, invalid),
+            Err(DreamError::InvalidDimension { .. })
+        ));
     }
 
     #[test]
     fn test_dream_entry_with_similarity() {
         let auto_entry = create_test_auto_entry("test", 10);
         let embedding = vec![0.0f32; EMBEDDING_DIM];
-        let entry = DreamEntry::new(auto_entry, embedding).expect("fail").with_similarity(0.95);
+        let entry = DreamEntry::new(auto_entry, embedding)
+            .expect("fail")
+            .with_similarity(0.95);
         assert!((entry.similarity_score - 0.95).abs() < 0.001);
     }
 
@@ -869,7 +978,11 @@ mod tests {
         let a = dream.embed("identical text content");
         let b = dream.embed("identical text content");
         let sim = cosine_similarity(&a, &b);
-        assert!((sim - 1.0).abs() < 0.001, "same text cosine should be ~1.0, got {}", sim);
+        assert!(
+            (sim - 1.0).abs() < 0.001,
+            "same text cosine should be ~1.0, got {}",
+            sim
+        );
     }
 
     #[cfg(feature = "semantic-memory")]
@@ -885,7 +998,9 @@ mod tests {
             eprintln!("skip: semantic not available");
             return;
         }
-        for _ in 0..10 { let _ = dream.embed("warmup"); }
+        for _ in 0..10 {
+            let _ = dream.embed("warmup");
+        }
         let start = Instant::now();
         for _ in 0..100 {
             let _ = dream.embed("benchmark text for latency measurement");
@@ -925,13 +1040,20 @@ mod tests {
         let query = "rust programming";
         let qemb = dream.embed(query);
         for (i, t) in relevant.iter().enumerate() {
-            dream.insert(&format!("r{}", i), t, 10, &dream.embed(t)).unwrap();
+            dream
+                .insert(&format!("r{}", i), t, 10, &dream.embed(t))
+                .unwrap();
         }
         for (i, t) in irrelevant.iter().enumerate() {
-            dream.insert(&format!("i{}", i), t, 10, &dream.embed(t)).unwrap();
+            dream
+                .insert(&format!("i{}", i), t, 10, &dream.embed(t))
+                .unwrap();
         }
         let results = dream.search(&qemb, 5).unwrap();
-        let rc = results.iter().filter(|r| r.auto_entry.session_entry.content.contains("rust")).count();
+        let rc = results
+            .iter()
+            .filter(|r| r.auto_entry.session_entry.content.contains("rust"))
+            .count();
         let precision = rc as f32 / 5.0;
         assert!(precision >= 0.7, "precision@5 = {} < 0.7", precision);
     }
@@ -951,23 +1073,30 @@ mod tests {
         }
         let query = dream.embed("text");
         let results = dream.search(&query, 5).unwrap();
-        assert!(!results.is_empty(), "mixed vectors search should return results");
+        assert!(
+            !results.is_empty(),
+            "mixed vectors search should return results"
+        );
     }
 
     #[test]
     fn test_concurrent_embed() {
         use std::thread;
-        let handles: Vec<_> = (0..10).map(|i| {
-            thread::spawn(move || {
-                let dream = DreamMemory::new(&format!("test_concurrent_{}", i)).unwrap();
-                let text = "concurrent test text";
-                let v1 = dream.embed(text);
-                let v2 = dream.embed(text);
-                assert_eq!(v1, v2, "embed deterministic across threads");
-                assert_eq!(v1.len(), EMBEDDING_DIM);
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                thread::spawn(move || {
+                    let dream = DreamMemory::new(&format!("test_concurrent_{}", i)).unwrap();
+                    let text = "concurrent test text";
+                    let v1 = dream.embed(text);
+                    let v2 = dream.embed(text);
+                    assert_eq!(v1, v2, "embed deterministic across threads");
+                    assert_eq!(v1.len(), EMBEDDING_DIM);
+                })
             })
-        }).collect();
-        for h in handles { h.join().unwrap(); }
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
     }
 
     #[test]
@@ -978,10 +1107,17 @@ mod tests {
         let _ = dream.embed(text);
         let miss = start.elapsed();
         let start = Instant::now();
-        for _ in 0..100 { let _ = dream.embed(text); }
+        for _ in 0..100 {
+            let _ = dream.embed(text);
+        }
         let hit = start.elapsed() / 100;
         eprintln!("cache miss: {:?}, hit avg: {:?}", miss, hit);
-        assert!(hit < miss, "cache hit ({:?}) faster than miss ({:?})", hit, miss);
+        assert!(
+            hit < miss,
+            "cache hit ({:?}) faster than miss ({:?})",
+            hit,
+            miss
+        );
     }
 
     #[test]
@@ -997,7 +1133,10 @@ mod tests {
     fn test_model_load_failure_graceful() {
         let bad = PathBuf::from("/nonexistent/model/path");
         let dream = DreamMemory::new_with_semantic("test_load_fail", Some(bad)).unwrap();
-        assert!(!dream.is_semantic_enabled(), "semantic disabled on bad path");
+        assert!(
+            !dream.is_semantic_enabled(),
+            "semantic disabled on bad path"
+        );
         let v = dream.embed("fallback test");
         assert_eq!(v.len(), EMBEDDING_DIM);
     }
@@ -1028,7 +1167,10 @@ mod tests {
     fn test_get_nonexistent() {
         let dream = DreamMemory::new("test_get_none").unwrap();
         let result = dream.get("nonexistent_key").unwrap();
-        assert!(result.is_none(), "get on nonexistent key should return None");
+        assert!(
+            result.is_none(),
+            "get on nonexistent key should return None"
+        );
     }
 
     #[test]
@@ -1039,7 +1181,10 @@ mod tests {
         assert_eq!(dream.len().unwrap(), 1);
         dream.clear().unwrap();
         assert_eq!(dream.len().unwrap(), 0, "clear should remove all entries");
-        assert!(dream.is_empty().unwrap(), "is_empty should be true after clear");
+        assert!(
+            dream.is_empty().unwrap(),
+            "is_empty should be true after clear"
+        );
     }
 
     #[test]
@@ -1049,7 +1194,10 @@ mod tests {
         dream.insert("k1", "text", 2, &emb).unwrap();
         assert!(dream.get("k1").unwrap().is_some());
         dream.delete("k1").unwrap();
-        assert!(dream.get("k1").unwrap().is_none(), "get after delete should return None");
+        assert!(
+            dream.get("k1").unwrap().is_none(),
+            "get after delete should return None"
+        );
     }
 
     #[test]
@@ -1077,23 +1225,37 @@ mod tests {
 
         // Tier 1: hash fallback is always available
         let hash_vec = dream.embed("hash fallback text");
-        assert_eq!(hash_vec.len(), EMBEDDING_DIM, "hash fallback produces correct dimension");
+        assert_eq!(
+            hash_vec.len(),
+            EMBEDDING_DIM,
+            "hash fallback produces correct dimension"
+        );
 
         // Tier 2: semantic embedder availability (skip if model missing)
         let semantic_available = dream.is_semantic_enabled();
         if semantic_available {
             let sem_vec = dream.embed("semantic text");
-            assert_eq!(sem_vec.len(), EMBEDDING_DIM, "semantic embed produces correct dimension");
+            assert_eq!(
+                sem_vec.len(),
+                EMBEDDING_DIM,
+                "semantic embed produces correct dimension"
+            );
 
             // disable → hash
             dream.disable_semantic();
             let disabled_vec = dream.embed("semantic text");
-            assert_ne!(sem_vec, disabled_vec, "disable_semantic should change output");
+            assert_ne!(
+                sem_vec, disabled_vec,
+                "disable_semantic should change output"
+            );
 
             // enable → semantic restored
             dream.enable_semantic();
             let reenabled_vec = dream.embed("semantic text");
-            assert_eq!(sem_vec, reenabled_vec, "enable_semantic should restore semantic output");
+            assert_eq!(
+                sem_vec, reenabled_vec,
+                "enable_semantic should restore semantic output"
+            );
         }
 
         // LRU cache stats should reflect usage
@@ -1125,13 +1287,23 @@ mod tests {
         ];
         for (i, text) in texts.iter().enumerate() {
             let emb = dream.embed(text);
-            dream.store(&format!("k{}", i), text, text.split_whitespace().count(), &emb).unwrap();
+            dream
+                .store(
+                    &format!("k{}", i),
+                    text,
+                    text.split_whitespace().count(),
+                    &emb,
+                )
+                .unwrap();
         }
         // Query with the first text's embedding — top-1 should be itself
         let query = dream.embed("rust programming language");
         let results = dream.search(&query, 3).unwrap();
         assert!(!results.is_empty(), "hnsw search should return results");
-        eprintln!("HNSW recall test: top-1 similarity = {:.4}", results[0].similarity_score);
+        eprintln!(
+            "HNSW recall test: top-1 similarity = {:.4}",
+            results[0].similarity_score
+        );
         assert!(
             results[0].similarity_score >= 0.85,
             "top-1 self-recall similarity should be >= 0.85, got {}",
@@ -1139,10 +1311,15 @@ mod tests {
         );
         // Verify store + search roundtrip
         let extra = dream.embed("extra text for store test");
-        dream.store("extra", "extra text for store test", 5, &extra).unwrap();
+        dream
+            .store("extra", "extra text for store test", 5, &extra)
+            .unwrap();
         let post = dream.search(&extra, 1).unwrap();
         assert!(!post.is_empty(), "stored entry should be searchable");
-        eprintln!("HNSW recall test: store+search roundtrip ok, similarity = {:.4}", post[0].similarity_score);
+        eprintln!(
+            "HNSW recall test: store+search roundtrip ok, similarity = {:.4}",
+            post[0].similarity_score
+        );
     }
 
     #[cfg(feature = "hnsw-index")]
@@ -1166,7 +1343,14 @@ mod tests {
             let mut dream = DreamMemory::new_with_hnsw(&pid).unwrap();
             for (i, text) in texts.iter().enumerate() {
                 let emb = dream.embed(text);
-                dream.store(&format!("k{}", i), text, text.split_whitespace().count(), &emb).unwrap();
+                dream
+                    .store(
+                        &format!("k{}", i),
+                        text,
+                        text.split_whitespace().count(),
+                        &emb,
+                    )
+                    .unwrap();
             }
             dream.save().unwrap();
         }
@@ -1176,7 +1360,10 @@ mod tests {
             let query = dream.embed("rust programming language");
             let results = dream.search(&query, 3).unwrap();
             assert!(!results.is_empty(), "rebuilt HNSW should return results");
-            eprintln!("HNSW rebuild test: top-1 similarity = {:.4}", results[0].similarity_score);
+            eprintln!(
+                "HNSW rebuild test: top-1 similarity = {:.4}",
+                results[0].similarity_score
+            );
             assert!(
                 results[0].similarity_score >= 0.85,
                 "rebuilt index top-1 self-recall should be >= 0.85, got {}",
@@ -1197,11 +1384,15 @@ mod tests {
         let mut hnsw = DreamMemory::new_with_hnsw("bench_vs_hnsw").unwrap();
         let mut linear = DreamMemory::new("bench_vs_linear").unwrap();
         for i in 0..n {
-            let v: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+            let v: Vec<f32> = (0..EMBEDDING_DIM)
+                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                .collect();
             hnsw.insert(&format!("k{}", i), "bench", 10, &v).unwrap();
             linear.insert(&format!("k{}", i), "bench", 10, &v).unwrap();
         }
-        let query: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+        let query: Vec<f32> = (0..EMBEDDING_DIM)
+            .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+            .collect();
         let hnsw_start = Instant::now();
         let hnsw_res = hnsw.search(&query, 10).unwrap();
         let hnsw_ms = hnsw_start.elapsed().as_micros() as f64 / 1000.0;
@@ -1212,7 +1403,11 @@ mod tests {
             n, hnsw_ms, lin_ms, if hnsw_ms > 0.0 { lin_ms / hnsw_ms } else { 0.0 }, hnsw_res.len());
         // Debug-mode latency is higher; assert <10ms as graceful bound.
         // Release-mode target remains <5ms @ 10K (see DEBT-LATENCY-B-14).
-        assert!(hnsw_ms < 10.0, "HNSW latency {:.3}ms exceeds 10ms debug bound", hnsw_ms);
+        assert!(
+            hnsw_ms < 10.0,
+            "HNSW latency {:.3}ms exceeds 10ms debug bound",
+            hnsw_ms
+        );
     }
 
     #[cfg(feature = "hnsw-index")]
@@ -1232,9 +1427,16 @@ mod tests {
         q[query_idx % EMBEDDING_DIM] = 1.0;
         let results = dream.search(&q, 10).unwrap();
         let top1_sim = results.first().map(|r| r.similarity_score).unwrap_or(0.0);
-        eprintln!("bench_hnsw_recall | n={} | top-1 similarity={:.4} | recall@10 ok", n, top1_sim);
+        eprintln!(
+            "bench_hnsw_recall | n={} | top-1 similarity={:.4} | recall@10 ok",
+            n, top1_sim
+        );
         // Approximate index: allow graceful degradation at larger scale.
-        assert!(top1_sim >= 0.80, "recall top-1 similarity {:.4} < 0.80", top1_sim);
+        assert!(
+            top1_sim >= 0.80,
+            "recall top-1 similarity {:.4} < 0.80",
+            top1_sim
+        );
     }
 
     #[cfg(feature = "hnsw-index")]
@@ -1245,16 +1447,26 @@ mod tests {
         let mut dream = DreamMemory::new_with_hnsw("bench_mem").unwrap();
         let n = 1_000usize; // insert 1K for speed; memory estimate scaled to 10K
         for i in 0..n {
-            let v: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+            let v: Vec<f32> = (0..EMBEDDING_DIM)
+                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                .collect();
             dream.insert(&format!("k{}", i), "bench", 10, &v).unwrap();
         }
         let vec_bytes = 10_000usize * EMBEDDING_DIM * 4;
         let graph_bytes = 10_000usize * HNSW_MAX_NB_CONNECTION * 2 * 4;
         let total_mb = (vec_bytes + graph_bytes) as f64 / (1024.0 * 1024.0);
-        eprintln!("bench_hnsw_memory | n={} | vectors={:.1}MB | graph={:.1}MB | total={:.1}MB",
-            n, vec_bytes as f64 / 1024.0 / 1024.0,
-            graph_bytes as f64 / 1024.0 / 1024.0, total_mb);
-        assert!(total_mb < 200.0, "estimated memory {:.1}MB exceeds 200MB limit", total_mb);
+        eprintln!(
+            "bench_hnsw_memory | n={} | vectors={:.1}MB | graph={:.1}MB | total={:.1}MB",
+            n,
+            vec_bytes as f64 / 1024.0 / 1024.0,
+            graph_bytes as f64 / 1024.0 / 1024.0,
+            total_mb
+        );
+        assert!(
+            total_mb < 200.0,
+            "estimated memory {:.1}MB exceeds 200MB limit",
+            total_mb
+        );
     }
 
     #[cfg(feature = "hnsw-index")]
@@ -1267,14 +1479,23 @@ mod tests {
         for m in [8usize, 16, 32] {
             let hnsw = Hnsw::new(m, n, HNSW_MAX_LAYER, m, DistCosine);
             for i in 0..n {
-                let v: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+                let v: Vec<f32> = (0..EMBEDDING_DIM)
+                    .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                    .collect();
                 hnsw.insert_slice((&v, i));
             }
-            let query: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+            let query: Vec<f32> = (0..EMBEDDING_DIM)
+                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                .collect();
             let start = Instant::now();
-            for _ in 0..100 { let _ = hnsw.search(&query, 10, 16); }
+            for _ in 0..100 {
+                let _ = hnsw.search(&query, 10, 16);
+            }
             let avg_ms = start.elapsed().as_micros() as f64 / 100.0 / 1000.0;
-            eprintln!("bench_hnsw_params | M={:2} | n={} | avg_search={:.3}ms", m, n, avg_ms);
+            eprintln!(
+                "bench_hnsw_params | M={:2} | n={} | avg_search={:.3}ms",
+                m, n, avg_ms
+            );
         }
     }
 
@@ -1284,7 +1505,11 @@ mod tests {
         let dream = DreamMemory::new_with_hnsw("bench_empty").unwrap();
         let query = vec![0.0f32; EMBEDDING_DIM];
         let results = dream.search(&query, 10).unwrap();
-        assert!(results.is_empty(), "empty HNSW should return empty results, got {}", results.len());
+        assert!(
+            results.is_empty(),
+            "empty HNSW should return empty results, got {}",
+            results.len()
+        );
         eprintln!("bench_hnsw_empty | results={} | no_panic ok", results.len());
     }
 
@@ -1296,7 +1521,9 @@ mod tests {
         let mut dream = DreamMemory::new_with_hnsw("bench_small").unwrap();
         let mut vectors = Vec::new();
         for i in 0..10 {
-            let v: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+            let v: Vec<f32> = (0..EMBEDDING_DIM)
+                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                .collect();
             vectors.push(v.clone());
             dream.insert(&format!("k{}", i), "bench", 10, &v).unwrap();
         }
@@ -1316,15 +1543,25 @@ mod tests {
         let small_hnsw = Hnsw::new(16, 500, HNSW_MAX_LAYER, 16, DistCosine);
         let mut inserted = 0usize;
         for i in 0..600 {
-            let v: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+            let v: Vec<f32> = (0..EMBEDDING_DIM)
+                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+                .collect();
             small_hnsw.insert_slice((&v, i));
             inserted += 1;
         }
-        let query: Vec<f32> = (0..EMBEDDING_DIM).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
+        let query: Vec<f32> = (0..EMBEDDING_DIM)
+            .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
+            .collect();
         let results = small_hnsw.search(&query, 5, 16);
-        eprintln!("bench_hnsw_large | max_elements=500 | inserted={} | search_results={} | graceful ok",
-            inserted, results.len());
-        assert!(!results.is_empty() || inserted >= 500, "should return results or hit capacity gracefully");
+        eprintln!(
+            "bench_hnsw_large | max_elements=500 | inserted={} | search_results={} | graceful ok",
+            inserted,
+            results.len()
+        );
+        assert!(
+            !results.is_empty() || inserted >= 500,
+            "should return results or hit capacity gracefully"
+        );
     }
 
     // === B-15/17 Joint Feature + Edge Case + Concurrency Tests ===
@@ -1339,45 +1576,76 @@ mod tests {
             return;
         }
         dream.rebuild_hnsw().unwrap();
-        let texts = vec!["rust programming language", "python scripting", "java virtual machine"];
+        let texts = vec![
+            "rust programming language",
+            "python scripting",
+            "java virtual machine",
+        ];
         for (i, text) in texts.iter().enumerate() {
             let emb = dream.embed(text);
             dream.insert(&format!("k{}", i), text, 10, &emb).unwrap();
         }
         let query = dream.embed("rust programming language");
         let results = dream.search(&query, 3).unwrap();
-        assert!(!results.is_empty(), "joint semantic+hnsw search should return results");
-        eprintln!("semantic_hnsw_joint: top-1 similarity = {:.4}", results[0].similarity_score);
+        assert!(
+            !results.is_empty(),
+            "joint semantic+hnsw search should return results"
+        );
+        eprintln!(
+            "semantic_hnsw_joint: top-1 similarity = {:.4}",
+            results[0].similarity_score
+        );
     }
 
     #[cfg(all(feature = "semantic-memory", feature = "hnsw-index"))]
     #[test]
     fn test_semantic_hnsw_empty() {
         let model_path = PathBuf::from(MODEL_PATH);
-        let mut dream = DreamMemory::new_with_semantic("test_joint_empty", Some(model_path)).unwrap();
+        let mut dream =
+            DreamMemory::new_with_semantic("test_joint_empty", Some(model_path)).unwrap();
         dream.rebuild_hnsw().unwrap();
         let query = dream.embed("nonexistent topic");
         let results = dream.search(&query, 5).unwrap();
-        assert!(results.is_empty(), "empty joint db should return empty results");
-        eprintln!("semantic_hnsw_empty: results={} | no_panic ok", results.len());
+        assert!(
+            results.is_empty(),
+            "empty joint db should return empty results"
+        );
+        eprintln!(
+            "semantic_hnsw_empty: results={} | no_panic ok",
+            results.len()
+        );
     }
 
     #[cfg(all(feature = "semantic-memory", feature = "hnsw-index"))]
     #[test]
     fn test_semantic_hnsw_single() {
         let model_path = PathBuf::from(MODEL_PATH);
-        let mut dream = DreamMemory::new_with_semantic("test_joint_single", Some(model_path)).unwrap();
+        let mut dream =
+            DreamMemory::new_with_semantic("test_joint_single", Some(model_path)).unwrap();
         if !dream.is_semantic_enabled() {
             eprintln!("skip: semantic not available");
             return;
         }
         dream.rebuild_hnsw().unwrap();
         let emb = dream.embed("unique test text for single entry");
-        dream.insert("only", "unique test text for single entry", 5, &emb).unwrap();
+        dream
+            .insert("only", "unique test text for single entry", 5, &emb)
+            .unwrap();
         let results = dream.search(&emb, 3).unwrap();
-        assert_eq!(results.len(), 1, "single entry should return exactly 1 result");
-        assert!(results[0].similarity_score >= 0.90, "single entry similarity {:.4} < 0.90", results[0].similarity_score);
-        eprintln!("semantic_hnsw_single: similarity={:.4} | ok", results[0].similarity_score);
+        assert_eq!(
+            results.len(),
+            1,
+            "single entry should return exactly 1 result"
+        );
+        assert!(
+            results[0].similarity_score >= 0.90,
+            "single entry similarity {:.4} < 0.90",
+            results[0].similarity_score
+        );
+        eprintln!(
+            "semantic_hnsw_single: similarity={:.4} | ok",
+            results[0].similarity_score
+        );
     }
 
     #[cfg(feature = "hnsw-index")]
@@ -1397,17 +1665,24 @@ mod tests {
         }
         let mut q = vec![0.0f32; EMBEDDING_DIM];
         q[42] = 1.0;
-        let handles: Vec<_> = (0..4).map(|t| {
-            let qc = q.clone();
-            thread::spawn(move || {
-                // Stagger instance creation to reduce SQLite lock contention
-                thread::sleep(Duration::from_millis(t as u64 * 10));
-                let d = DreamMemory::new_with_hnsw(pid).unwrap();
-                let r = d.search(&qc, 5).unwrap();
-                assert!(!r.is_empty(), "concurrent instance search should return results");
+        let handles: Vec<_> = (0..4)
+            .map(|t| {
+                let qc = q.clone();
+                thread::spawn(move || {
+                    // Stagger instance creation to reduce SQLite lock contention
+                    thread::sleep(Duration::from_millis(t as u64 * 10));
+                    let d = DreamMemory::new_with_hnsw(pid).unwrap();
+                    let r = d.search(&qc, 5).unwrap();
+                    assert!(
+                        !r.is_empty(),
+                        "concurrent instance search should return results"
+                    );
+                })
             })
-        }).collect();
-        for h in handles { h.join().unwrap(); }
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
         eprintln!("hnsw_concurrent_search: 4 parallel instances ok");
     }
 
@@ -1418,7 +1693,10 @@ mod tests {
         let dream = DreamMemory::new_with_hnsw(&pid).unwrap();
         let q = vec![0.0f32; EMBEDDING_DIM];
         let results = dream.search(&q, 5).unwrap();
-        assert!(results.is_empty(), "new empty project should return empty search");
+        assert!(
+            results.is_empty(),
+            "new empty project should return empty search"
+        );
         {
             let mut d = DreamMemory::new(&pid).unwrap();
             let v = vec![0.0f32; EMBEDDING_DIM];
@@ -1427,6 +1705,10 @@ mod tests {
         }
         let dream2 = DreamMemory::new_with_hnsw(&pid).unwrap();
         let results2 = dream2.search(&q, 5).unwrap();
-        eprintln!("hnsw_rebuild_graceful: empty={} | populated={} | ok", results.len(), results2.len());
+        eprintln!(
+            "hnsw_rebuild_graceful: empty={} | populated={} | ok",
+            results.len(),
+            results2.len()
+        );
     }
 }

@@ -22,7 +22,11 @@ fn test_10k_timeout() {
 
     assert_eq!(gw.session.len(), COUNT);
     let elapsed = start.elapsed().as_millis() as u64;
-    assert!(elapsed < TIMEOUT_MS, "10K timeout stress failed: {}ms", elapsed);
+    assert!(
+        elapsed < TIMEOUT_MS,
+        "10K timeout stress failed: {}ms",
+        elapsed
+    );
 }
 
 #[test]
@@ -44,12 +48,18 @@ fn test_10k_corruption_recovery() {
     if let Some(auto) = gw.auto.as_ref() {
         for key in auto.keys() {
             if let Some(entry) = auto.get(key) {
-                let _ = gw.session.insert(key.clone(), entry.session_entry.content.clone());
+                let _ = gw
+                    .session
+                    .insert(key.clone(), entry.session_entry.content.clone());
             }
         }
     }
 
-    assert_eq!(gw.session.len(), COUNT, "Corruption recovery did not restore all entries");
+    assert_eq!(
+        gw.session.len(),
+        COUNT,
+        "Corruption recovery did not restore all entries"
+    );
 }
 
 #[test]

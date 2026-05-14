@@ -1,12 +1,12 @@
+use crate::agent_loop::AgentLoop;
 use crate::blackboard::Blackboard;
 use crate::checkpoint::CheckpointManager;
+use crate::edit_applier::EditApplier;
 use crate::governance::{AgentGovernance, DefaultGovernance};
 use crate::planner::Planner;
 use crate::reflector::Reflector;
 use crate::swarm::Supervisor;
 use crate::{AgentContext, AgentError};
-use crate::agent_loop::AgentLoop;
-use crate::edit_applier::EditApplier;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -43,7 +43,19 @@ pub struct AgentLoopBuilder {
 
 impl AgentLoopBuilder {
     pub fn new() -> Self {
-        Self { context: None, planner: None, reflector: None, governance: None, swarm: Some(None), blackboard: None, checkpoint_mgr: None, memory: Some(None), sync_gateway: Some(None), provider_id: None, edit_applier: Some(None) }
+        Self {
+            context: None,
+            planner: None,
+            reflector: None,
+            governance: None,
+            swarm: Some(None),
+            blackboard: None,
+            checkpoint_mgr: None,
+            memory: Some(None),
+            sync_gateway: Some(None),
+            provider_id: None,
+            edit_applier: Some(None),
+        }
     }
 
     /// `production_ready(device_id)` creates a production-ready AgentLoopBuilder with MemoryGateway and SyncMemoryGateway pre-configured.
@@ -52,45 +64,106 @@ impl AgentLoopBuilder {
     /// Enables Session + Auto (graceful) + Graph + Cloud tiers for retrieve_multi cascade.
     pub fn production_ready(device_id: &str) -> Self {
         // Auto-enable AutoMemory with project_id = device_id fallback; load() restores history from disk
-        let mut gateway = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
+        let mut gateway =
+            memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
         gateway.enable_graph(device_id);
         let sync_gateway: memory::sync_gateway::SyncGatewayHandle =
             std::sync::Arc::new(tokio::sync::Mutex::new(gateway));
         // Create a separate MemoryGateway instance for the memory field (type: Arc<Mutex<MemoryGateway>>)
-        let mut gateway_for_memory = memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
+        let mut gateway_for_memory =
+            memory::memory_gateway::MemoryGateway::new_with_project(device_id, Some(device_id));
         gateway_for_memory.enable_graph(device_id);
         let memory = std::sync::Arc::new(tokio::sync::Mutex::new(gateway_for_memory));
         Self::new()
             .with_memory(Some(memory))
             .with_sync_gateway(Some(sync_gateway))
     }
-    pub fn with_context(mut self, ctx: AgentContext) -> Self { self.context = Some(ctx); self }
-    pub fn with_planner(mut self, p: Arc<Mutex<dyn Planner>>) -> Self { self.planner = Some(p); self }
-    pub fn with_reflector(mut self, r: Arc<Mutex<dyn Reflector>>) -> Self { self.reflector = Some(r); self }
-    pub fn with_governance(mut self, g: Arc<dyn AgentGovernance>) -> Self { self.governance = Some(g); self }
-    pub fn with_swarm(mut self, s: Option<Arc<Mutex<Supervisor>>>) -> Self { self.swarm = Some(s); self }
-    pub fn with_blackboard(mut self, bb: Arc<Blackboard>) -> Self { self.blackboard = Some(bb); self }
-    pub fn with_checkpoint_mgr(mut self, cp: Arc<CheckpointManager>) -> Self { self.checkpoint_mgr = Some(cp); self }
-    pub fn with_memory(mut self, m: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>) -> Self { self.memory = Some(m); self }
-    pub fn with_sync_gateway(mut self, sg: Option<memory::sync_gateway::SyncGatewayHandle>) -> Self { self.sync_gateway = Some(sg); self }
-    pub fn with_provider_id(mut self, id: Option<String>) -> Self { self.provider_id = id; self }
-    pub fn with_edit_applier(mut self, ea: Option<Arc<EditApplier>>) -> Self { self.edit_applier = Some(ea); self }
+    pub fn with_context(mut self, ctx: AgentContext) -> Self {
+        self.context = Some(ctx);
+        self
+    }
+    pub fn with_planner(mut self, p: Arc<Mutex<dyn Planner>>) -> Self {
+        self.planner = Some(p);
+        self
+    }
+    pub fn with_reflector(mut self, r: Arc<Mutex<dyn Reflector>>) -> Self {
+        self.reflector = Some(r);
+        self
+    }
+    pub fn with_governance(mut self, g: Arc<dyn AgentGovernance>) -> Self {
+        self.governance = Some(g);
+        self
+    }
+    pub fn with_swarm(mut self, s: Option<Arc<Mutex<Supervisor>>>) -> Self {
+        self.swarm = Some(s);
+        self
+    }
+    pub fn with_blackboard(mut self, bb: Arc<Blackboard>) -> Self {
+        self.blackboard = Some(bb);
+        self
+    }
+    pub fn with_checkpoint_mgr(mut self, cp: Arc<CheckpointManager>) -> Self {
+        self.checkpoint_mgr = Some(cp);
+        self
+    }
+    pub fn with_memory(
+        mut self,
+        m: Option<Arc<Mutex<memory::memory_gateway::MemoryGateway>>>,
+    ) -> Self {
+        self.memory = Some(m);
+        self
+    }
+    pub fn with_sync_gateway(
+        mut self,
+        sg: Option<memory::sync_gateway::SyncGatewayHandle>,
+    ) -> Self {
+        self.sync_gateway = Some(sg);
+        self
+    }
+    pub fn with_provider_id(mut self, id: Option<String>) -> Self {
+        self.provider_id = id;
+        self
+    }
+    pub fn with_edit_applier(mut self, ea: Option<Arc<EditApplier>>) -> Self {
+        self.edit_applier = Some(ea);
+        self
+    }
 
     pub fn build(self) -> Result<AgentLoop, AgentError> {
         let context = self.context.unwrap_or_default();
-        let planner = self.planner.ok_or_else(|| AgentError::Session("Planner is required".to_string()))?;
-        let reflector = self.reflector.ok_or_else(|| AgentError::Session("Reflector is required".to_string()))?;
-        let governance = self.governance.unwrap_or_else(|| Arc::new(DefaultGovernance::new()));
+        let planner = self
+            .planner
+            .ok_or_else(|| AgentError::Session("Planner is required".to_string()))?;
+        let reflector = self
+            .reflector
+            .ok_or_else(|| AgentError::Session("Reflector is required".to_string()))?;
+        let governance = self
+            .governance
+            .unwrap_or_else(|| Arc::new(DefaultGovernance::new()));
         let swarm = self.swarm.flatten();
-        let blackboard = self.blackboard.unwrap_or_else(|| Arc::new(Blackboard::new()));
-        let checkpoint_mgr = self.checkpoint_mgr.unwrap_or_else(|| Arc::new(CheckpointManager::new()));
+        let blackboard = self
+            .blackboard
+            .unwrap_or_else(|| Arc::new(Blackboard::new()));
+        let checkpoint_mgr = self
+            .checkpoint_mgr
+            .unwrap_or_else(|| Arc::new(CheckpointManager::new()));
         let memory = self.memory.flatten();
         let sync_gateway = self.sync_gateway.flatten();
         let edit_applier = self.edit_applier.flatten();
         let _iteration_count = Arc::new(Mutex::new(0));
         let _current_state = Arc::new(Mutex::new(crate::agent_loop::LoopState::Idle));
         let mut agent_loop = AgentLoop::from_components(AgentLoopConfig {
-            context, planner, reflector, governance, swarm, blackboard, checkpoint_mgr, memory, sync_gateway, provider_id: self.provider_id, edit_applier: edit_applier.clone(),
+            context,
+            planner,
+            reflector,
+            governance,
+            swarm,
+            blackboard,
+            checkpoint_mgr,
+            memory,
+            sync_gateway,
+            provider_id: self.provider_id,
+            edit_applier: edit_applier.clone(),
         });
         if let Some(ea) = edit_applier {
             agent_loop = agent_loop.with_edit_applier(ea);
@@ -100,5 +173,7 @@ impl AgentLoopBuilder {
 }
 
 impl Default for AgentLoopBuilder {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

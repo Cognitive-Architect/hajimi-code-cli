@@ -59,7 +59,7 @@ impl SessionState {
                 .unwrap_or_default()
                 .as_millis() as u64,
         };
-        
+
         if self.history.len() >= self.max_history {
             self.history.pop_front();
         }

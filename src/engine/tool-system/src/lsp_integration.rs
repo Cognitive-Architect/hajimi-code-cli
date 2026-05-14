@@ -22,8 +22,16 @@ pub struct SymbolContext {
 /// Trait for AST-aware context (ADR-016: AST-First Retrieval).
 #[async_trait]
 pub trait ASTContextProvider: Send + Sync {
-    async fn get_symbol_context(&self, symbol_name: &str, file_path: Option<&str>) -> Result<SymbolContext, String>;
-    async fn find_references_in_scope(&self, symbol_name: &str, scope: &str) -> Result<Vec<CodeSymbol>, String>;
+    async fn get_symbol_context(
+        &self,
+        symbol_name: &str,
+        file_path: Option<&str>,
+    ) -> Result<SymbolContext, String>;
+    async fn find_references_in_scope(
+        &self,
+        symbol_name: &str,
+        scope: &str,
+    ) -> Result<Vec<CodeSymbol>, String>;
     async fn enhance_retrieve_with_ast(&self, query: &str) -> Result<String, String>;
 }
 
@@ -53,12 +61,18 @@ impl LspContextProvider {
 }
 
 impl Default for LspContextProvider {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]
 impl ASTContextProvider for LspContextProvider {
-    async fn get_symbol_context(&self, symbol_name: &str, _file_path: Option<&str>) -> Result<SymbolContext, String> {
+    async fn get_symbol_context(
+        &self,
+        symbol_name: &str,
+        _file_path: Option<&str>,
+    ) -> Result<SymbolContext, String> {
         let index = self.ast_index.lock().await;
         let symbols = index.find_symbol(symbol_name);
         if symbols.is_empty() {
@@ -67,13 +81,20 @@ impl ASTContextProvider for LspContextProvider {
         let sym = &symbols[0];
         Ok(SymbolContext {
             symbol: sym.clone(),
-            context: format!("Found {} '{}' in {} at line {}", sym.kind, sym.name, sym.file_path, sym.line),
+            context: format!(
+                "Found {} '{}' in {} at line {}",
+                sym.kind, sym.name, sym.file_path, sym.line
+            ),
             lsp_hover: None,
             references_count: symbols.len(),
         })
     }
 
-    async fn find_references_in_scope(&self, symbol_name: &str, _scope: &str) -> Result<Vec<CodeSymbol>, String> {
+    async fn find_references_in_scope(
+        &self,
+        symbol_name: &str,
+        _scope: &str,
+    ) -> Result<Vec<CodeSymbol>, String> {
         let index = self.ast_index.lock().await;
         Ok(index.find_symbol(symbol_name))
     }
@@ -82,7 +103,12 @@ impl ASTContextProvider for LspContextProvider {
         let ctx = self.get_symbol_context(query, None).await?;
         Ok(format!(
             "AST context for '{}': {} '{}' at {}:{}, {} reference(s)",
-            query, ctx.symbol.kind, ctx.symbol.name, ctx.symbol.file_path, ctx.symbol.line, ctx.references_count
+            query,
+            ctx.symbol.kind,
+            ctx.symbol.name,
+            ctx.symbol.file_path,
+            ctx.symbol.line,
+            ctx.references_count
         ))
     }
 }

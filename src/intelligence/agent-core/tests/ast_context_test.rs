@@ -4,49 +4,69 @@
 //! MemoryRetriever AST enhancement, planner AST injection, and fallback behavior.
 
 use agent_core::{
-    AstSymbolIndex, CodeSymbol,
-    ASTContextProvider, LspContextProvider, SymbolContext,
     blackboard::Blackboard,
     memory_retriever::{MemoryRetriever, RetrieveOutcome},
     planner::{HierarchicalPlanner, Priority},
-    AgentContext,
+    ASTContextProvider, AgentContext, AstSymbolIndex, CodeSymbol, LspContextProvider,
+    SymbolContext,
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-fn test_bb() -> Arc<Blackboard> { Arc::new(Blackboard::new()) }
-fn test_context() -> AgentContext { AgentContext::new() }
+fn test_bb() -> Arc<Blackboard> {
+    Arc::new(Blackboard::new())
+}
+fn test_context() -> AgentContext {
+    AgentContext::new()
+}
 
 #[tokio::test]
 async fn test_ast_parse_real_file() {
-    let temp_dir = std::env::temp_dir().join(format!("hajimi_ast_test_{}", uuid::Uuid::new_v4().simple()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("hajimi_ast_test_{}", uuid::Uuid::new_v4().simple()));
     let temp_path = temp_dir.to_str().unwrap();
     std::fs::create_dir_all(temp_path).unwrap();
 
     let rs_file = temp_dir.join("test_lib.rs");
-    std::fs::write(&rs_file, r#"
+    std::fs::write(
+        &rs_file,
+        r#"
 fn main() {}
 struct Config { val: i32 }
 impl Config { fn new() -> Self { Self { val: 0 } } }
 enum Status { Active, Inactive }
 trait Parser { fn parse(&self) -> Result<(), String>; }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let mut index = AstSymbolIndex::new();
-    let count = index.index_project(temp_path).expect("index should succeed");
+    let count = index
+        .index_project(temp_path)
+        .expect("index should succeed");
     assert!(count >= 5, "Expected at least 5 symbols, got {}", count);
 
-    assert!(index.find_symbol("main").iter().any(|s| s.kind == "function"));
-    assert!(index.find_symbol("Config").iter().any(|s| s.kind == "struct"));
+    assert!(index
+        .find_symbol("main")
+        .iter()
+        .any(|s| s.kind == "function"));
+    assert!(index
+        .find_symbol("Config")
+        .iter()
+        .any(|s| s.kind == "struct"));
     assert!(index.find_symbol("Status").iter().any(|s| s.kind == "enum"));
-    assert!(index.find_symbol("Parser").iter().any(|s| s.kind == "trait"));
+    assert!(index
+        .find_symbol("Parser")
+        .iter()
+        .any(|s| s.kind == "trait"));
 
     std::fs::remove_dir_all(temp_path).unwrap_or(());
 }
 
 #[tokio::test]
 async fn test_ast_find_symbol_line_number() {
-    let temp_dir = std::env::temp_dir().join(format!("hajimi_ast_line_{}", uuid::Uuid::new_v4().simple()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("hajimi_ast_line_{}", uuid::Uuid::new_v4().simple()));
     let temp_path = temp_dir.to_str().unwrap();
     std::fs::create_dir_all(temp_path).unwrap();
 
@@ -66,7 +86,10 @@ async fn test_ast_find_symbol_line_number() {
 #[tokio::test]
 async fn test_ast_index_counts_nonzero() {
     // Index a temp directory with multiple .rs files
-    let temp_dir = std::env::temp_dir().join(format!("hajimi_ast_multi_{}", uuid::Uuid::new_v4().simple()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "hajimi_ast_multi_{}",
+        uuid::Uuid::new_v4().simple()
+    ));
     let temp_path = temp_dir.to_str().unwrap();
     std::fs::create_dir_all(temp_path).unwrap();
 
@@ -83,7 +106,8 @@ async fn test_ast_index_counts_nonzero() {
 
 #[tokio::test]
 async fn test_ast_fallback_on_bad_syntax() {
-    let temp_dir = std::env::temp_dir().join(format!("hajimi_ast_bad_{}", uuid::Uuid::new_v4().simple()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("hajimi_ast_bad_{}", uuid::Uuid::new_v4().simple()));
     let temp_path = temp_dir.to_str().unwrap();
     std::fs::create_dir_all(temp_path).unwrap();
 
@@ -91,7 +115,9 @@ async fn test_ast_fallback_on_bad_syntax() {
     std::fs::write(&rs_file, "fn broken { missing_paren }").unwrap();
 
     let mut index = AstSymbolIndex::new();
-    let count = index.index_project(temp_path).expect("index should not panic");
+    let count = index
+        .index_project(temp_path)
+        .expect("index should not panic");
     assert_eq!(count, 0, "Bad syntax file should yield 0 symbols");
 
     std::fs::remove_dir_all(temp_path).unwrap_or(());
@@ -102,7 +128,8 @@ async fn test_lsp_provider_get_symbol_context() {
     let provider = LspContextProvider::new();
 
     // Index a temp project first
-    let temp_dir = std::env::temp_dir().join(format!("hajimi_lsp_{}", uuid::Uuid::new_v4().simple()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("hajimi_lsp_{}", uuid::Uuid::new_v4().simple()));
     let temp_path = temp_dir.to_str().unwrap();
     std::fs::create_dir_all(temp_path).unwrap();
     std::fs::write(temp_dir.join("lib.rs"), "fn helper() {}\n").unwrap();
@@ -110,7 +137,10 @@ async fn test_lsp_provider_get_symbol_context() {
     let count = provider.index_project(temp_path).await.expect("index");
     assert!(count > 0);
 
-    let ctx = provider.get_symbol_context("helper", None).await.expect("get_symbol_context");
+    let ctx = provider
+        .get_symbol_context("helper", None)
+        .await
+        .expect("get_symbol_context");
     assert_eq!(ctx.symbol.name, "helper");
     assert_eq!(ctx.symbol.kind, "function");
     assert!(ctx.context.contains("helper"));
@@ -131,7 +161,8 @@ async fn test_retrieve_with_ast_enhanced() {
     let ast_provider: Arc<dyn ASTContextProvider> = {
         let provider = LspContextProvider::new();
         // Index a temp project
-        let temp_dir = std::env::temp_dir().join(format!("hajimi_ret_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("hajimi_ret_{}", uuid::Uuid::new_v4().simple()));
         let temp_path = temp_dir.to_str().unwrap();
         std::fs::create_dir_all(temp_path).unwrap();
         std::fs::write(temp_dir.join("lib.rs"), "fn my_helper() {}\n").unwrap();
@@ -140,15 +171,23 @@ async fn test_retrieve_with_ast_enhanced() {
         Arc::new(provider)
     };
 
-    let retriever = MemoryRetriever::new(bb.clone(), None, None)
-        .with_ast_provider(ast_provider);
+    let retriever = MemoryRetriever::new(bb.clone(), None, None).with_ast_provider(ast_provider);
 
-    let outcome = retriever.retrieve_with_ast("agent-1", Some("my_helper")).await;
+    let outcome = retriever
+        .retrieve_with_ast("agent-1", Some("my_helper"))
+        .await;
     match &outcome {
         RetrieveOutcome::Retrieved { summary } => {
-            assert!(summary.contains("AST-enhanced"), "Summary should indicate AST enhancement: {}", summary);
+            assert!(
+                summary.contains("AST-enhanced"),
+                "Summary should indicate AST enhancement: {}",
+                summary
+            );
             let snapshot = bb.snapshot().await;
-            assert!(snapshot.contains_key("ast_context_agent-1"), "Blackboard should have ast_context_agent-1");
+            assert!(
+                snapshot.contains_key("ast_context_agent-1"),
+                "Blackboard should have ast_context_agent-1"
+            );
         }
         other => panic!("Expected AST-enhanced retrieval, got {:?}", other),
     }
@@ -171,14 +210,19 @@ async fn test_retrieve_ast_fallback_when_not_indexed() {
     let bb = test_bb();
     let ast_provider: Arc<dyn ASTContextProvider> = Arc::new(LspContextProvider::new());
     // Do NOT index anything — query should fall back to normal retrieval
-    let retriever = MemoryRetriever::new(bb.clone(), None, None)
-        .with_ast_provider(ast_provider);
+    let retriever = MemoryRetriever::new(bb.clone(), None, None).with_ast_provider(ast_provider);
 
-    let outcome = retriever.retrieve_with_ast("agent-3", Some("unknown_symbol")).await;
+    let outcome = retriever
+        .retrieve_with_ast("agent-3", Some("unknown_symbol"))
+        .await;
     // Should fallback because symbol not found → then No sync_gateway error
     match outcome {
-        RetrieveOutcome::Error(e) => assert!(e.contains("No sync_gateway") || e.contains("not found")),
-        RetrieveOutcome::Retrieved { summary } => assert!(summary.contains("AST-enhanced") || summary.contains("sync_gateway")),
+        RetrieveOutcome::Error(e) => {
+            assert!(e.contains("No sync_gateway") || e.contains("not found"))
+        }
+        RetrieveOutcome::Retrieved { summary } => {
+            assert!(summary.contains("AST-enhanced") || summary.contains("sync_gateway"))
+        }
         _ => {}
     }
 }
@@ -186,19 +230,27 @@ async fn test_retrieve_ast_fallback_when_not_indexed() {
 #[tokio::test]
 async fn test_e2e_plan_with_ast() {
     let bb = test_bb();
-    let mem = Arc::new(Mutex::new(memory::memory_gateway::MemoryGateway::new("test")));
-    let mut planner = HierarchicalPlanner::new(mem, test_context())
-        .with_blackboard(bb.clone());
+    let mem = Arc::new(Mutex::new(memory::memory_gateway::MemoryGateway::new(
+        "test",
+    )));
+    let mut planner = HierarchicalPlanner::new(mem, test_context()).with_blackboard(bb.clone());
 
-    let goal_id = planner.plan_with_ast("Refactor AgentLoop and improve Config", Priority::High).await.expect("plan_with_ast");
+    let goal_id = planner
+        .plan_with_ast("Refactor AgentLoop and improve Config", Priority::High)
+        .await
+        .expect("plan_with_ast");
     assert!(!goal_id.is_empty());
 
     let snapshot = bb.snapshot().await;
-    let ast_keys: Vec<String> = snapshot.keys()
+    let ast_keys: Vec<String> = snapshot
+        .keys()
         .filter(|k| k.starts_with(&format!("ast_query_{}", goal_id)))
         .cloned()
         .collect();
-    assert!(!ast_keys.is_empty(), "Blackboard should have ast_query keys for symbol candidates");
+    assert!(
+        !ast_keys.is_empty(),
+        "Blackboard should have ast_query keys for symbol candidates"
+    );
 }
 
 #[tokio::test]

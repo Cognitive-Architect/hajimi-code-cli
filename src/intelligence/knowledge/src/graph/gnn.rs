@@ -1,11 +1,12 @@
 //! GNN图神经网络接口
 
-use crate::graph::{GraphDb, Result};
 use crate::graph::attention::{attention_pooling, EMBEDDING_DIM};
+use crate::graph::{GraphDb, Result};
 
 /// GNN聚合（注意力加权）
 pub fn gnn_aggregate(db: &GraphDb, node_ids: &[String]) -> Result<Vec<f32>> {
-    let embeddings: Vec<Vec<f32>> = node_ids.iter()
+    let embeddings: Vec<Vec<f32>> = node_ids
+        .iter()
         .filter_map(|id| db.get_node_embedding(id).ok().flatten())
         .collect();
     if embeddings.is_empty() {

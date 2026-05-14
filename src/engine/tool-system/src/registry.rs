@@ -10,37 +10,71 @@ pub struct ToolRegistry {
 }
 
 impl Default for ToolRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolRegistry {
-    pub fn new() -> Self { Self { tools: HashMap::new() } }
-    pub fn register(&mut self, tool: Arc<dyn Tool>) { self.tools.insert(tool.name().to_string(), tool); }
-    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> { self.tools.get(name).cloned() }
-    pub fn list(&self) -> Vec<&str> { self.tools.keys().map(|s| s.as_str()).collect() }
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
+    pub fn register(&mut self, tool: Arc<dyn Tool>) {
+        self.tools.insert(tool.name().to_string(), tool);
+    }
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.tools.get(name).cloned()
+    }
+    pub fn list(&self) -> Vec<&str> {
+        self.tools.keys().map(|s| s.as_str()).collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        AnalyzeTool, BashTool, CargoBuildTool, CmakeTool, DeleteFileTool, EditFileTool,
+        FetchUrlTool, FindTool,
+    };
+    use crate::{
+        BenchmarkTool, CoverageReportTool, LspDefinitionTool, LspHoverTool, LspReferencesTool,
+        McpInitTool, McpInvokeTool,
+    };
     use crate::{Config, PermissionLevel, ToolArgs, ToolError, ToolOutput, ToolPermissions};
-    use crate::{AnalyzeTool, BashTool, CargoBuildTool, CmakeTool, DeleteFileTool, EditFileTool, FetchUrlTool, FindTool};
-    use crate::{GenerateDocsTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool, GraphTool};
+    use crate::{
+        GenerateDocsTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool,
+        GraphTool,
+    };
     use crate::{GrepTool, JsBundleAnalyzerTool, ListDirectoryTool, LsTool, MakeTool, NpmRunTool};
-    use crate::{PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, SecurityAuditTool, UpdateReadmeTool};
-    use crate::{WebSearchTool, WriteFileTool, ViewImageTool, RustDocGeneratorTool, LspInitTool};
-    use crate::{LspDefinitionTool, LspReferencesTool, LspHoverTool, McpInitTool, McpInvokeTool, CoverageReportTool, BenchmarkTool};
+    use crate::{LspInitTool, RustDocGeneratorTool, ViewImageTool, WebSearchTool, WriteFileTool};
+    use crate::{
+        PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, SecurityAuditTool,
+        UpdateReadmeTool,
+    };
     use async_trait::async_trait;
 
     struct TestTool;
 
     #[async_trait]
     impl Tool for TestTool {
-        fn name(&self) -> &str { "test" }
-        fn description(&self) -> &str { "Test tool" }
-        fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+        fn name(&self) -> &str {
+            "test"
+        }
+        fn description(&self) -> &str {
+            "Test tool"
+        }
+        fn permissions(&self) -> ToolPermissions {
+            ToolPermissions::default()
+        }
         async fn execute(&self, _args: ToolArgs) -> Result<ToolOutput, ToolError> {
-            Ok(ToolOutput { stdout: "ok".to_string(), stderr: "".to_string(), exit_code: Some(0) })
+            Ok(ToolOutput {
+                stdout: "ok".to_string(),
+                stderr: "".to_string(),
+                exit_code: Some(0),
+            })
         }
     }
 
@@ -105,12 +139,26 @@ mod tests {
         registry.register(Arc::new(WriteFileTool::new()));
 
         let tools = registry.list();
-        assert!(tools.len() >= 38, "Expected at least 38 registered tools with MCP mappings");
+        assert!(
+            tools.len() >= 38,
+            "Expected at least 38 registered tools with MCP mappings"
+        );
 
         // Verify key MCP-mapped tools (cross-platform) + local server support for Task 05
-        assert!(registry.get("security_audit").is_some(), "security_audit mapped to SecurityAuditTool");
-        assert!(registry.get("git_status").is_some(), "git_status mapped to GitStatusTool");
-        assert!(registry.get("bash").is_some() || registry.get("powershell").is_some() || registry.get("shell").is_some(), "terminal_shell mapped to BashTool/ShellTool");
+        assert!(
+            registry.get("security_audit").is_some(),
+            "security_audit mapped to SecurityAuditTool"
+        );
+        assert!(
+            registry.get("git_status").is_some(),
+            "git_status mapped to GitStatusTool"
+        );
+        assert!(
+            registry.get("bash").is_some()
+                || registry.get("powershell").is_some()
+                || registry.get("shell").is_some(),
+            "terminal_shell mapped to BashTool/ShellTool"
+        );
         assert!(registry.get("mcp_init").is_some(), "MCP bridge active");
         assert!(registry.get("mcp_invoke").is_some(), "MCP invoke active");
 

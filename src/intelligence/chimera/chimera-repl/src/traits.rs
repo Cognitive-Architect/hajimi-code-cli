@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use codex_twist::thread::ThreadId;
 
 /// Configuration for REPL engine behavior.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReplConfig {
     /// Thread ID for this REPL session.
     pub thread_id: Option<ThreadId>,
@@ -18,16 +18,6 @@ pub struct ReplConfig {
     pub verbose: bool,
     /// Custom metadata storage.
     pub metadata: HashMap<String, String>,
-}
-
-impl Default for ReplConfig {
-    fn default() -> Self {
-        Self {
-            thread_id: None,
-            verbose: false,
-            metadata: HashMap::new(),
-        }
-    }
 }
 
 /// Core trait for REPL engine implementations.

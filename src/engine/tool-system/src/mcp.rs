@@ -13,78 +13,184 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use super::{Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions, ToolRegistry, PermissionLevel};
+use super::{
+    PermissionLevel, Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions,
+    ToolRegistry,
+};
 
 const MCP_VERSION: &str = "2024-11-05";
 const MAX_LOG_LINES: usize = 100;
 const GRACEFUL_SHUTDOWN_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct McpTool { name: String, description: Option<String>, input_schema: Value }
+struct McpTool {
+    name: String,
+    description: Option<String>,
+    input_schema: Value,
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum McpTransport { #[allow(dead_code)] Sse(String), Stdio(String, Vec<String>) }
+enum McpTransport {
+    #[allow(dead_code)]
+    Sse(String),
+    Stdio(String, Vec<String>),
+}
 
 #[derive(Debug, Clone)]
-struct McpConn { transport: McpTransport, tools: Vec<McpTool>, #[allow(dead_code)] connected: bool }
+struct McpConn {
+    transport: McpTransport,
+    tools: Vec<McpTool>,
+    #[allow(dead_code)]
+    connected: bool,
+}
 
-static MCP_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, Arc<Mutex<McpConn>>>>>
-    = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+static MCP_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, Arc<Mutex<McpConn>>>>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 
 // Proxy function and all SSE/HTTP client logic FULLY REMOVED per WEEK5-D-REWORK-001 true clearance (DEBT-MCP-PROXY-001).
 // No external calls. Only local McpServer + stdio paths. SSE paths return explicit clearance error.
 // This eliminates previous fake clearance declarations. McpInitTool and McpInvokeTool are now proxy-free. V1=0.
 
 pub struct McpInitTool;
-impl McpInitTool { pub fn new() -> Self { Self } }
+impl Default for McpInitTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl McpInitTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for McpInitTool {
-    fn name(&self) -> &str { "mcp_init" }
-    fn description(&self) -> &str { "Initialize MCP server (SSE/stdio), fetch tools/list" }
-    fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+    fn name(&self) -> &str {
+        "mcp_init"
+    }
+    fn description(&self) -> &str {
+        "Initialize MCP server (SSE/stdio), fetch tools/list"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        ToolPermissions::default()
+    }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let url = args.get("server_url").and_then(|v| v.as_str()).ok_or_else(|| ToolError { message: "Missing server_url".into(), kind: ToolErrorKind::InvalidArgs })?;
-        let transport = args.get("transport").and_then(|v| v.as_str()).unwrap_or("sse");
+        let url = args
+            .get("server_url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError {
+                message: "Missing server_url".into(),
+                kind: ToolErrorKind::InvalidArgs,
+            })?;
+        let transport = args
+            .get("transport")
+            .and_then(|v| v.as_str())
+            .unwrap_or("sse");
         let t = if transport == "stdio" {
             let p: Vec<&str> = url.split_whitespace().collect();
-            McpTransport::Stdio(p[0].to_string(), p[1..].iter().map(|s| s.to_string()).collect())
+            McpTransport::Stdio(
+                p[0].to_string(),
+                p[1..].iter().map(|s| s.to_string()).collect(),
+            )
         } else {
             return Err(ToolError::new("MCP SSE/proxy mode removed per DEBT-MCP-PROXY-001 true clearance. Use local McpServer with ToolRegistry for tools/list and tools/call."));
         };
         let tools: Vec<McpTool> = match t.clone() {
             McpTransport::Stdio(proc, a) => {
-                let o = Command::new(&proc).args(&a).arg("--mcp-list").output().await.map_err(|e| ToolError { message: format!("MCP stdio crash: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
-                if !o.status.success() { return Err(ToolError { message: format!("MCP stdio error: {}", String::from_utf8_lossy(&o.stderr)), kind: ToolErrorKind::ExecutionFailed }); }
-                serde_json::from_slice(&o.stdout).map_err(|e| ToolError { message: format!("stdio parse: {}", e), kind: ToolErrorKind::ParseError })?
+                let o = Command::new(&proc)
+                    .args(&a)
+                    .arg("--mcp-list")
+                    .output()
+                    .await
+                    .map_err(|e| ToolError {
+                        message: format!("MCP stdio crash: {}", e),
+                        kind: ToolErrorKind::ExecutionFailed,
+                    })?;
+                if !o.status.success() {
+                    return Err(ToolError {
+                        message: format!("MCP stdio error: {}", String::from_utf8_lossy(&o.stderr)),
+                        kind: ToolErrorKind::ExecutionFailed,
+                    });
+                }
+                serde_json::from_slice(&o.stdout).map_err(|e| ToolError {
+                    message: format!("stdio parse: {}", e),
+                    kind: ToolErrorKind::ParseError,
+                })?
             }
             _ => unreachable!(),
         };
         let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
-        let conn = McpConn { transport: t, tools, connected: true };
-        MCP_CACHE.lock().await.insert(url.to_string(), Arc::new(Mutex::new(conn)));
+        let conn = McpConn {
+            transport: t,
+            tools,
+            connected: true,
+        };
+        MCP_CACHE
+            .lock()
+            .await
+            .insert(url.to_string(), Arc::new(Mutex::new(conn)));
         Ok(ToolOutput::success(json!({ "connected": true, "version": MCP_VERSION, "tools": names.len(), "tool_names": names }).to_string()))
     }
 }
 
 pub struct McpInvokeTool;
-impl McpInvokeTool { pub fn new() -> Self { Self } }
+impl Default for McpInvokeTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl McpInvokeTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for McpInvokeTool {
-    fn name(&self) -> &str { "mcp_invoke" }
-    fn description(&self) -> &str { "Invoke MCP tool via tools/call, chain with api_request" }
-    fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+    fn name(&self) -> &str {
+        "mcp_invoke"
+    }
+    fn description(&self) -> &str {
+        "Invoke MCP tool via tools/call, chain with api_request"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        ToolPermissions::default()
+    }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let url = args.get("server_url").and_then(|v| v.as_str()).ok_or_else(|| ToolError { message: "Missing server_url".into(), kind: ToolErrorKind::InvalidArgs })?;
-        let tool = args.get("tool_name").and_then(|v| v.as_str()).ok_or_else(|| ToolError { message: "Missing tool_name".into(), kind: ToolErrorKind::InvalidArgs })?;
+        let url = args
+            .get("server_url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError {
+                message: "Missing server_url".into(),
+                kind: ToolErrorKind::InvalidArgs,
+            })?;
+        let tool = args
+            .get("tool_name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError {
+                message: "Missing tool_name".into(),
+                kind: ToolErrorKind::InvalidArgs,
+            })?;
         let targs = args.get("arguments").cloned().unwrap_or(json!({}));
         let cache = MCP_CACHE.lock().await;
-        let c = cache.get(url).ok_or_else(|| ToolError { message: format!("MCP not init: {}", url), kind: ToolErrorKind::InvalidArgs })?.clone();
+        let c = cache
+            .get(url)
+            .ok_or_else(|| ToolError {
+                message: format!("MCP not init: {}", url),
+                kind: ToolErrorKind::InvalidArgs,
+            })?
+            .clone();
         drop(cache);
         let conn = c.lock().await;
-        if !conn.tools.iter().any(|t| t.name == tool) { return Err(ToolError { message: format!("MCP tool not exist: {}", tool), kind: ToolErrorKind::NotFound }); }
+        if !conn.tools.iter().any(|t| t.name == tool) {
+            return Err(ToolError {
+                message: format!("MCP tool not exist: {}", tool),
+                kind: ToolErrorKind::NotFound,
+            });
+        }
         let result: Value = match &conn.transport {
             McpTransport::Stdio(proc, a) => {
                 let o = Command::new(proc).args(a).arg("--mcp-call").arg(tool).arg(targs.to_string()).output().await.map_err(|e| ToolError { message: format!("MCP stdio crash: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
@@ -109,16 +215,22 @@ pub struct Agent {
     pub pid: u32,
 }
 
-static AGENT_POOL: once_cell::sync::Lazy<Arc<Mutex<HashMap<String, Agent>>>> = 
+static AGENT_POOL: once_cell::sync::Lazy<Arc<Mutex<HashMap<String, Agent>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-fn spawn_log_capture(stdout: tokio::process::ChildStdout, stderr: tokio::process::ChildStderr, 
-                     stdout_logs: Arc<Mutex<VecDeque<String>>>, stderr_logs: Arc<Mutex<VecDeque<String>>>) {
+fn spawn_log_capture(
+    stdout: tokio::process::ChildStdout,
+    stderr: tokio::process::ChildStderr,
+    stdout_logs: Arc<Mutex<VecDeque<String>>>,
+    stderr_logs: Arc<Mutex<VecDeque<String>>>,
+) {
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let mut logs = stdout_logs.lock().await;
-            if logs.len() >= MAX_LOG_LINES { logs.pop_front(); }
+            if logs.len() >= MAX_LOG_LINES {
+                logs.pop_front();
+            }
             logs.push_back(line);
         }
     });
@@ -126,105 +238,236 @@ fn spawn_log_capture(stdout: tokio::process::ChildStdout, stderr: tokio::process
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let mut logs = stderr_logs.lock().await;
-            if logs.len() >= MAX_LOG_LINES { logs.pop_front(); }
+            if logs.len() >= MAX_LOG_LINES {
+                logs.pop_front();
+            }
             logs.push_back(line);
         }
     });
 }
 
 pub struct SpawnAgentTool;
-impl SpawnAgentTool { pub fn new() -> Self { Self } }
+impl Default for SpawnAgentTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SpawnAgentTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct SpawnArgs {
     command: String,
-    #[serde(default)] args: Vec<String>,
-    #[serde(default)] env: HashMap<String, String>,
-    #[serde(default)] cwd: Option<String>,
-    #[serde(default)] memory: Option<usize>,
-    #[serde(default)] timeout: Option<u64>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    env: HashMap<String, String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    memory: Option<usize>,
+    #[serde(default)]
+    timeout: Option<u64>,
 }
 
 #[async_trait]
 impl Tool for SpawnAgentTool {
-    fn name(&self) -> &str { "spawn_agent" }
-    fn description(&self) -> &str { "Spawn a child process agent with UUID tracking and resource limits" }
-    fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+    fn name(&self) -> &str {
+        "spawn_agent"
+    }
+    fn description(&self) -> &str {
+        "Spawn a child process agent with UUID tracking and resource limits"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        ToolPermissions::default()
+    }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let args: SpawnArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError { message: format!("Invalid spawn args: {}", e), kind: ToolErrorKind::InvalidArgs })?;
+        let args: SpawnArgs = serde_json::from_value(args).map_err(|e| ToolError {
+            message: format!("Invalid spawn args: {}", e),
+            kind: ToolErrorKind::InvalidArgs,
+        })?;
         if let Some(mem) = args.memory {
-            if mem > 8192 { return Err(ToolError { message: format!("Memory limit {}MB exceeds max 8192MB", mem), kind: ToolErrorKind::ExecutionFailed }); }
+            if mem > 8192 {
+                return Err(ToolError {
+                    message: format!("Memory limit {}MB exceeds max 8192MB", mem),
+                    kind: ToolErrorKind::ExecutionFailed,
+                });
+            }
         }
         if let Some(t) = args.timeout {
-            if t > 3600 { return Err(ToolError { message: format!("Timeout {}s exceeds max 3600s", t), kind: ToolErrorKind::ExecutionFailed }); }
+            if t > 3600 {
+                return Err(ToolError {
+                    message: format!("Timeout {}s exceeds max 3600s", t),
+                    kind: ToolErrorKind::ExecutionFailed,
+                });
+            }
         }
         let agent_id = Uuid::new_v4().to_string();
         let mut cmd_parts: Vec<&str> = args.command.split_whitespace().collect();
-        if cmd_parts.is_empty() { return Err(ToolError { message: "Empty command".into(), kind: ToolErrorKind::InvalidArgs }); }
+        if cmd_parts.is_empty() {
+            return Err(ToolError {
+                message: "Empty command".into(),
+                kind: ToolErrorKind::InvalidArgs,
+            });
+        }
         let program = cmd_parts.remove(0);
         let mut cmd = Command::new(program);
         cmd.args(&cmd_parts).args(&args.args);
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::piped());
-        for (k, v) in &args.env { cmd.env(k, v); }
-        if let Some(cwd) = &args.cwd { cmd.current_dir(cwd); }
-        let mut child = cmd.spawn().map_err(|e| ToolError { message: format!("Failed to spawn agent: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
-        let pid = child.id().ok_or_else(|| ToolError { message: "Failed to get child PID".into(), kind: ToolErrorKind::ExecutionFailed })?;
+        cmd.stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped());
+        for (k, v) in &args.env {
+            cmd.env(k, v);
+        }
+        if let Some(cwd) = &args.cwd {
+            cmd.current_dir(cwd);
+        }
+        let mut child = cmd.spawn().map_err(|e| ToolError {
+            message: format!("Failed to spawn agent: {}", e),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
+        let pid = child.id().ok_or_else(|| ToolError {
+            message: "Failed to get child PID".into(),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
         let stdin = child.stdin.take();
-        let stdout = child.stdout.take().ok_or_else(|| ToolError { message: "Failed to capture stdout".into(), kind: ToolErrorKind::ExecutionFailed })?;
-        let stderr = child.stderr.take().ok_or_else(|| ToolError { message: "Failed to capture stderr".into(), kind: ToolErrorKind::ExecutionFailed })?;
+        let stdout = child.stdout.take().ok_or_else(|| ToolError {
+            message: "Failed to capture stdout".into(),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| ToolError {
+            message: "Failed to capture stderr".into(),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
         let stdout_logs = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_LOG_LINES)));
         let stderr_logs = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_LOG_LINES)));
         spawn_log_capture(stdout, stderr, stdout_logs.clone(), stderr_logs.clone());
         let agent = Agent {
-            id: agent_id.clone(), child, stdin, stdout_logs, stderr_logs,
-            start_time: Instant::now(), command: args.command.clone(), pid,
+            id: agent_id.clone(),
+            child,
+            stdin,
+            stdout_logs,
+            stderr_logs,
+            start_time: Instant::now(),
+            command: args.command.clone(),
+            pid,
         };
         AGENT_POOL.lock().await.insert(agent_id.clone(), agent);
-        Ok(ToolOutput::success(json!({"agent_id": agent_id, "pid": pid, "command": args.command, "status": "running"}).to_string()))
+        Ok(ToolOutput::success(
+            json!({"agent_id": agent_id, "pid": pid, "command": args.command, "status": "running"})
+                .to_string(),
+        ))
     }
 }
 
 pub struct SendInputTool;
-impl SendInputTool { pub fn new() -> Self { Self } }
+impl Default for SendInputTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SendInputTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[derive(Debug, Deserialize)]
-struct SendInputArgs { agent_id: String, input: String }
+struct SendInputArgs {
+    agent_id: String,
+    input: String,
+}
 
 #[async_trait]
 impl Tool for SendInputTool {
-    fn name(&self) -> &str { "send_input" }
-    fn description(&self) -> &str { "Send input to agent's STDIN" }
-    fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+    fn name(&self) -> &str {
+        "send_input"
+    }
+    fn description(&self) -> &str {
+        "Send input to agent's STDIN"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        ToolPermissions::default()
+    }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let args: SendInputArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError { message: format!("Invalid send_input args: {}", e), kind: ToolErrorKind::InvalidArgs })?;
+        let args: SendInputArgs = serde_json::from_value(args).map_err(|e| ToolError {
+            message: format!("Invalid send_input args: {}", e),
+            kind: ToolErrorKind::InvalidArgs,
+        })?;
         let mut pool = AGENT_POOL.lock().await;
-        let agent = pool.get_mut(&args.agent_id).ok_or_else(|| ToolError { message: format!("Agent not found: {}", args.agent_id), kind: ToolErrorKind::NotFound })?;
-        let stdin = agent.stdin.as_mut().ok_or_else(|| ToolError { message: format!("Agent {} stdin is closed", args.agent_id), kind: ToolErrorKind::ExecutionFailed })?;
-        stdin.write_all(args.input.as_bytes()).await.map_err(|e| ToolError { message: format!("Failed to write to stdin: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
-        stdin.flush().await.map_err(|e| ToolError { message: format!("Failed to flush stdin: {}", e), kind: ToolErrorKind::ExecutionFailed })?;
+        let agent = pool.get_mut(&args.agent_id).ok_or_else(|| ToolError {
+            message: format!("Agent not found: {}", args.agent_id),
+            kind: ToolErrorKind::NotFound,
+        })?;
+        let stdin = agent.stdin.as_mut().ok_or_else(|| ToolError {
+            message: format!("Agent {} stdin is closed", args.agent_id),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
+        stdin
+            .write_all(args.input.as_bytes())
+            .await
+            .map_err(|e| ToolError {
+                message: format!("Failed to write to stdin: {}", e),
+                kind: ToolErrorKind::ExecutionFailed,
+            })?;
+        stdin.flush().await.map_err(|e| ToolError {
+            message: format!("Failed to flush stdin: {}", e),
+            kind: ToolErrorKind::ExecutionFailed,
+        })?;
         drop(pool);
-        Ok(ToolOutput::success(json!({"agent_id": args.agent_id, "bytes_sent": args.input.len(), "status": "sent"}).to_string()))
+        Ok(ToolOutput::success(
+            json!({"agent_id": args.agent_id, "bytes_sent": args.input.len(), "status": "sent"})
+                .to_string(),
+        ))
     }
 }
 
 pub struct CloseAgentTool;
-impl CloseAgentTool { pub fn new() -> Self { Self } }
+impl Default for CloseAgentTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CloseAgentTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[derive(Debug, Deserialize)]
-struct CloseArgs { agent_id: String, #[serde(default)] force: bool }
+struct CloseArgs {
+    agent_id: String,
+    #[serde(default)]
+    force: bool,
+}
 
 #[async_trait]
 impl Tool for CloseAgentTool {
-    fn name(&self) -> &str { "close_agent" }
-    fn description(&self) -> &str { "Gracefully terminate agent (SIGTERM then SIGKILL), cleanup from pool" }
-    fn permissions(&self) -> ToolPermissions { ToolPermissions::default() }
+    fn name(&self) -> &str {
+        "close_agent"
+    }
+    fn description(&self) -> &str {
+        "Gracefully terminate agent (SIGTERM then SIGKILL), cleanup from pool"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        ToolPermissions::default()
+    }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let args: CloseArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError { message: format!("Invalid close args: {}", e), kind: ToolErrorKind::InvalidArgs })?;
+        let args: CloseArgs = serde_json::from_value(args).map_err(|e| ToolError {
+            message: format!("Invalid close args: {}", e),
+            kind: ToolErrorKind::InvalidArgs,
+        })?;
         let mut pool = AGENT_POOL.lock().await;
-        let mut agent = pool.remove(&args.agent_id).ok_or_else(|| ToolError { message: format!("Agent not found: {}", args.agent_id), kind: ToolErrorKind::NotFound })?;
+        let mut agent = pool.remove(&args.agent_id).ok_or_else(|| ToolError {
+            message: format!("Agent not found: {}", args.agent_id),
+            kind: ToolErrorKind::NotFound,
+        })?;
         agent.stdin.take();
         let start_close = Instant::now();
         if args.force {
@@ -237,10 +480,19 @@ impl Tool for CloseAgentTool {
                 let _ = kill(Pid::from_raw(agent.pid as i32), Signal::SIGTERM);
             }
             #[cfg(not(unix))]
-            { let _ = agent.child.kill().await; }
-            match timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_SECS), agent.child.wait()).await {
-                Ok(Ok(_)) => {},
-                _ => { let _ = agent.child.kill().await; }
+            {
+                let _ = agent.child.kill().await;
+            }
+            match timeout(
+                Duration::from_secs(GRACEFUL_SHUTDOWN_SECS),
+                agent.child.wait(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                _ => {
+                    let _ = agent.child.kill().await;
+                }
             }
         }
         let exit_status = match timeout(Duration::from_secs(1), agent.child.wait()).await {
@@ -263,8 +515,9 @@ pub async fn confirm_permission(name: &str, _args: &Value) -> Result<bool, ToolE
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).ok()?;
             Some(input.trim().to_lowercase())
-        })
-    ).await;
+        }),
+    )
+    .await;
 
     match result {
         Ok(Ok(Some(input))) if input == "y" || input.is_empty() => Ok(true),
@@ -295,7 +548,11 @@ impl McpServer {
         })
     }
 
-    pub async fn handle_tools_call(&self, name: &str, arguments: Value) -> Result<Value, ToolError> {
+    pub async fn handle_tools_call(
+        &self,
+        name: &str,
+        arguments: Value,
+    ) -> Result<Value, ToolError> {
         if let Some(tool) = self.registry.get(name) {
             let perms = tool.permissions();
             if perms.default_level == PermissionLevel::Ask || perms.requires_confirmation {
@@ -314,7 +571,10 @@ impl McpServer {
 
 pub async fn get_agent_logs(agent_id: &str) -> Result<(Vec<String>, Vec<String>), ToolError> {
     let pool = AGENT_POOL.lock().await;
-    let agent = pool.get(agent_id).ok_or_else(|| ToolError { message: format!("Agent not found: {}", agent_id), kind: ToolErrorKind::NotFound })?;
+    let agent = pool.get(agent_id).ok_or_else(|| ToolError {
+        message: format!("Agent not found: {}", agent_id),
+        kind: ToolErrorKind::NotFound,
+    })?;
     let stdout: Vec<String> = agent.stdout_logs.lock().await.iter().cloned().collect();
     let stderr: Vec<String> = agent.stderr_logs.lock().await.iter().cloned().collect();
     Ok((stdout, stderr))
@@ -327,7 +587,11 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_agent_success() -> Result<(), Box<dyn std::error::Error>> {
         // 运行时检查外部程序是否可用
-        if std::process::Command::new("echo").arg("--version").output().is_err() {
+        if std::process::Command::new("echo")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("跳过测试: echo 在当前平台不可用");
             return Ok(());
         }
@@ -337,7 +601,7 @@ mod tests {
         assert!(result.stdout.contains("agent_id"));
         Ok(())
     }
-    
+
     #[tokio::test]
     async fn test_spawn_agent_memory_limit_exceeded() -> Result<(), Box<dyn std::error::Error>> {
         let tool = SpawnAgentTool::new();
@@ -347,7 +611,7 @@ mod tests {
         assert!(result.unwrap_err().message.contains("exceeds max"));
         Ok(())
     }
-    
+
     #[tokio::test]
     async fn test_close_invalid_agent() -> Result<(), Box<dyn std::error::Error>> {
         let tool = CloseAgentTool::new();
@@ -357,7 +621,7 @@ mod tests {
         assert_eq!(result.unwrap_err().kind, ToolErrorKind::NotFound);
         Ok(())
     }
-    
+
     #[tokio::test]
     async fn test_send_input_invalid_agent() -> Result<(), Box<dyn std::error::Error>> {
         let tool = SendInputTool::new();
@@ -367,20 +631,30 @@ mod tests {
         assert_eq!(result.unwrap_err().kind, ToolErrorKind::NotFound);
         Ok(())
     }
-    
+
     #[tokio::test]
     async fn test_agent_lifecycle_full() -> Result<(), Box<dyn std::error::Error>> {
         // 运行时检查外部程序是否可用
-        if std::process::Command::new("cat").arg("--version").output().is_err() {
+        if std::process::Command::new("cat")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("跳过测试: cat 在当前平台不可用");
             return Ok(());
         }
         let spawn_tool = SpawnAgentTool::new();
         let spawn_result = spawn_tool.execute(json!({"command": "cat"})).await?;
         let agent_id: Value = serde_json::from_str(&spawn_result.stdout)?;
-        let id = agent_id["agent_id"].as_str().ok_or("Missing agent_id")?.to_string();
+        let id = agent_id["agent_id"]
+            .as_str()
+            .ok_or("Missing agent_id")?
+            .to_string();
         let input_tool = SendInputTool::new();
-        assert!(input_tool.execute(json!({"agent_id": id, "input": "hello\n"})).await.is_ok());
+        assert!(input_tool
+            .execute(json!({"agent_id": id, "input": "hello\n"}))
+            .await
+            .is_ok());
         let close_tool = CloseAgentTool::new();
         assert!(close_tool.execute(json!({"agent_id": id})).await.is_ok());
         assert!(!AGENT_POOL.lock().await.contains_key(&id));

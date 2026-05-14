@@ -4,22 +4,37 @@
 //! atomic rollback, and governance integration.
 
 use agent_core::{
-    edit_applier::{EditApplier, EditHunk, ProposedEdit, AppliedEdit, EditState, edit_summary},
-    governance::{DefaultGovernance, AgentGovernance, GovernanceRequest, ApprovalLevel, Decision, Vote, GovernancePolicy},
-    checkpoint::CheckpointManager,
     agent_loop::{TraceEvent, TraceStepType},
+    checkpoint::CheckpointManager,
+    edit_applier::{edit_summary, AppliedEdit, EditApplier, EditHunk, EditState, ProposedEdit},
+    governance::{
+        AgentGovernance, ApprovalLevel, Decision, DefaultGovernance, GovernancePolicy,
+        GovernanceRequest, Vote,
+    },
     AgentContext, AgentId,
 };
 use std::sync::Arc;
 
-fn test_context() -> AgentContext { AgentContext::new() }
-fn test_governance() -> Arc<DefaultGovernance> { Arc::new(DefaultGovernance::new()) }
-fn test_checkpoint_mgr() -> Arc<CheckpointManager> { Arc::new(CheckpointManager::new()) }
+fn test_context() -> AgentContext {
+    AgentContext::new()
+}
+fn test_governance() -> Arc<DefaultGovernance> {
+    Arc::new(DefaultGovernance::new())
+}
+fn test_checkpoint_mgr() -> Arc<CheckpointManager> {
+    Arc::new(CheckpointManager::new())
+}
 
 async fn write_temp_file(name: &str, content: &str) -> String {
-    let path = std::env::temp_dir().join(format!("hajimi_edit_test_{}_{}", name, uuid::Uuid::new_v4().simple()));
+    let path = std::env::temp_dir().join(format!(
+        "hajimi_edit_test_{}_{}",
+        name,
+        uuid::Uuid::new_v4().simple()
+    ));
     let path_str = path.to_str().unwrap().to_string();
-    tokio::fs::write(&path_str, content).await.expect("write temp file");
+    tokio::fs::write(&path_str, content)
+        .await
+        .expect("write temp file");
     path_str
 }
 
@@ -151,7 +166,10 @@ async fn test_trace_broadcast_received() {
             _ => {}
         }
     }
-    assert!(found_proposed, "EditProposed trace event should be broadcast");
+    assert!(
+        found_proposed,
+        "EditProposed trace event should be broadcast"
+    );
     assert!(found_applied, "EditApplied trace event should be broadcast");
 
     let _ = tokio::fs::remove_file(&path).await;
@@ -230,7 +248,10 @@ async fn test_atomic_failure_no_partial_write() {
 
     // Verify file was NOT modified
     let content = tokio::fs::read_to_string(&path).await.expect("read");
-    assert!(content.contains("line1"), "File should remain unchanged after failed apply");
+    assert!(
+        content.contains("line1"),
+        "File should remain unchanged after failed apply"
+    );
     assert!(content.contains("line2"));
     assert!(content.contains("line3"));
 
@@ -302,7 +323,11 @@ async fn test_undo_stack_ordering() {
     let _ = applier.review(true, &agent_id).await.expect("review");
     let applied = applier.apply(&proposed, &agent_id).await.expect("apply");
 
-    let undone = applier.undo_last(&agent_id).await.expect("undo").expect("should have undo entry");
+    let undone = applier
+        .undo_last(&agent_id)
+        .await
+        .expect("undo")
+        .expect("should have undo entry");
     assert_eq!(undone.edit_id, applied.edit_id);
     assert_eq!(undone.checkpoint_id, applied.checkpoint_id);
 
@@ -382,18 +407,51 @@ async fn test_governance_reject_apply_level() {
     struct RejectApplyGovernance;
     #[async_trait]
     impl AgentGovernance for RejectApplyGovernance {
-        async fn policy(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> ApprovalLevel { ApprovalLevel::Auto }
-        async fn approve(&self, _ctx: &AgentContext, req: &GovernanceRequest) -> Result<Decision, chimera_repl::traits::ReplError> {
+        async fn policy(&self, _ctx: &AgentContext, _req: &GovernanceRequest) -> ApprovalLevel {
+            ApprovalLevel::Auto
+        }
+        async fn approve(
+            &self,
+            _ctx: &AgentContext,
+            req: &GovernanceRequest,
+        ) -> Result<Decision, chimera_repl::traits::ReplError> {
             if req.action_type == "apply_edit" {
                 Ok(Decision::Rejected("apply rejected".to_string()))
             } else {
                 Ok(Decision::Approved)
             }
         }
-        async fn vote(&self, _voter_id: &str, _proposal_id: &str, _vote: Vote) -> Result<(), chimera_repl::traits::ReplError> { Ok(()) }
-        async fn escalate(&self, req: &GovernanceRequest, _to_level: ApprovalLevel) -> Result<GovernanceRequest, chimera_repl::traits::ReplError> { Ok(req.clone()) }
-        async fn register_policy(&mut self, _name: &str, _policy: Arc<dyn GovernancePolicy>, _caller: &str, _required_level: agent_core::governance::PermissionLevel) -> Result<(), chimera_repl::traits::ReplError> { Ok(()) }
-        async fn record_feedback(&self, _ctx: &AgentContext, _feedback: &agent_core::governance::UserFeedback) -> Result<(), chimera_repl::traits::ReplError> { Ok(()) }
+        async fn vote(
+            &self,
+            _voter_id: &str,
+            _proposal_id: &str,
+            _vote: Vote,
+        ) -> Result<(), chimera_repl::traits::ReplError> {
+            Ok(())
+        }
+        async fn escalate(
+            &self,
+            req: &GovernanceRequest,
+            _to_level: ApprovalLevel,
+        ) -> Result<GovernanceRequest, chimera_repl::traits::ReplError> {
+            Ok(req.clone())
+        }
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn GovernancePolicy>,
+            _caller: &str,
+            _required_level: agent_core::governance::PermissionLevel,
+        ) -> Result<(), chimera_repl::traits::ReplError> {
+            Ok(())
+        }
+        async fn record_feedback(
+            &self,
+            _ctx: &AgentContext,
+            _feedback: &agent_core::governance::UserFeedback,
+        ) -> Result<(), chimera_repl::traits::ReplError> {
+            Ok(())
+        }
     }
 
     let path = write_temp_file("gov_apply", "content\n").await;
@@ -418,7 +476,10 @@ async fn test_governance_reject_apply_level() {
         rationale: "".to_string(),
     };
 
-    let proposed = applier.propose(proposed, &agent_id).await.expect("propose should succeed (Advisory level)");
+    let proposed = applier
+        .propose(proposed, &agent_id)
+        .await
+        .expect("propose should succeed (Advisory level)");
     let _ = applier.review(true, &agent_id).await.expect("review");
     let result = applier.apply(&proposed, &agent_id).await;
     assert!(result.is_err(), "Apply should be rejected by governance");

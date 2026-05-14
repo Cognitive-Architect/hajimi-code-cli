@@ -1,8 +1,8 @@
 //! Chimera REPL - Pure business event loop, ZeroTUI architecture.
 use std::pin::Pin;
 
-use tokio::io::AsyncWrite;
 use crate::eventloop_adapter::EventReceiver;
+use tokio::io::AsyncWrite;
 use tracing::{debug, error, info};
 
 use crate::clock::Clock;
@@ -32,7 +32,14 @@ impl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> ChimeraRepl<C, I, R> {
         event_rx: EventReceiver<ReplEvent>,
         config: ReplConfig,
     ) -> Self {
-        Self { state, input, output: Box::pin(output), event_rx, config, running: false }
+        Self {
+            state,
+            input,
+            output: Box::pin(output),
+            event_rx,
+            config,
+            running: false,
+        }
     }
 
     /// Main event loop - pure business logic.
@@ -56,8 +63,13 @@ impl<C: Clock, I: InputSource, R: AsyncWrite + Unpin> ChimeraRepl<C, I, R> {
     }
 
     /// Graceful shutdown.
-    pub fn shutdown(&mut self) { self.running = false; info!("Shutdown signal"); }
+    pub fn shutdown(&mut self) {
+        self.running = false;
+        info!("Shutdown signal");
+    }
 
     /// Get mutable state.
-    pub fn state_mut(&mut self) -> &mut ReplState<C> { &mut self.state }
+    pub fn state_mut(&mut self) -> &mut ReplState<C> {
+        &mut self.state
+    }
 }

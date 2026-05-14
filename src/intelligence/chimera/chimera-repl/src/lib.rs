@@ -3,7 +3,7 @@
 //! ZeroTUI architecture: pure business logic with I/O injection.
 
 use codex_twist::thread::ThreadId;
-use eventloop_adapter::{channel, rwlock, write, read, ArcRwLock};
+use eventloop_adapter::{ArcRwLock, channel, read, rwlock, write};
 use tracing::{debug, info};
 
 pub mod eventloop_adapter;
@@ -17,10 +17,10 @@ pub mod session;
 pub mod state;
 pub mod traits;
 
-pub use clock::{Clock, TestClock, SystemTimeClock};
+pub use clock::{Clock, SystemTimeClock, TestClock};
 pub use engine::{EngineController, EngineState};
-pub use event::{ReplEvent, ReplEventSender, OperationSummary};
-pub use io::{InputSource, TestInput, StdinInput};
+pub use event::{OperationSummary, ReplEvent, ReplEventSender};
+pub use io::{InputSource, StdinInput, TestInput};
 pub use repl::ChimeraRepl;
 pub use session::SessionState;
 pub use state::{ReplState, Role, SessionMeta, TurnItem};
@@ -41,7 +41,7 @@ pub struct ReplEngine {
 #[async_trait::async_trait]
 impl ReplEngineCore for ReplEngine {
     async fn new(config: ReplConfig) -> ReplResult<Self> {
-        let thread_id = config.thread_id.clone().unwrap_or_else(ThreadId::new);
+        let thread_id = config.thread_id.clone().unwrap_or_default();
         let (event_tx, _event_rx) = channel(1024);
         info!(?thread_id, "Initializing Chimera REPL engine");
         Ok(Self {

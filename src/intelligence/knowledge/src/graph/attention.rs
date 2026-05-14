@@ -6,7 +6,7 @@ pub const EMBEDDING_DIM: usize = 384;
 
 /// 注意力权重（缩放点积）
 pub fn attention_weights(query: &[f32], key: &[f32]) -> Result<f32> {
-    let score: f32 = query.iter().zip(key.iter()).map(|(a,b)| a*b).sum();
+    let score: f32 = query.iter().zip(key.iter()).map(|(a, b)| a * b).sum();
     Ok(score / (EMBEDDING_DIM as f32).sqrt())
 }
 
@@ -15,7 +15,8 @@ pub fn attention_pooling(embeddings: &[Vec<f32>], query: &[f32]) -> Result<Vec<f
     if embeddings.is_empty() {
         return Ok(vec![0.0; EMBEDDING_DIM]);
     }
-    let weights: Vec<f32> = embeddings.iter()
+    let weights: Vec<f32> = embeddings
+        .iter()
         .map(|emb| attention_weights(query, emb).unwrap_or(0.0))
         .collect();
     let total: f32 = weights.iter().sum::<f32>().max(1e-6);

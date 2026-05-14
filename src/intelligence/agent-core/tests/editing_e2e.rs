@@ -5,22 +5,34 @@
 //! ResourceMonitor integration, undo stack eviction, re-apply cycles, and stress.
 
 use agent_core::{
+    checkpoint::CheckpointManager,
     edit_applier::{EditApplier, EditHunk, ProposedEdit},
     governance::DefaultGovernance,
-    checkpoint::CheckpointManager,
     resource_monitor::ResourceMonitor,
     AgentContext, AgentId,
 };
 use std::sync::Arc;
 
-fn test_context() -> AgentContext { AgentContext::new() }
-fn test_governance() -> Arc<DefaultGovernance> { Arc::new(DefaultGovernance::new()) }
-fn test_checkpoint_mgr() -> Arc<CheckpointManager> { Arc::new(CheckpointManager::new()) }
+fn test_context() -> AgentContext {
+    AgentContext::new()
+}
+fn test_governance() -> Arc<DefaultGovernance> {
+    Arc::new(DefaultGovernance::new())
+}
+fn test_checkpoint_mgr() -> Arc<CheckpointManager> {
+    Arc::new(CheckpointManager::new())
+}
 
 async fn write_temp_file(name: &str, content: &str) -> String {
-    let path = std::env::temp_dir().join(format!("hajimi_e2e_{}_{}", name, uuid::Uuid::new_v4().simple()));
+    let path = std::env::temp_dir().join(format!(
+        "hajimi_e2e_{}_{}",
+        name,
+        uuid::Uuid::new_v4().simple()
+    ));
     let path_str = path.to_str().unwrap().to_string();
-    tokio::fs::write(&path_str, content).await.expect("write temp file");
+    tokio::fs::write(&path_str, content)
+        .await
+        .expect("write temp file");
     path_str
 }
 
@@ -56,15 +68,28 @@ async fn test_undo_actually_restores_file_content() {
     applier.review(true, &agent_id).await.expect("review");
     let _applied = applier.apply(&proposed, &agent_id).await.expect("apply");
 
-    let after_apply = tokio::fs::read_to_string(&path).await.expect("read after apply");
-    assert!(after_apply.contains("fn new()"), "File should be modified after apply");
-    assert!(!after_apply.contains("fn old()"), "Old content should be gone");
+    let after_apply = tokio::fs::read_to_string(&path)
+        .await
+        .expect("read after apply");
+    assert!(
+        after_apply.contains("fn new()"),
+        "File should be modified after apply"
+    );
+    assert!(
+        !after_apply.contains("fn old()"),
+        "Old content should be gone"
+    );
 
     let undone = applier.undo_last(&agent_id).await.expect("undo");
     assert!(undone.is_some(), "Undo should return the applied edit");
 
-    let after_undo = tokio::fs::read_to_string(&path).await.expect("read after undo");
-    assert_eq!(after_undo, original, "File should be restored to original content after undo");
+    let after_undo = tokio::fs::read_to_string(&path)
+        .await
+        .expect("read after undo");
+    assert_eq!(
+        after_undo, original,
+        "File should be restored to original content after undo"
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -103,7 +128,11 @@ async fn test_large_file_apply_rejected() {
 
     assert!(result.is_err(), "Apply should fail for oversized file");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("exceeding maximum"), "Error should mention size limit: {}", err);
+    assert!(
+        err.contains("exceeding maximum"),
+        "Error should mention size limit: {}",
+        err
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -143,7 +172,11 @@ async fn test_too_many_hunks_rejected() {
 
     assert!(result.is_err(), "Apply should fail for too many hunks");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("exceeding maximum"), "Error should mention hunk limit: {}", err);
+    assert!(
+        err.contains("exceeding maximum"),
+        "Error should mention hunk limit: {}",
+        err
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -159,8 +192,10 @@ async fn test_apply_new_file_then_undo_removes_it() {
     let agent_id: AgentId = "agent-newfile".to_string();
 
     // Path that does NOT exist yet
-    let path = std::env::temp_dir()
-        .join(format!("hajimi_newfile_{}.txt", uuid::Uuid::new_v4().simple()));
+    let path = std::env::temp_dir().join(format!(
+        "hajimi_newfile_{}.txt",
+        uuid::Uuid::new_v4().simple()
+    ));
     let path_str = path.to_str().unwrap().to_string();
 
     // Hunk with empty old_lines means pure insertion (new file)
@@ -183,12 +218,18 @@ async fn test_apply_new_file_then_undo_removes_it() {
     applier.review(true, &agent_id).await.expect("review");
     let _applied = applier.apply(&proposed, &agent_id).await.expect("apply");
 
-    assert!(tokio::fs::metadata(&path_str).await.is_ok(), "File should exist after apply");
+    assert!(
+        tokio::fs::metadata(&path_str).await.is_ok(),
+        "File should exist after apply"
+    );
 
     let undone = applier.undo_last(&agent_id).await.expect("undo");
     assert!(undone.is_some());
 
-    assert!(tokio::fs::metadata(&path_str).await.is_err(), "File should be removed after undo");
+    assert!(
+        tokio::fs::metadata(&path_str).await.is_err(),
+        "File should be removed after undo"
+    );
 }
 
 // ------------------------------------------------------------------
@@ -202,11 +243,18 @@ async fn test_checkpoint_auto_prune() {
 
     for i in 0..105 {
         let bb = agent_core::blackboard::Blackboard::new();
-        let _ = checkpoint_mgr.save(&agent_id, None, vec![], vec![], &bb).await.expect("save");
+        let _ = checkpoint_mgr
+            .save(&agent_id, None, vec![], vec![], &bb)
+            .await
+            .expect("save");
         if i == 104 {
             // After the 105th save, pruning should have occurred
             let list = checkpoint_mgr.list(&agent_id).await;
-            assert_eq!(list.len(), 100, "Should prune to MAX_CHECKPOINTS_PER_AGENT (100)");
+            assert_eq!(
+                list.len(),
+                100,
+                "Should prune to MAX_CHECKPOINTS_PER_AGENT (100)"
+            );
         }
     }
 
@@ -252,7 +300,10 @@ async fn test_resource_monitor_edit_metrics() {
 
     let metrics = monitor.get_metrics();
     assert_eq!(metrics.edit_count, 3, "Should have recorded 3 edits");
-    assert_eq!(metrics.undo_stack_size, 3, "Undo stack should have 3 entries");
+    assert_eq!(
+        metrics.undo_stack_size, 3,
+        "Undo stack should have 3 entries"
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -267,7 +318,8 @@ async fn test_undo_stack_max_size_eviction() {
     let applier = EditApplier::new(governance, checkpoint_mgr, test_context());
     let agent_id: AgentId = "agent-evict".to_string();
 
-    let base_path = std::env::temp_dir().join(format!("hajimi_evict_{}", uuid::Uuid::new_v4().simple()));
+    let base_path =
+        std::env::temp_dir().join(format!("hajimi_evict_{}", uuid::Uuid::new_v4().simple()));
     let path = base_path.to_str().unwrap().to_string();
     tokio::fs::write(&path, "base\n").await.expect("write");
 
@@ -298,10 +350,18 @@ async fn test_undo_stack_max_size_eviction() {
     // We verify by attempting to undo all 101 — the first one is gone from stack,
     // so only 100 undos should be possible.
     let mut undo_count = 0;
-    while applier.undo_last(&agent_id).await.expect("undo check").is_some() {
+    while applier
+        .undo_last(&agent_id)
+        .await
+        .expect("undo check")
+        .is_some()
+    {
         undo_count += 1;
     }
-    assert_eq!(undo_count, 100, "Only 100 undos possible after evicting the oldest");
+    assert_eq!(
+        undo_count, 100,
+        "Only 100 undos possible after evicting the oldest"
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -335,7 +395,10 @@ async fn test_apply_then_undo_then_reapply() {
     };
 
     // First apply
-    let p1 = applier.propose(proposed.clone(), &agent_id).await.expect("propose 1");
+    let p1 = applier
+        .propose(proposed.clone(), &agent_id)
+        .await
+        .expect("propose 1");
     applier.review(true, &agent_id).await.expect("review 1");
     applier.apply(&p1, &agent_id).await.expect("apply 1");
     let content_after_1 = tokio::fs::read_to_string(&path).await.expect("read 1");
@@ -347,11 +410,17 @@ async fn test_apply_then_undo_then_reapply() {
     assert_eq!(content_after_undo, original, "Should restore original");
 
     // Re-apply (new proposal with same content)
-    let p2 = applier.propose(proposed.clone(), &agent_id).await.expect("propose 2");
+    let p2 = applier
+        .propose(proposed.clone(), &agent_id)
+        .await
+        .expect("propose 2");
     applier.review(true, &agent_id).await.expect("review 2");
     applier.apply(&p2, &agent_id).await.expect("apply 2");
     let content_after_2 = tokio::fs::read_to_string(&path).await.expect("read 2");
-    assert!(content_after_2.contains("fn beta()"), "Should be modified again after re-apply");
+    assert!(
+        content_after_2.contains("fn beta()"),
+        "Should be modified again after re-apply"
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -384,7 +453,10 @@ async fn test_hunk_line_shift_after_previous_edit() {
         confidence_score: 0.9,
         rationale: "test".to_string(),
     };
-    let p1 = applier.propose(proposed1, &agent_id).await.expect("propose 1");
+    let p1 = applier
+        .propose(proposed1, &agent_id)
+        .await
+        .expect("propose 1");
     applier.review(true, &agent_id).await.expect("review 1");
     applier.apply(&p1, &agent_id).await.expect("apply 1");
 
@@ -404,14 +476,23 @@ async fn test_hunk_line_shift_after_previous_edit() {
         confidence_score: 0.9,
         rationale: "test".to_string(),
     };
-    let p2 = applier.propose(proposed2, &agent_id).await.expect("propose 2");
+    let p2 = applier
+        .propose(proposed2, &agent_id)
+        .await
+        .expect("propose 2");
     applier.review(true, &agent_id).await.expect("review 2");
     let result = applier.apply(&p2, &agent_id).await;
 
-    assert!(result.is_err(), "Should fail because line 3 is now at line 4 after previous insertion");
+    assert!(
+        result.is_err(),
+        "Should fail because line 3 is now at line 4 after previous insertion"
+    );
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Conflict") || err.contains("mismatch") || err.contains("out of range"),
-            "Error should indicate conflict: {}", err);
+    assert!(
+        err.contains("Conflict") || err.contains("mismatch") || err.contains("out of range"),
+        "Error should indicate conflict: {}",
+        err
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }
@@ -443,13 +524,25 @@ async fn test_stress_50_consecutive_applies() {
             confidence_score: 0.9,
             rationale: "stress test".to_string(),
         };
-        let proposed = applier.propose(proposed, &agent_id).await.expect(&format!("propose {}", i));
-        applier.review(true, &agent_id).await.expect(&format!("review {}", i));
-        applier.apply(&proposed, &agent_id).await.expect(&format!("apply {}", i));
+        let proposed = applier
+            .propose(proposed, &agent_id)
+            .await
+            .expect(&format!("propose {}", i));
+        applier
+            .review(true, &agent_id)
+            .await
+            .expect(&format!("review {}", i));
+        applier
+            .apply(&proposed, &agent_id)
+            .await
+            .expect(&format!("apply {}", i));
     }
 
     let final_content = tokio::fs::read_to_string(&path).await.expect("read final");
-    assert!(final_content.contains("value: 50"), "Final content should show value: 50");
+    assert!(
+        final_content.contains("value: 50"),
+        "Final content should show value: 50"
+    );
 
     let _ = tokio::fs::remove_file(&path).await;
 }

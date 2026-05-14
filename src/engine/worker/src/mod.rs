@@ -10,9 +10,7 @@ pub use parallel::ParallelExecutor;
 pub use serial::SerialExecutor;
 
 use async_trait::async_trait;
-use engine_tool_system::{ToolRegistry, ToolArgs};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use engine_tool_system::ToolRegistry;
 
 /// Callback trait for query execution results.
 /// Decoupled from agent-core types to keep engine-worker independent.
@@ -26,8 +24,14 @@ pub trait ExecutionCallback: Send + Sync {
 
 /// Executor trait for query execution.
 pub trait Executor: Send + Sync {
-    fn execute(&self, query: Query) -> impl std::future::Future<Output = Result<QueryResult, EngineError>> + Send;
-    fn execute_batch(&self, queries: Vec<Query>) -> impl std::future::Future<Output = Vec<Result<QueryResult, EngineError>>> + Send;
+    fn execute(
+        &self,
+        query: Query,
+    ) -> impl std::future::Future<Output = Result<QueryResult, EngineError>> + Send;
+    fn execute_batch(
+        &self,
+        queries: Vec<Query>,
+    ) -> impl std::future::Future<Output = Vec<Result<QueryResult, EngineError>>> + Send;
 }
 
 /// Extension trait for executing queries with a ToolRegistry.

@@ -1,7 +1,7 @@
 //! DEBT-LINES-B04B: Extracted worker lifecycle trace methods from events.rs
 //! Provides structured trace logging for Swarm worker lifecycle events.
 
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 
 /// Structured trace emitter for worker lifecycle events.
 pub struct EventTracing;
@@ -18,7 +18,13 @@ impl EventTracing {
     }
 
     /// Emit a trace event when a worker completes a task.
-    pub async fn trace_worker_complete(agent_id: &str, task_id: &str, worker_id: &str, success: bool, duration_ms: u64) {
+    pub async fn trace_worker_complete(
+        agent_id: &str,
+        task_id: &str,
+        worker_id: &str,
+        success: bool,
+        duration_ms: u64,
+    ) {
         info!(agent_id = %agent_id, task_id = %task_id, worker_id = %worker_id, success = success, duration_ms = duration_ms, "Worker completed task");
     }
 
@@ -33,7 +39,12 @@ impl EventTracing {
     }
 
     /// Emit a trace event when a worker is restarted after crash.
-    pub async fn trace_worker_restart(agent_id: &str, old_worker_id: &str, new_worker_id: &str, attempt: u8) {
+    pub async fn trace_worker_restart(
+        agent_id: &str,
+        old_worker_id: &str,
+        new_worker_id: &str,
+        attempt: u8,
+    ) {
         warn!(agent_id = %agent_id, old_worker_id = %old_worker_id, new_worker_id = %new_worker_id, attempt = attempt, "Worker restarted after crash");
     }
 }

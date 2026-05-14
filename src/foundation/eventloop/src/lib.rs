@@ -58,8 +58,12 @@ pub struct AbortHandle {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl AbortHandle {
-    pub fn is_finished(&self) -> bool { self.inner.is_finished() }
-    pub fn abort(&self) { self.inner.abort(); }
+    pub fn is_finished(&self) -> bool {
+        self.inner.is_finished()
+    }
+    pub fn abort(&self) {
+        self.inner.abort();
+    }
 }
 
 #[cfg(test)]

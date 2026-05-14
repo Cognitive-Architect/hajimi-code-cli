@@ -12,7 +12,10 @@ pub struct SystemTimeClock;
 
 impl Clock for SystemTimeClock {
     fn now_ms(&self) -> u64 {
-        SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
     }
 }
 

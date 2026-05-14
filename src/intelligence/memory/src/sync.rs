@@ -82,10 +82,8 @@ impl MemorySyncEngine {
                 continue;
             }
             let count = to_transfer.len();
-            self.last_sync.insert(
-                (policy.source, policy.target),
-                chrono::Utc::now(),
-            );
+            self.last_sync
+                .insert((policy.source, policy.target), chrono::Utc::now());
             results.push(SyncResult::Success { transferred: count });
         }
         results
@@ -109,10 +107,8 @@ impl MemorySyncEngine {
                 continue;
             }
             let count = to_transfer.len();
-            self.last_sync.insert(
-                (policy.target, policy.source),
-                chrono::Utc::now(),
-            );
+            self.last_sync
+                .insert((policy.target, policy.source), chrono::Utc::now());
             results.push(SyncResult::Success { transferred: count });
         }
         results
@@ -183,7 +179,9 @@ mod tests {
             dummy_entry(MemoryLayerId::Session),
         ];
         let results = engine.sync_up(&entries);
-        assert!(results.iter().any(|r| matches!(r, SyncResult::Success { transferred: 2 })));
+        assert!(results
+            .iter()
+            .any(|r| matches!(r, SyncResult::Success { transferred: 2 })));
     }
 
     #[test]
@@ -191,7 +189,9 @@ mod tests {
         let mut engine = MemorySyncEngine::new();
         let entries = vec![dummy_entry(MemoryLayerId::Cloud)];
         let results = engine.sync_up(&entries);
-        assert!(results.iter().all(|r| matches!(r, SyncResult::Skipped { .. })));
+        assert!(results
+            .iter()
+            .all(|r| matches!(r, SyncResult::Skipped { .. })));
     }
 
     #[test]
@@ -200,16 +200,22 @@ mod tests {
         let entries = vec![dummy_entry(MemoryLayerId::Graph)];
         let results = engine.sync_down(&entries);
         // Graph → Dream should match
-        assert!(results.iter().any(|r| matches!(r, SyncResult::Success { transferred: 1 })));
+        assert!(results
+            .iter()
+            .any(|r| matches!(r, SyncResult::Success { transferred: 1 })));
     }
 
     #[test]
     fn test_last_sync_time() {
         let mut engine = MemorySyncEngine::new();
-        assert!(engine.last_sync_time(MemoryLayerId::Session, MemoryLayerId::Auto).is_none());
+        assert!(engine
+            .last_sync_time(MemoryLayerId::Session, MemoryLayerId::Auto)
+            .is_none());
         let entries = vec![dummy_entry(MemoryLayerId::Session)];
         engine.sync_up(&entries);
-        assert!(engine.last_sync_time(MemoryLayerId::Session, MemoryLayerId::Auto).is_some());
+        assert!(engine
+            .last_sync_time(MemoryLayerId::Session, MemoryLayerId::Auto)
+            .is_some());
     }
 
     #[test]

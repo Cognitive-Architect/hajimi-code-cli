@@ -15,11 +15,15 @@ use crate::{Config, PermissionLevel, Tool, ToolArgs, ToolError, ToolOutput, Tool
 pub struct JsBundleAnalyzerTool;
 
 impl JsBundleAnalyzerTool {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl Default for JsBundleAnalyzerTool {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,16 +60,25 @@ impl JsBundleAnalyzerTool {
     /// Parse package.json for dependencies
     async fn get_deps(&self, entry: &str) -> Result<HashMap<String, String>, ToolError> {
         let path = Path::new(entry).join("package.json");
-        let content = fs::read_to_string(&path).await
+        let content = fs::read_to_string(&path)
+            .await
             .map_err(|e| ToolError::new(format!("Read package.json: {}", e)))?;
         let json: Value = serde_json::from_str(&content)
             .map_err(|e| ToolError::new(format!("Parse package.json: {}", e)))?;
         let mut deps = HashMap::new();
         if let Some(obj) = json.get("dependencies").and_then(|v| v.as_object()) {
-            for (k, v) in obj { if let Some(ver) = v.as_str() { deps.insert(k.clone(), ver.to_string()); } }
+            for (k, v) in obj {
+                if let Some(ver) = v.as_str() {
+                    deps.insert(k.clone(), ver.to_string());
+                }
+            }
         }
         if let Some(obj) = json.get("devDependencies").and_then(|v| v.as_object()) {
-            for (k, v) in obj { if let Some(ver) = v.as_str() { deps.insert(k.clone(), ver.to_string()); } }
+            for (k, v) in obj {
+                if let Some(ver) = v.as_str() {
+                    deps.insert(k.clone(), ver.to_string());
+                }
+            }
         }
         Ok(deps)
     }
@@ -74,28 +87,47 @@ impl JsBundleAnalyzerTool {
     async fn get_sizes(&self, entry: &str) -> Result<HashMap<String, u64>, ToolError> {
         let nm = Path::new(entry).join("node_modules");
         let mut sizes = HashMap::new();
-        if !nm.exists() { return Ok(sizes); }
-        let mut entries = fs::read_dir(&nm).await
+        if !nm.exists() {
+            return Ok(sizes);
+        }
+        let mut entries = fs::read_dir(&nm)
+            .await
             .map_err(|e| ToolError::new(format!("Read node_modules: {}", e)))?;
         while let Ok(Some(e)) = entries.next_entry().await {
             let name = e.file_name().to_string_lossy().to_string();
-            if !name.starts_with('.') { sizes.insert(name, self.calc_size(&e.path()).await.unwrap_or(0)); }
+            if !name.starts_with('.') {
+                sizes.insert(name, self.calc_size(&e.path()).await.unwrap_or(0));
+            }
         }
         Ok(sizes)
     }
 
     /// Recursively calculate directory size
-    fn calc_size<'a>(&'a self, path: &'a Path) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, ToolError>> + Send + 'a>> {
+    fn calc_size<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, ToolError>> + Send + 'a>>
+    {
         Box::pin(async move {
             if path.is_file() {
-                return Ok(fs::metadata(path).await.map_err(|e| ToolError::new(format!("Stat: {}", e)))?.len());
+                return Ok(fs::metadata(path)
+                    .await
+                    .map_err(|e| ToolError::new(format!("Stat: {}", e)))?
+                    .len());
             }
             let mut total = 0u64;
-            let mut entries = fs::read_dir(path).await.map_err(|e| ToolError::new(format!("Dir: {}", e)))?;
+            let mut entries = fs::read_dir(path)
+                .await
+                .map_err(|e| ToolError::new(format!("Dir: {}", e)))?;
             while let Ok(Some(e)) = entries.next_entry().await {
                 let p = e.path();
-                if p.is_file() { if let Ok(m) = fs::metadata(&p).await { total += m.len(); } }
-                else if p.is_dir() { total += self.calc_size(&p).await.unwrap_or(0); }
+                if p.is_file() {
+                    if let Ok(m) = fs::metadata(&p).await {
+                        total += m.len();
+                    }
+                } else if p.is_dir() {
+                    total += self.calc_size(&p).await.unwrap_or(0);
+                }
             }
             Ok(total)
         })
@@ -105,37 +137,69 @@ impl JsBundleAnalyzerTool {
     async fn check_webpack(&self, entry: &str) -> Result<Option<Value>, ToolError> {
         let stats = Path::new(entry).join("webpack-stats.json");
         if stats.exists() {
-            let c = fs::read_to_string(&stats).await.map_err(|e| ToolError::new(format!("Read: {}", e)))?;
-            return serde_json::from_str(&c).map(Some).map_err(|e| ToolError::new(format!("Parse: {}", e)));
+            let c = fs::read_to_string(&stats)
+                .await
+                .map_err(|e| ToolError::new(format!("Read: {}", e)))?;
+            return serde_json::from_str(&c)
+                .map(Some)
+                .map_err(|e| ToolError::new(format!("Parse: {}", e)));
         }
-        if !Path::new(entry).join("webpack.config.js").exists() { return Ok(None); }
-        match Command::new("npx").args(["webpack", "--json"]).current_dir(entry).output().await {
-            Ok(o) if o.status.success() => serde_json::from_str(&String::from_utf8_lossy(&o.stdout)).map(Some).map_err(|e| ToolError::new(format!("Parse: {}", e))),
-            _ => Ok(None)
+        if !Path::new(entry).join("webpack.config.js").exists() {
+            return Ok(None);
+        }
+        match Command::new("npx")
+            .args(["webpack", "--json"])
+            .current_dir(entry)
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => {
+                serde_json::from_str(&String::from_utf8_lossy(&o.stdout))
+                    .map(Some)
+                    .map_err(|e| ToolError::new(format!("Parse: {}", e)))
+            }
+            _ => Ok(None),
         }
     }
 
     /// Format byte size
     fn fmt_size(&self, bytes: u64) -> String {
         const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-        let mut size = bytes as f64; let mut i = 0;
-        while size >= 1024.0 && i < UNITS.len() - 1 { size /= 1024.0; i += 1; }
+        let mut size = bytes as f64;
+        let mut i = 0;
+        while size >= 1024.0 && i < UNITS.len() - 1 {
+            size /= 1024.0;
+            i += 1;
+        }
         format!("{:.2} {}", size, UNITS[i])
     }
 }
 
 #[async_trait]
 impl Tool for JsBundleAnalyzerTool {
-    fn name(&self) -> &str { "js_bundle_analyzer" }
-    fn description(&self) -> &str { "Analyze JavaScript bundle size and dependency tree" }
-    fn permissions(&self) -> ToolPermissions { Self::permissions_read_only() }
-    fn is_enabled(&self, _config: &Config) -> bool { true }
+    fn name(&self) -> &str {
+        "js_bundle_analyzer"
+    }
+    fn description(&self) -> &str {
+        "Analyze JavaScript bundle size and dependency tree"
+    }
+    fn permissions(&self) -> ToolPermissions {
+        Self::permissions_read_only()
+    }
+    fn is_enabled(&self, _config: &Config) -> bool {
+        true
+    }
 
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
-        let a: BundleArgs = serde_json::from_value(args).map_err(|e| ToolError::new(format!("Args: {}", e)))?;
+        let a: BundleArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::new(format!("Args: {}", e)))?;
         let entry = Path::new(&a.entry);
-        if !entry.exists() { return Err(ToolError::new(format!("Not found: {}", a.entry))); }
-        if !entry.join("package.json").exists() { return Err(ToolError::new(format!("No package.json: {}", a.entry))); }
+        if !entry.exists() {
+            return Err(ToolError::new(format!("Not found: {}", a.entry)));
+        }
+        if !entry.join("package.json").exists() {
+            return Err(ToolError::new(format!("No package.json: {}", a.entry)));
+        }
 
         let deps = self.get_deps(&a.entry).await?;
         let sizes = self.get_sizes(&a.entry).await?;
@@ -148,17 +212,60 @@ impl Tool for JsBundleAnalyzerTool {
         for (name, ver) in deps.iter() {
             let sz = sizes.get(name).copied().unwrap_or(0);
             total += sz;
-            if sz == 0 { warns.push(format!("'{}' missing", name)); }
-            nodes.push(DepNode { name: name.clone(), version: ver.clone(), size: sz });
+            if sz == 0 {
+                warns.push(format!("'{}' missing", name));
+            }
+            nodes.push(DepNode {
+                name: name.clone(),
+                version: ver.clone(),
+                size: sz,
+            });
         }
         nodes.sort_by(|a, b| b.size.cmp(&a.size));
 
-        let report = BundleReport { total, gzip: total / 3, entry: a.entry, deps: nodes, warns: warns.clone() };
-        let mut out = vec![format!("📦 JS Bundle Analysis"), format!("════════════════════"), format!("Entry: {}", report.entry), format!("Deps: {}", report.deps.len()), format!("Total: {}", self.fmt_size(report.total)), format!("Gzip: {}", self.fmt_size(report.gzip)), format!(""), format!("📊 Top Deps:")];
-        for (i, d) in report.deps.iter().take(10).enumerate() { out.push(format!("  {}. {}@{} - {}", i + 1, d.name, d.version, self.fmt_size(d.size))); }
-        if webpack.is_some() { out.push(format!("")); out.push(format!("📈 Webpack stats available")); }
-        if !warns.is_empty() { out.push(format!("")); out.push(format!("⚠️  Warnings: {}", warns.len())); for w in &warns { out.push(format!("  - {}", w)); } }
-        Ok(ToolOutput::success(format!("{}\n\n📄 JSON:\n{}", out.join("\n"), serde_json::to_string_pretty(&report).map_err(|e| ToolError::new(format!("JSON: {}", e)))?)))
+        let report = BundleReport {
+            total,
+            gzip: total / 3,
+            entry: a.entry,
+            deps: nodes,
+            warns: warns.clone(),
+        };
+        let mut out = vec![
+            format!("📦 JS Bundle Analysis"),
+            format!("════════════════════"),
+            format!("Entry: {}", report.entry),
+            format!("Deps: {}", report.deps.len()),
+            format!("Total: {}", self.fmt_size(report.total)),
+            format!("Gzip: {}", self.fmt_size(report.gzip)),
+            format!(""),
+            format!("📊 Top Deps:"),
+        ];
+        for (i, d) in report.deps.iter().take(10).enumerate() {
+            out.push(format!(
+                "  {}. {}@{} - {}",
+                i + 1,
+                d.name,
+                d.version,
+                self.fmt_size(d.size)
+            ));
+        }
+        if webpack.is_some() {
+            out.push(String::new());
+            out.push("📈 Webpack stats available".to_string());
+        }
+        if !warns.is_empty() {
+            out.push(String::new());
+            out.push(format!("⚠️  Warnings: {}", warns.len()));
+            for w in &warns {
+                out.push(format!("  - {}", w));
+            }
+        }
+        Ok(ToolOutput::success(format!(
+            "{}\n\n📄 JSON:\n{}",
+            out.join("\n"),
+            serde_json::to_string_pretty(&report)
+                .map_err(|e| ToolError::new(format!("JSON: {}", e)))?
+        )))
     }
 }
 
@@ -174,7 +281,9 @@ mod tests {
 
     #[test]
     fn test_js_bundle_analyzer_description() {
-        assert!(JsBundleAnalyzerTool::new().description().contains("JavaScript"));
+        assert!(JsBundleAnalyzerTool::new()
+            .description()
+            .contains("JavaScript"));
     }
 
     #[test]
@@ -190,7 +299,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_js_bundle_analyzer_execute_invalid_path() {
-        assert!(JsBundleAnalyzerTool::new().execute(json!({"entry": "/bad"})).await.is_err());
+        assert!(JsBundleAnalyzerTool::new()
+            .execute(json!({"entry": "/bad"}))
+            .await
+            .is_err());
     }
 
     #[test]

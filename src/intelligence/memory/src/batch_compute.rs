@@ -34,10 +34,7 @@ where
         .collect();
 
     // Sort by distance ascending
-    results.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     results
 }
 
@@ -70,7 +67,8 @@ impl LayerCache {
             self.hits += 1;
             // Update access time
             self.access_counter += 1;
-            self.cache.insert(id.to_string(), (vec, self.access_counter));
+            self.cache
+                .insert(id.to_string(), (vec, self.access_counter));
             Some(vec)
         } else {
             self.misses += 1;
@@ -146,7 +144,7 @@ mod tests {
     fn test_batch_compute_distances() {
         let query = [1.0_f32; 384];
         let candidates = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        
+
         let mut lookup = |id: &str| -> Option<[f32; 384]> {
             match id {
                 "a" => Some([0.0_f32; 384]),
@@ -155,7 +153,7 @@ mod tests {
                 _ => None,
             }
         };
-        
+
         let results = batch_compute_distances(&query, &candidates, &mut lookup);
         assert_eq!(results.len(), 2);
         // Distance to "a" (all zeros) should be smaller than to "b" (all 2s)
@@ -166,26 +164,26 @@ mod tests {
     #[test]
     fn test_layer_cache() {
         let mut cache = LayerCache::new(2);
-        
+
         // Initial insertions (no hits or misses yet)
         cache.put("a".to_string(), [1.0_f32; 384]);
         cache.put("b".to_string(), [2.0_f32; 384]);
-        
+
         // These gets should count as hits
         assert!(cache.get("a").is_some());
         assert!(cache.get("b").is_some());
-        
+
         // This get should count as a miss (not in cache)
         assert!(cache.get("nonexistent").is_none());
-        
+
         // Add third item, should evict oldest
         cache.put("c".to_string(), [3.0_f32; 384]);
-        
+
         // Cache hit rate should be tracked
         let (hits, misses) = cache.stats();
         assert!(hits > 0, "Expected hits > 0, got {}", hits);
         assert!(misses > 0, "Expected misses > 0, got {}", misses);
-        
+
         let rate = cache.hit_rate();
         assert!(rate >= 0.0 && rate <= 1.0);
     }

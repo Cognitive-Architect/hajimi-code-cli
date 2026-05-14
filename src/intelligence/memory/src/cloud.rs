@@ -1,4 +1,4 @@
-﻿//! Cloud记忆层 - E2EE端到端加密架构 (B-07 P1: fallback and mode logic removed, pure Argon2id only)
+//! Cloud记忆层 - E2EE端到端加密架构 (B-07 P1: fallback and mode logic removed, pure Argon2id only)
 //! Age(X25519) + Argon2id(t=3,m=64MB,p=4). New debt DEBT-CRYPTO-004 for potential low-memory env impact (honest declaration).
 use crate::types::{MemoryLayer, MemoryLayerId};
 use age::secrecy::ExposeSecret;
@@ -23,8 +23,12 @@ pub struct CloudIdentity {
     pub key_version: u32,
 }
 impl CloudIdentity {
-    pub fn public_key(&self) -> &str { &self.public_key }
-    pub fn version(&self) -> u32 { self.key_version }
+    pub fn public_key(&self) -> &str {
+        &self.public_key
+    }
+    pub fn version(&self) -> u32 {
+        self.key_version
+    }
 }
 #[derive(Debug, Clone)]
 pub struct EncryptedChunk {
@@ -42,13 +46,20 @@ pub struct CloudSyncMeta {
 }
 #[derive(Debug, Error)]
 pub enum CloudError {
-    #[error("Encryption: {0}")] EncryptionError(String),
-    #[error("Decryption: {0}")] DecryptionError(String),
-    #[error("Integrity check failed")] IntegrityError,
-    #[error("KDF: {0}")] KdfError(String),
-    #[error("Invalid password")] InvalidPassword,
-    #[error("Sync failed: {0}")] SyncFailed(String),
-    #[error("Key version mismatch: {0}")] KeyVersionError(String),
+    #[error("Encryption: {0}")]
+    EncryptionError(String),
+    #[error("Decryption: {0}")]
+    DecryptionError(String),
+    #[error("Integrity check failed")]
+    IntegrityError,
+    #[error("KDF: {0}")]
+    KdfError(String),
+    #[error("Invalid password")]
+    InvalidPassword,
+    #[error("Sync failed: {0}")]
+    SyncFailed(String),
+    #[error("Key version mismatch: {0}")]
+    KeyVersionError(String),
 }
 pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 /// 生成离线X25519身份密钥对（带版本）
@@ -56,14 +67,22 @@ pub fn generate_identity() -> Result<CloudIdentity, CloudError> {
     let secret = age::x25519::Identity::generate();
     let public = secret.to_public();
     let secret_bytes = secret.to_string().expose_secret().as_bytes().to_vec();
-    Ok(CloudIdentity { public_key: public.to_string(), secret_key: secret_bytes, key_version: KEY_VERSION_CURRENT })
+    Ok(CloudIdentity {
+        public_key: public.to_string(),
+        secret_key: secret_bytes,
+        key_version: KEY_VERSION_CURRENT,
+    })
 }
 /// 生成V1版本密钥（向后兼容）
 pub fn generate_identity_v1() -> Result<CloudIdentity, CloudError> {
     let secret = age::x25519::Identity::generate();
     let public = secret.to_public();
     let secret_bytes = secret.to_string().expose_secret().as_bytes().to_vec();
-    Ok(CloudIdentity { public_key: public.to_string(), secret_key: secret_bytes, key_version: KEY_VERSION_V1 })
+    Ok(CloudIdentity {
+        public_key: public.to_string(),
+        secret_key: secret_bytes,
+        key_version: KEY_VERSION_V1,
+    })
 }
 /// Argon2id密钥派生（t=3, m=64MB, p=4�?
 pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], CloudError> {
@@ -74,7 +93,8 @@ pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], CloudError> {
             .map_err(|e| CloudError::KdfError(e.to_string()))?,
     );
     let mut key = [0u8; 32];
-    argon2.hash_password_into(password.as_bytes(), salt, &mut key)
+    argon2
+        .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|e| CloudError::KdfError(e.to_string()))?;
     Ok(key)
 }
@@ -83,34 +103,56 @@ pub fn verify_argon2_params() -> (u32, u32, u32) {
     (KEY_ITERATIONS, MEMORY_COST_KIB, PARALLELISM)
 }
 /// Age加密分块（带密钥版本�?
-pub fn encrypt_chunk(plaintext: &[u8], recipient: &age::x25519::Recipient) -> Result<Vec<u8>, CloudError> {
+pub fn encrypt_chunk(
+    plaintext: &[u8],
+    recipient: &age::x25519::Recipient,
+) -> Result<Vec<u8>, CloudError> {
     let encryptor = age::Encryptor::with_recipients(vec![Box::new(recipient.clone())])
         .ok_or_else(|| CloudError::EncryptionError("No recipients".to_string()))?;
     let mut encrypted = Vec::new();
-    let mut writer = encryptor.wrap_output(&mut encrypted)
+    let mut writer = encryptor
+        .wrap_output(&mut encrypted)
         .map_err(|e| CloudError::EncryptionError(e.to_string()))?;
-    writer.write_all(plaintext).map_err(|e| CloudError::EncryptionError(e.to_string()))?;
-    writer.finish().map_err(|e| CloudError::EncryptionError(e.to_string()))?;
+    writer
+        .write_all(plaintext)
+        .map_err(|e| CloudError::EncryptionError(e.to_string()))?;
+    writer
+        .finish()
+        .map_err(|e| CloudError::EncryptionError(e.to_string()))?;
     Ok(encrypted)
 }
 /// Age解密分块
-pub fn decrypt_chunk(ciphertext: &[u8], identity: &age::x25519::Identity) -> Result<Vec<u8>, CloudError> {
-    let decryptor = age::Decryptor::new(ciphertext)
-        .map_err(|e| CloudError::DecryptionError(e.to_string()))?;
+pub fn decrypt_chunk(
+    ciphertext: &[u8],
+    identity: &age::x25519::Identity,
+) -> Result<Vec<u8>, CloudError> {
+    let decryptor =
+        age::Decryptor::new(ciphertext).map_err(|e| CloudError::DecryptionError(e.to_string()))?;
     let mut decrypted = Vec::new();
     match decryptor {
         age::Decryptor::Recipients(d) => {
-            let mut reader = d.decrypt(std::iter::once(identity as &dyn age::Identity))
+            let mut reader = d
+                .decrypt(std::iter::once(identity as &dyn age::Identity))
                 .map_err(|e| CloudError::DecryptionError(e.to_string()))?;
-            reader.read_to_end(&mut decrypted).map_err(|e| CloudError::DecryptionError(e.to_string()))?;
+            reader
+                .read_to_end(&mut decrypted)
+                .map_err(|e| CloudError::DecryptionError(e.to_string()))?;
         }
-        _ => return Err(CloudError::DecryptionError("Unexpected decryptor type".to_string())),
+        _ => {
+            return Err(CloudError::DecryptionError(
+                "Unexpected decryptor type".to_string(),
+            ))
+        }
     }
     Ok(decrypted)
 }
 /// 向后兼容解密V1版本（CRYPTO-004熔断预案�?
-pub fn decrypt_legacy(ciphertext: &[u8], identity_v1: &age::x25519::Identity) -> Result<Vec<u8>, CloudError> {
-    decrypt_chunk(ciphertext, identity_v1).map_err(|e| CloudError::KeyVersionError(format!("V1 decrypt failed: {}", e)))
+pub fn decrypt_legacy(
+    ciphertext: &[u8],
+    identity_v1: &age::x25519::Identity,
+) -> Result<Vec<u8>, CloudError> {
+    decrypt_chunk(ciphertext, identity_v1)
+        .map_err(|e| CloudError::KeyVersionError(format!("V1 decrypt failed: {}", e)))
 }
 /// 常量时间比较（防侧信道）
 pub fn constant_time_verify(a: &[u8], b: &[u8]) -> bool {
@@ -126,31 +168,58 @@ pub struct CloudMemory {
 }
 impl CloudMemory {
     pub fn new(device_id: impl Into<String>) -> Self {
-        Self { identity: None, device_id: device_id.into(), progress_callback: None, sync_meta: None }
+        Self {
+            identity: None,
+            device_id: device_id.into(),
+            progress_callback: None,
+            sync_meta: None,
+        }
     }
     pub fn initialize_identity(&mut self) -> Result<(), CloudError> {
-        self.identity = Some(generate_identity()?); Ok(())
+        self.identity = Some(generate_identity()?);
+        Ok(())
     }
-    pub fn set_progress_callback(&mut self, cb: ProgressCallback) { self.progress_callback = Some(cb); }
-    pub fn public_key(&self) -> Option<&str> { self.identity.as_ref().map(|i| i.public_key()) }
+    pub fn set_progress_callback(&mut self, cb: ProgressCallback) {
+        self.progress_callback = Some(cb);
+    }
+    pub fn public_key(&self) -> Option<&str> {
+        self.identity.as_ref().map(|i| i.public_key())
+    }
     /// 流式加密1MB分块，带密钥版本
-    pub fn encrypt_stream(&self, data: &[u8], recipient: &age::x25519::Recipient) -> Result<Vec<EncryptedChunk>, CloudError> {
+    pub fn encrypt_stream(
+        &self,
+        data: &[u8],
+        recipient: &age::x25519::Recipient,
+    ) -> Result<Vec<EncryptedChunk>, CloudError> {
         let total = data.len() as u64;
         let chunks: Vec<&[u8]> = data.chunks(CHUNK_SIZE).collect();
         let mut result = Vec::with_capacity(chunks.len());
-        let key_version = self.identity.as_ref().map(|i| i.key_version).unwrap_or(KEY_VERSION_CURRENT);
+        let key_version = self
+            .identity
+            .as_ref()
+            .map(|i| i.key_version)
+            .unwrap_or(KEY_VERSION_CURRENT);
         for (idx, chunk) in chunks.iter().enumerate() {
             let encrypted = encrypt_chunk(chunk, recipient)?;
             if let Some(ref cb) = self.progress_callback {
                 let processed = ((idx + 1) * CHUNK_SIZE) as u64;
                 cb(processed.min(total), total);
             }
-            result.push(EncryptedChunk { data: encrypted, index: idx as u32, is_last: idx == chunks.len() - 1, key_version });
+            result.push(EncryptedChunk {
+                data: encrypted,
+                index: idx as u32,
+                is_last: idx == chunks.len() - 1,
+                key_version,
+            });
         }
         Ok(result)
     }
     /// 流式解密（支持向后兼容）
-    pub fn decrypt_stream(&self, chunks: &[EncryptedChunk], identity: &age::x25519::Identity) -> Result<Vec<u8>, CloudError> {
+    pub fn decrypt_stream(
+        &self,
+        chunks: &[EncryptedChunk],
+        identity: &age::x25519::Identity,
+    ) -> Result<Vec<u8>, CloudError> {
         let total = chunks.len();
         let mut result = Vec::with_capacity(total * CHUNK_SIZE);
         for (idx, chunk) in chunks.iter().enumerate() {
@@ -169,9 +238,14 @@ impl CloudMemory {
     }
     /// WebRTC DataChannel同步准备（带密钥版本�?
     pub fn prepare_for_sync(&mut self, chunks: &[EncryptedChunk]) -> Result<(), CloudError> {
-        if chunks.is_empty() { return Err(CloudError::SyncFailed("Empty".to_string())); }
+        if chunks.is_empty() {
+            return Err(CloudError::SyncFailed("Empty".to_string()));
+        }
         let total_size: usize = chunks.iter().map(|c| c.data.len()).sum();
-        let key_version = chunks.first().map(|c| c.key_version).unwrap_or(KEY_VERSION_CURRENT);
+        let key_version = chunks
+            .first()
+            .map(|c| c.key_version)
+            .unwrap_or(KEY_VERSION_CURRENT);
         self.sync_meta = Some(CloudSyncMeta {
             entry_id: format!("sync_{}", self.device_id),
             chunk_count: chunks.len() as u32,
@@ -182,8 +256,12 @@ impl CloudMemory {
     }
 }
 impl MemoryLayer for CloudMemory {
-    fn layer_id(&self) -> MemoryLayerId { MemoryLayerId::Cloud }
-    fn capacity(&self) -> usize { usize::MAX }
+    fn layer_id(&self) -> MemoryLayerId {
+        MemoryLayerId::Cloud
+    }
+    fn capacity(&self) -> usize {
+        usize::MAX
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -218,7 +296,10 @@ mod tests {
     #[test]
     fn test_argon2_params_enforced() {
         let (t, m, p) = verify_argon2_params();
-        assert!(t >= 3 && m >= 65536 && p >= 4, "Argon2 param below threshold");
+        assert!(
+            t >= 3 && m >= 65536 && p >= 4,
+            "Argon2 param below threshold"
+        );
     }
     #[test]
     fn test_wrong_password_fails() {
@@ -232,7 +313,9 @@ mod tests {
         let id = age::x25519::Identity::generate();
         let mut enc = encrypt_chunk(b"secret", &id.to_public()).unwrap();
         let len = enc.len();
-        if len > 0 { enc[len/2] ^= 0xFF; }
+        if len > 0 {
+            enc[len / 2] ^= 0xFF;
+        }
         assert!(decrypt_chunk(&enc, &id).is_err());
     }
     #[test]
@@ -246,7 +329,11 @@ mod tests {
         mem.initialize_identity().unwrap();
         let cnt = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let c = cnt.clone();
-        mem.set_progress_callback(Box::new(move |cur, _| { if cur > 0 { c.fetch_add(1, std::sync::atomic::Ordering::SeqCst); } }));
+        mem.set_progress_callback(Box::new(move |cur, _| {
+            if cur > 0 {
+                c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }));
         let data = vec![0u8; 2 * 1024 * 1024];
         let id = age::x25519::Identity::generate();
         mem.encrypt_stream(&data, &id.to_public()).unwrap();

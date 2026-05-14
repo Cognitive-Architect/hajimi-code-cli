@@ -9,16 +9,16 @@
 
 mod error;
 mod streaming;
-pub use error::EngineError;
-pub use streaming::channel_stream::ChannelStream;
-pub use streaming::StreamChunk;
 use async_trait::async_trait;
+pub use error::EngineError;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::env;
+pub use streaming::channel_stream::ChannelStream;
+pub use streaming::StreamChunk;
 
 /// LLM provider enumeration
-/// 
+///
 /// Note: Debug is manually implemented to prevent api_key leakage
 /// Clone is manually implemented to preserve field-level cloning
 pub enum LlmProvider {
@@ -35,10 +35,7 @@ pub enum LlmProvider {
         base_url: String,
     },
     /// Ollama local LLM
-    Ollama {
-        base_url: String,
-        model: String,
-    },
+    Ollama { base_url: String, model: String },
 }
 
 /// Manual Debug implementation to redact sensitive api_key fields
@@ -47,13 +44,21 @@ pub enum LlmProvider {
 impl std::fmt::Debug for LlmProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Anthropic { api_key: _, model, base_url } => f
+            Self::Anthropic {
+                api_key: _,
+                model,
+                base_url,
+            } => f
                 .debug_struct("Anthropic")
                 .field("api_key", &"***REDACTED***")
                 .field("model", model)
                 .field("base_url", base_url)
                 .finish(),
-            Self::OpenAi { api_key: _, model, base_url } => f
+            Self::OpenAi {
+                api_key: _,
+                model,
+                base_url,
+            } => f
                 .debug_struct("OpenAi")
                 .field("api_key", &"***REDACTED***")
                 .field("model", model)
@@ -73,12 +78,20 @@ impl std::fmt::Debug for LlmProvider {
 impl Clone for LlmProvider {
     fn clone(&self) -> Self {
         match self {
-            Self::Anthropic { api_key, model, base_url } => Self::Anthropic {
+            Self::Anthropic {
+                api_key,
+                model,
+                base_url,
+            } => Self::Anthropic {
                 api_key: api_key.clone(),
                 model: model.clone(),
                 base_url: base_url.clone(),
             },
-            Self::OpenAi { api_key, model, base_url } => Self::OpenAi {
+            Self::OpenAi {
+                api_key,
+                model,
+                base_url,
+            } => Self::OpenAi {
                 api_key: api_key.clone(),
                 model: model.clone(),
                 base_url: base_url.clone(),
@@ -95,9 +108,7 @@ impl LlmProvider {
     /// Create Anthropic provider from environment
     pub fn anthropic_from_env() -> Result<Self, EngineError> {
         let api_key = env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| EngineError::InvalidParameters(
-                "ANTHROPIC_API_KEY not set".to_string()
-            ))?;
+            .map_err(|_| EngineError::InvalidParameters("ANTHROPIC_API_KEY not set".to_string()))?;
         Ok(Self::Anthropic {
             api_key: SecretString::new(api_key.into_boxed_str()),
             model: "claude-3-sonnet-20240229".to_string(),
@@ -108,9 +119,7 @@ impl LlmProvider {
     /// Create OpenAI provider from environment
     pub fn openai_from_env() -> Result<Self, EngineError> {
         let api_key = env::var("OPENAI_API_KEY")
-            .map_err(|_| EngineError::InvalidParameters(
-                "OPENAI_API_KEY not set".to_string()
-            ))?;
+            .map_err(|_| EngineError::InvalidParameters("OPENAI_API_KEY not set".to_string()))?;
         Ok(Self::OpenAi {
             api_key: SecretString::new(api_key.into_boxed_str()),
             model: "gpt-4".to_string(),
@@ -205,7 +214,9 @@ pub trait LlmClient: Send + Sync {
 
 /// Convert internal `ChatMessage` to tiktoken-rs format for exact counting.
 #[cfg(feature = "exact-tokens")]
-fn to_tiktoken_messages(messages: &[ChatMessage]) -> Vec<tiktoken_rs::ChatCompletionRequestMessage> {
+fn to_tiktoken_messages(
+    messages: &[ChatMessage],
+) -> Vec<tiktoken_rs::ChatCompletionRequestMessage> {
     messages
         .iter()
         .map(|m| tiktoken_rs::ChatCompletionRequestMessage {
@@ -226,17 +237,8 @@ pub fn normalize_model_for_tiktoken(model: &str) -> String {
     let lower = model.to_lowercase();
     if lower.contains("claude") {
         "gpt-4".to_string()
-    } else if lower.contains("gpt-4")
-        || lower.contains("gpt-3.5")
-        || lower.contains("gpt-oss")
-    {
+    } else if lower.contains("gpt-4") || lower.contains("gpt-3.5") || lower.contains("gpt-oss") {
         model.to_string()
-    } else if lower.contains("llama")
-        || lower.contains("mistral")
-        || lower.contains("qwen")
-        || lower.contains("deepseek")
-    {
-        "gpt-4".to_string()
     } else {
         "gpt-4".to_string()
     }
@@ -256,12 +258,12 @@ pub fn heuristic_token_count(messages: &[ChatMessage]) -> usize {
         .collect();
     let chinese = text
         .chars()
-        .filter(|&c| c >= '\u{4e00}' && c <= '\u{9fff}')
+        .filter(|&c| ('\u{4e00}'..='\u{9fff}').contains(&c))
         .count();
     let english = text.split_whitespace().count();
     let coefficient = if english <= 5 { 1.0 } else { 1.3 };
-    let base = (chinese as f64 * 0.9).ceil() as usize
-        + (english as f64 * coefficient).ceil() as usize;
+    let base =
+        (chinese as f64 * 0.9).ceil() as usize + (english as f64 * coefficient).ceil() as usize;
     let overhead = messages.len() * 3 + 3;
     base + overhead
 }

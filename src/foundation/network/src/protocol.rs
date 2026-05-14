@@ -133,9 +133,8 @@ impl ExponentialBackoff {
                 return None;
             }
         }
-        let delay_ms = (self.initial_interval_ms as f64
-            * self.multiplier.powi(attempt as i32))
-        .min(self.max_interval_ms as f64) as u64;
+        let delay_ms = (self.initial_interval_ms as f64 * self.multiplier.powi(attempt as i32))
+            .min(self.max_interval_ms as f64) as u64;
         Some(std::time::Duration::from_millis(delay_ms))
     }
 }

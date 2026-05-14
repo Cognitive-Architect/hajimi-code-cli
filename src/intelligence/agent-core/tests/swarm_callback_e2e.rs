@@ -1,10 +1,10 @@
 //! Phase 2 Day 4 E2E: Swarm callback lifecycle — single worker, 30+ concurrent tasks, crash recovery.
 
+use agent_core::governance::DefaultGovernance;
+use agent_core::ports::{WorkerCallback, WorkerMetrics};
 use agent_core::{
     AgentConfig, AgentRole, Supervisor, SupervisorMetrics, SwarmCoordinator, TaskAssignment,
 };
-use agent_core::ports::{WorkerCallback, WorkerMetrics};
-use agent_core::governance::DefaultGovernance;
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -29,10 +29,22 @@ impl CountingCallback {
 
 #[async_trait]
 impl WorkerCallback for CountingCallback {
-    async fn on_success(&self, _task_id: &str, _worker_id: &str, _output: &str, _metrics: &WorkerMetrics) {
+    async fn on_success(
+        &self,
+        _task_id: &str,
+        _worker_id: &str,
+        _output: &str,
+        _metrics: &WorkerMetrics,
+    ) {
         self.success.fetch_add(1, Ordering::SeqCst);
     }
-    async fn on_failure(&self, _task_id: &str, _worker_id: &str, _error: &str, _metrics: &WorkerMetrics) {
+    async fn on_failure(
+        &self,
+        _task_id: &str,
+        _worker_id: &str,
+        _error: &str,
+        _metrics: &WorkerMetrics,
+    ) {
         self.failure.fetch_add(1, Ordering::SeqCst);
     }
     async fn on_timeout(&self, _task_id: &str, _worker_id: &str, _elapsed_ms: u64) {
@@ -41,7 +53,10 @@ impl WorkerCallback for CountingCallback {
 }
 
 fn make_supervisor() -> Supervisor {
-    Supervisor::new(Arc::new(DefaultGovernance::new()), agent_core::AgentContext::new())
+    Supervisor::new(
+        Arc::new(DefaultGovernance::new()),
+        agent_core::AgentContext::new(),
+    )
 }
 
 /// E2E-001: Single worker callback closed-loop.
@@ -97,7 +112,10 @@ async fn test_concurrent_30_tasks() {
     let mut workers = Vec::new();
     for _ in 0..5 {
         let wid = supervisor
-            .spawn_worker(AgentRole::Executor, AgentConfig::supervisor("e2e-concurrent"))
+            .spawn_worker(
+                AgentRole::Executor,
+                AgentConfig::supervisor("e2e-concurrent"),
+            )
             .await
             .unwrap();
         workers.push(wid);
@@ -175,24 +193,37 @@ async fn test_worker_crash_recovery() {
     // Crash 1 -> restart
     supervisor.handle_worker_crash(&wid).await;
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-    assert_eq!(supervisor.worker_count(), 1, "Expected 1 worker after first restart");
+    assert_eq!(
+        supervisor.worker_count(),
+        1,
+        "Expected 1 worker after first restart"
+    );
 
     // Find the new worker id via idle detection
-    let new_wid = supervisor.find_idle_worker().await.expect("Worker should be idle after restart");
+    let new_wid = supervisor
+        .find_idle_worker()
+        .await
+        .expect("Worker should be idle after restart");
 
     // Crash 2 -> restart
     supervisor.handle_worker_crash(&new_wid).await;
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
     assert_eq!(supervisor.worker_count(), 1);
 
-    let new_wid2 = supervisor.find_idle_worker().await.expect("Worker should be idle after second restart");
+    let new_wid2 = supervisor
+        .find_idle_worker()
+        .await
+        .expect("Worker should be idle after second restart");
 
     // Crash 3 -> restart
     supervisor.handle_worker_crash(&new_wid2).await;
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
     assert_eq!(supervisor.worker_count(), 1);
 
-    let new_wid3 = supervisor.find_idle_worker().await.expect("Worker should be idle after third restart");
+    let new_wid3 = supervisor
+        .find_idle_worker()
+        .await
+        .expect("Worker should be idle after third restart");
 
     // Crash 4 -> PermanentlyFailed (max 3 restarts)
     supervisor.handle_worker_crash(&new_wid3).await;
@@ -203,7 +234,11 @@ async fn test_worker_crash_recovery() {
         supervisor.find_idle_worker().await.is_none(),
         "PermanentlyFailed worker should not be idle"
     );
-    assert_eq!(supervisor.worker_count(), 1, "Worker still exists but is PermanentlyFailed");
+    assert_eq!(
+        supervisor.worker_count(),
+        1,
+        "Worker still exists but is PermanentlyFailed"
+    );
 
     // Cleanup
     let _ = supervisor.stop_worker(&new_wid3).await;

@@ -17,14 +17,25 @@ pub struct ReplState<C: Clock> {
 
 impl<C: Clock> Default for ReplState<C> {
     fn default() -> Self {
-        Self { turn_items: Vec::new(), current_turn_id: None, is_loading: false, session_meta: SessionMeta::default(), _clock: PhantomData }
+        Self {
+            turn_items: Vec::new(),
+            current_turn_id: None,
+            is_loading: false,
+            session_meta: SessionMeta::default(),
+            _clock: PhantomData,
+        }
     }
 }
 
 impl<C: Clock> ReplState<C> {
     pub fn add_turn(&mut self, clock: &C, role: Role, content: String) {
         let ts = clock.now_ms();
-        self.turn_items.push(TurnItem::new(format!("t{}", self.session_meta.turn_count), role, content, ts));
+        self.turn_items.push(TurnItem::new(
+            format!("t{}", self.session_meta.turn_count),
+            role,
+            content,
+            ts,
+        ));
         self.session_meta.turn_count += 1;
         self.session_meta.updated_at = ts;
     }
@@ -34,8 +45,11 @@ impl<C: Clock> ReplState<C> {
         self.turn_items.last().expect("just pushed turn_item")
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn process_turn(&mut self, clock: &C, content: String) -> Result<&TurnItem, ()> {
-        if content.is_empty() { return Err(()); }
+        if content.is_empty() {
+            return Err(());
+        }
         self.add_turn(clock, Role::Turn, content);
         Ok(self.turn_items.last().expect("just pushed turn_item"))
     }
@@ -63,12 +77,28 @@ pub struct TurnItem {
 
 impl TurnItem {
     pub fn new(id: String, role: Role, content: String, timestamp: u64) -> Self {
-        Self { id, role, content, timestamp, metadata: None, processed: false, error_code: None }
+        Self {
+            id,
+            role,
+            content,
+            timestamp,
+            metadata: None,
+            processed: false,
+            error_code: None,
+        }
     }
-    pub fn validate(&self) -> bool { !self.content.is_empty() && self.content.len() <= 100_000 }
-    pub fn is_user_input(&self) -> bool { matches!(self.role, Role::User) }
-    pub fn is_ai_response(&self) -> bool { matches!(self.role, Role::Turn) }
-    pub fn is_error(&self) -> bool { matches!(self.role, Role::Error) }
+    pub fn validate(&self) -> bool {
+        !self.content.is_empty() && self.content.len() <= 100_000
+    }
+    pub fn is_user_input(&self) -> bool {
+        matches!(self.role, Role::User)
+    }
+    pub fn is_ai_response(&self) -> bool {
+        matches!(self.role, Role::Turn)
+    }
+    pub fn is_error(&self) -> bool {
+        matches!(self.role, Role::Error)
+    }
 }
 
 /// Message role with full variants.

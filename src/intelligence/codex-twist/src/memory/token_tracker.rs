@@ -27,7 +27,13 @@ pub struct TokenUsageTracker {
     global: Arc<RwLock<GlobalStats>>,
 }
 
-fn upsert(map: &mut HashMap<String, SessionStats>, key: String, prompt: u64, completion: u64, total: u64) {
+fn upsert(
+    map: &mut HashMap<String, SessionStats>,
+    key: String,
+    prompt: u64,
+    completion: u64,
+    total: u64,
+) {
     map.entry(key)
         .and_modify(|s| {
             s.prompt_tokens = s.prompt_tokens.saturating_add(prompt);
@@ -35,22 +41,54 @@ fn upsert(map: &mut HashMap<String, SessionStats>, key: String, prompt: u64, com
             s.total_tokens = s.total_tokens.saturating_add(total);
             s.request_count = s.request_count.saturating_add(1);
         })
-        .or_insert_with(|| SessionStats { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total, request_count: 1 });
+        .or_insert_with(|| SessionStats {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: total,
+            request_count: 1,
+        });
 }
 
 impl TokenUsageTracker {
     pub fn new() -> Self {
-        Self { sessions: Arc::new(RwLock::new(HashMap::new())), global: Arc::new(RwLock::new(GlobalStats::default())) }
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            global: Arc::new(RwLock::new(GlobalStats::default())),
+        }
     }
 
     /// Record usage for a session and update global counters (provider + day + total).
-    pub async fn record_usage(&self, session_id: &str, provider: &str, prompt_tokens: u64, completion_tokens: u64) {
+    pub async fn record_usage(
+        &self,
+        session_id: &str,
+        provider: &str,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+    ) {
         let total_tokens = prompt_tokens.saturating_add(completion_tokens);
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        upsert(&mut *self.sessions.write().await, session_id.to_string(), prompt_tokens, completion_tokens, total_tokens);
+        upsert(
+            &mut *self.sessions.write().await,
+            session_id.to_string(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        );
         let mut g = self.global.write().await;
-        upsert(&mut g.by_provider, provider.to_string(), prompt_tokens, completion_tokens, total_tokens);
-        upsert(&mut g.by_day, today, prompt_tokens, completion_tokens, total_tokens);
+        upsert(
+            &mut g.by_provider,
+            provider.to_string(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        );
+        upsert(
+            &mut g.by_day,
+            today,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        );
         g.total.prompt_tokens = g.total.prompt_tokens.saturating_add(prompt_tokens);
         g.total.completion_tokens = g.total.completion_tokens.saturating_add(completion_tokens);
         g.total.total_tokens = g.total.total_tokens.saturating_add(total_tokens);
@@ -59,7 +97,12 @@ impl TokenUsageTracker {
 
     /// Get stats for a session. Returns Default (zeros) if not found.
     pub async fn get_token_stats(&self, session_id: &str) -> SessionStats {
-        self.sessions.read().await.get(session_id).cloned().unwrap_or_default()
+        self.sessions
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Get global accumulated statistics.
@@ -69,7 +112,9 @@ impl TokenUsageTracker {
 }
 
 impl Default for TokenUsageTracker {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -131,13 +176,17 @@ mod tests {
         assert_eq!(g.total.completion_tokens, 70);
         assert_eq!(g.total.total_tokens, 115);
         assert_eq!(g.total.request_count, 3);
-        let psum: SessionStats = g.by_provider.values().cloned().fold(SessionStats::default(), |mut acc, s| {
-            acc.prompt_tokens += s.prompt_tokens;
-            acc.completion_tokens += s.completion_tokens;
-            acc.total_tokens += s.total_tokens;
-            acc.request_count += s.request_count;
-            acc
-        });
+        let psum: SessionStats =
+            g.by_provider
+                .values()
+                .cloned()
+                .fold(SessionStats::default(), |mut acc, s| {
+                    acc.prompt_tokens += s.prompt_tokens;
+                    acc.completion_tokens += s.completion_tokens;
+                    acc.total_tokens += s.total_tokens;
+                    acc.request_count += s.request_count;
+                    acc
+                });
         assert_eq!(psum, g.total);
     }
 

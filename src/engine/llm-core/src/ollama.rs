@@ -1,7 +1,7 @@
 //! Ollama Local LLM Client
+use crate::streaming::{ChannelStream, StreamChunk};
 use crate::EngineError;
 use crate::{LlmClient, LlmProvider, Usage};
-use crate::streaming::{ChannelStream, StreamChunk};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -16,14 +16,29 @@ pub struct OllamaClient {
 }
 impl OllamaClient {
     pub fn new(provider: LlmProvider) -> Self {
-        Self { provider, timeout_ms: 60_000, last_usage: Arc::new(Mutex::new(None)) }
+        Self {
+            provider,
+            timeout_ms: 60_000,
+            last_usage: Arc::new(Mutex::new(None)),
+        }
     }
-    pub fn default_local() -> Self { Self::new(LlmProvider::ollama_default()) }
-    pub fn with_timeout(mut self, t: u64) -> Self { self.timeout_ms = t; self }
+    pub fn default_local() -> Self {
+        Self::new(LlmProvider::ollama_default())
+    }
+    pub fn with_timeout(mut self, t: u64) -> Self {
+        self.timeout_ms = t;
+        self
+    }
 }
 /// Ollama /api/chat request format.
-#[derive(Serialize)] struct ChatReq { model: String, messages: Vec<crate::ChatMessage>, stream: bool }
-#[derive(Deserialize)] struct ChatResp {
+#[derive(Serialize)]
+struct ChatReq {
+    model: String,
+    messages: Vec<crate::ChatMessage>,
+    stream: bool,
+}
+#[derive(Deserialize)]
+struct ChatResp {
     message: Option<Msg>,
     done: bool,
     #[serde(default)]
@@ -31,15 +46,23 @@ impl OllamaClient {
     #[serde(default)]
     eval_count: Option<u64>,
 }
-#[derive(Deserialize)] struct Msg { content: String }
+#[derive(Deserialize)]
+struct Msg {
+    content: String,
+}
 
 #[async_trait]
 impl LlmClient for OllamaClient {
     async fn stream_chat(&self, prompt: String) -> Result<ChannelStream, EngineError> {
         self.stream_chat_with_context(
-            vec![crate::ChatMessage { role: "user".into(), content: prompt, timestamp: None }],
+            vec![crate::ChatMessage {
+                role: "user".into(),
+                content: prompt,
+                timestamp: None,
+            }],
             None,
-        ).await
+        )
+        .await
     }
 
     async fn stream_chat_with_context(
@@ -53,18 +76,29 @@ impl LlmClient for OllamaClient {
         };
         let client = Client::new();
         let url = format!("{}/api/chat", base_url);
-        let req = ChatReq { model: model.clone(), messages, stream: true };
+        let req = ChatReq {
+            model: model.clone(),
+            messages,
+            stream: true,
+        };
         let usage_ref = self.last_usage.clone();
         tokio::spawn(async move {
             match client.post(&url).json(&req).send().await {
                 Ok(r) => {
                     let mut s = r.bytes_stream();
                     while let Some(Ok(d)) = s.next().await {
-                        for l in String::from_utf8_lossy(&d).lines().filter(|l| !l.is_empty()) {
+                        for l in String::from_utf8_lossy(&d)
+                            .lines()
+                            .filter(|l| !l.is_empty())
+                        {
                             if let Ok(resp) = serde_json::from_str::<ChatResp>(l) {
-                                if let Some(msg) = resp.message { tx.send(StreamChunk::Output(msg.content)).await.ok(); }
+                                if let Some(msg) = resp.message {
+                                    tx.send(StreamChunk::Output(msg.content)).await.ok();
+                                }
                                 if resp.done {
-                                    if let (Some(p), Some(c)) = (resp.prompt_eval_count, resp.eval_count) {
+                                    if let (Some(p), Some(c)) =
+                                        (resp.prompt_eval_count, resp.eval_count)
+                                    {
                                         *usage_ref.lock().unwrap() = Some(Usage {
                                             prompt_tokens: p,
                                             completion_tokens: c,
@@ -76,26 +110,37 @@ impl LlmClient for OllamaClient {
                         }
                     }
                 }
-                Err(e) => { tx.send(StreamChunk::Error(e.to_string())).await.ok(); }
+                Err(e) => {
+                    tx.send(StreamChunk::Error(e.to_string())).await.ok();
+                }
             }
         });
         Ok(stream)
     }
 
-    fn provider(&self) -> &LlmProvider { &self.provider }
-    fn timeout_ms(&self) -> u64 { self.timeout_ms }
+    fn provider(&self) -> &LlmProvider {
+        &self.provider
+    }
+    fn timeout_ms(&self) -> u64 {
+        self.timeout_ms
+    }
 
     fn last_usage(&self) -> Option<Usage> {
         *self.last_usage.lock().unwrap()
     }
 
-    fn count_tokens(&self, messages: Vec<crate::ChatMessage>, model: &str) -> Result<usize, crate::EngineError> {
+    fn count_tokens(
+        &self,
+        messages: Vec<crate::ChatMessage>,
+        model: &str,
+    ) -> Result<usize, crate::EngineError> {
         #[cfg(feature = "exact-tokens")]
         {
             let normalized = crate::normalize_model_for_tiktoken(model);
             let tiktoken_msgs = crate::to_tiktoken_messages(&messages);
-            tiktoken_rs::num_tokens_from_messages(&normalized, &tiktoken_msgs)
-                .map_err(|e| crate::EngineError::InvalidParameters(format!("Token count failed: {}", e)))
+            tiktoken_rs::num_tokens_from_messages(&normalized, &tiktoken_msgs).map_err(|e| {
+                crate::EngineError::InvalidParameters(format!("Token count failed: {}", e))
+            })
         }
         #[cfg(not(feature = "exact-tokens"))]
         {

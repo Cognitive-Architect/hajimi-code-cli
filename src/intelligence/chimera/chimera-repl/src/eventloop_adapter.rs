@@ -1,7 +1,7 @@
 //! EventLoop Adapter for Chimera REPL
 //! Bridges Chimera REPL with foundation EventLoop abstraction.
 
-pub use foundation_eventloop::{spawn, block_on, sleep, yield_now, timeout};
+pub use foundation_eventloop::{block_on, sleep, spawn, timeout, yield_now};
 use std::sync::Arc;
 pub use tokio::sync::mpsc;
 
@@ -41,11 +41,12 @@ pub async fn write<T>(lock: &ArcRwLock<T>) -> WriteGuard<'_, T> {
 }
 
 /// Spawn detached background task.
-pub fn spawn_detached<F>(future: F) 
-where 
+pub fn spawn_detached<F>(future: F)
+where
     F: std::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
+    #[allow(clippy::let_underscore_future)]
     let _ = spawn(future);
 }
 
@@ -55,9 +56,8 @@ where
     F: std::future::Future,
 {
     block_on(async move {
-        match timeout(Duration::from_millis(timeout_ms), future).await {
-            Ok(result) => Some(result),
-            Err(_) => None,
-        }
+        timeout(Duration::from_millis(timeout_ms), future)
+            .await
+            .ok()
     })
 }

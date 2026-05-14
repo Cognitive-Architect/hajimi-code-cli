@@ -1,6 +1,4 @@
-use crate::protocol::{
-    error_codes, JsonRpcRequest, JsonRpcResponse, ProtocolError,
-};
+use crate::protocol::{error_codes, JsonRpcRequest, JsonRpcResponse, ProtocolError};
 use serde_json::json;
 use std::collections::HashMap;
 use std::future::Future;
@@ -9,7 +7,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub type HandlerFn = Arc<
-    dyn Fn(JsonRpcRequest) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ProtocolError>> + Send>>
+    dyn Fn(
+            JsonRpcRequest,
+        )
+            -> Pin<Box<dyn Future<Output = Result<serde_json::Value, ProtocolError>> + Send>>
         + Send
         + Sync,
 >;
@@ -21,7 +22,9 @@ pub struct HandlerRegistry {
 
 impl std::fmt::Debug for HandlerRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HandlerRegistry").field("handlers", &"<Map>").finish()
+        f.debug_struct("HandlerRegistry")
+            .field("handlers", &"<Map>")
+            .finish()
     }
 }
 
@@ -58,7 +61,9 @@ impl HandlerRegistry {
                     ProtocolError::InvalidParams(msg) => {
                         JsonRpcResponse::error(error_codes::INVALID_PARAMS, msg, request.id)
                     }
-                    _ => JsonRpcResponse::error(error_codes::SERVER_ERROR, e.to_string(), request.id),
+                    _ => {
+                        JsonRpcResponse::error(error_codes::SERVER_ERROR, e.to_string(), request.id)
+                    }
                 },
             },
             None => JsonRpcResponse::error(
@@ -80,7 +85,10 @@ impl BuiltinHandlers {
 
         let registry = HandlerRegistry::new();
         registry
-            .register("health", |_req| async move { Ok(json!({"status": "healthy"})) })
+            .register(
+                "health",
+                |_req| async move { Ok(json!({"status": "healthy"})) },
+            )
             .await;
         registry
             .register("echo", |req| async move { Ok(json!({"echo": req.params})) })
@@ -103,9 +111,15 @@ impl BuiltinHandlers {
                 let store = store.clone();
                 async move {
                     let params = req.params.unwrap_or(json!({}));
-                    let items = params.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let items = params
+                        .get("items")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                     let mut guard = store.write().await;
-                    for item in items { guard.push(item); }
+                    for item in items {
+                        guard.push(item);
+                    }
                     let count = guard.len();
                     drop(guard);
                     Ok(json!({ "success": true, "storedCount": count }))

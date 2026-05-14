@@ -52,7 +52,9 @@ impl MemoryGateway {
         gateway
     }
 
-    pub fn enable_episodic(&mut self) { self.episodic = Some(EpisodicMemory::new()); }
+    pub fn enable_episodic(&mut self) {
+        self.episodic = Some(EpisodicMemory::new());
+    }
 
     pub fn enable_auto(&mut self, project_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.auto = Some(AutoMemory::new(project_id)?);
@@ -75,7 +77,11 @@ impl MemoryGateway {
     }
 
     /// Push a vector through Session -> Auto -> Dream -> Graph -> Cloud.
-    pub fn push_vector(&mut self, key: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn push_vector(
+        &mut self,
+        key: &str,
+        content: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.session.insert(key.to_string(), content.to_string())?;
 
         if let Some(auto) = self.auto.as_mut() {
@@ -107,17 +113,35 @@ impl MemoryGateway {
 
     pub fn layer_count(&self) -> usize {
         let mut count = 1; // session always present
-        if self.auto.is_some() { count += 1; }
-        if self.dream.is_some() { count += 1; }
-        if self.graph.is_some() { count += 1; }
-        if self.cloud.is_some() { count += 1; }
-        if self.episodic.is_some() { count += 1; }
+        if self.auto.is_some() {
+            count += 1;
+        }
+        if self.dream.is_some() {
+            count += 1;
+        }
+        if self.graph.is_some() {
+            count += 1;
+        }
+        if self.cloud.is_some() {
+            count += 1;
+        }
+        if self.episodic.is_some() {
+            count += 1;
+        }
         count
     }
 
     /// Record episode to EpisodicMemory layer.
-    pub fn record_episode(&self, action_type: &str, content: &str, outcome: &str, confidence: f32) -> Option<String> {
-        self.episodic.as_ref().map(|e| e.record(action_type, content, outcome, confidence))
+    pub fn record_episode(
+        &self,
+        action_type: &str,
+        content: &str,
+        outcome: &str,
+        confidence: f32,
+    ) -> Option<String> {
+        self.episodic
+            .as_ref()
+            .map(|e| e.record(action_type, content, outcome, confidence))
     }
 
     /// Synchronize entries upward through the tier stack (hot → cloud).

@@ -8,8 +8,8 @@
 use crate::agent_loop::{LoopState, TraceEvent, TraceStepType};
 use crate::blackboard::Blackboard;
 use crate::checkpoint::CheckpointManager;
-use crate::edit_applier::{EditApplier, ProposedEdit, AppliedEdit};
-use crate::governance::{AgentGovernance, GovernanceRequest, ApprovalLevel, Decision};
+use crate::edit_applier::{AppliedEdit, EditApplier, ProposedEdit};
+use crate::governance::{AgentGovernance, ApprovalLevel, Decision, GovernanceRequest};
 use crate::{AgentContext, AgentId};
 use chimera_repl::traits::{ReplError, ReplResult};
 use engine_tool_system::ToolRegistry;
@@ -75,37 +75,85 @@ impl WorkflowOrchestrator {
     }
 
     /// Run the complete edit workflow: propose → apply → checkpoint → test → (fix) → commit.
-    pub async fn run_edit_workflow(&self, proposed: ProposedEdit, agent_id: &AgentId) -> ReplResult<WorkflowOutcome> {
+    pub async fn run_edit_workflow(
+        &self,
+        proposed: ProposedEdit,
+        agent_id: &AgentId,
+    ) -> ReplResult<WorkflowOutcome> {
         info!("Starting edit workflow for edit {}", proposed.id);
-        self.emit_trace(TraceStepType::Plan, &format!("Workflow start: {}", proposed.summary), 0, Some(proposed.confidence_score)).await;
+        self.emit_trace(
+            TraceStepType::Plan,
+            &format!("Workflow start: {}", proposed.summary),
+            0,
+            Some(proposed.confidence_score),
+        )
+        .await;
 
         // 1. Propose (governance-gated inside EditApplier)
-        let proposed = self.edit_applier.propose(proposed, agent_id).await.map_err(|e| {
-            warn!("Edit proposal failed: {}", e);
-            ReplError::Session(format!("Propose failed: {}", e))
-        })?;
+        let proposed = self
+            .edit_applier
+            .propose(proposed, agent_id)
+            .await
+            .map_err(|e| {
+                warn!("Edit proposal failed: {}", e);
+                ReplError::Session(format!("Propose failed: {}", e))
+            })?;
 
         // 2. Auto-review (workflow context implies acceptance)
-        self.edit_applier.review(true, agent_id).await.map_err(|e| {
-            ReplError::Session(format!("Review failed: {}", e))
-        })?;
+        self.edit_applier
+            .review(true, agent_id)
+            .await
+            .map_err(|e| ReplError::Session(format!("Review failed: {}", e)))?;
 
         // 3. Apply (atomic, with internal checkpoint)
-        let applied = self.edit_applier.apply(&proposed, agent_id).await.map_err(|e| {
-            warn!("Edit apply failed: {}", e);
-            ReplError::Session(format!("Apply failed: {}", e))
-        })?;
+        let applied = self
+            .edit_applier
+            .apply(&proposed, agent_id)
+            .await
+            .map_err(|e| {
+                warn!("Edit apply failed: {}", e);
+                ReplError::Session(format!("Apply failed: {}", e))
+            })?;
 
         // 4. Write edit metadata to blackboard and create post-apply checkpoint
-        self.blackboard.write(&format!("wf_edit_summary_{}", applied.edit_id), &proposed.summary, agent_id).await;
-        self.blackboard.write(&format!("wf_edit_hunks_{}", applied.edit_id), &applied.hunks_applied.to_string(), agent_id).await;
-        self.blackboard.write(&format!("wf_edit_tokens_{}", applied.edit_id), &format!("{}->{}", applied.before_token_count, applied.after_token_count), agent_id).await;
+        self.blackboard
+            .write(
+                &format!("wf_edit_summary_{}", applied.edit_id),
+                &proposed.summary,
+                agent_id,
+            )
+            .await;
+        self.blackboard
+            .write(
+                &format!("wf_edit_hunks_{}", applied.edit_id),
+                &applied.hunks_applied.to_string(),
+                agent_id,
+            )
+            .await;
+        self.blackboard
+            .write(
+                &format!("wf_edit_tokens_{}", applied.edit_id),
+                &format!(
+                    "{}->{}",
+                    applied.before_token_count, applied.after_token_count
+                ),
+                agent_id,
+            )
+            .await;
 
-        let checkpoint = self.checkpoint_mgr.save(
-            agent_id, None, vec![], vec![], self.blackboard.as_ref(),
-        ).await.map_err(|e| ReplError::Session(format!("Checkpoint: {}", e)))?;
+        let checkpoint = self
+            .checkpoint_mgr
+            .save(agent_id, None, vec![], vec![], self.blackboard.as_ref())
+            .await
+            .map_err(|e| ReplError::Session(format!("Checkpoint: {}", e)))?;
         info!("Post-apply checkpoint created: {}", checkpoint.id);
-        self.emit_trace(TraceStepType::Store, &format!("Checkpoint {} after apply", checkpoint.id), 0, Some(1.0)).await;
+        self.emit_trace(
+            TraceStepType::Store,
+            &format!("Checkpoint {} after apply", checkpoint.id),
+            0,
+            Some(1.0),
+        )
+        .await;
 
         // 5. Run tests (if tool registry available)
         let mut tests_passed = false;
@@ -113,12 +161,16 @@ impl WorkflowOrchestrator {
 
         if let Some(ref registry) = self.tool_registry {
             for iteration in 0..=3usize {
-                let tool = registry.lock().await.get("run_tests").ok_or_else(|| ReplError::Session("run_tests tool not found".to_string()))?;
+                let tool =
+                    registry.lock().await.get("run_tests").ok_or_else(|| {
+                        ReplError::Session("run_tests tool not found".to_string())
+                    })?;
                 let args = serde_json::json!({ "package": "intelligence-agent-core" });
                 match tool.execute(args).await {
                     Ok(output) => {
                         let stdout = &output.stdout;
-                        let has_passed = stdout.contains("test result:") && !stdout.contains("failed");
+                        let has_passed =
+                            stdout.contains("test result:") && !stdout.contains("failed");
                         let has_failed = stdout.contains("failed");
                         if has_passed && !has_failed {
                             tests_passed = true;
@@ -128,15 +180,27 @@ impl WorkflowOrchestrator {
                         warn!("Tests failed on iteration {}", iteration);
                     }
                     Err(e) => {
-                        warn!("Test execution error on iteration {}: {}", iteration, e.message);
+                        warn!(
+                            "Test execution error on iteration {}: {}",
+                            iteration, e.message
+                        );
                     }
                 }
 
                 if iteration < 3 && iteration < self.fix_proposals.len() {
                     fix_iterations += 1;
                     let fix = &self.fix_proposals[iteration];
-                    info!("Attempting fix iteration {} with edit {}", fix_iterations, fix.id);
-                    self.emit_trace(TraceStepType::Act, &format!("Fix iteration {}/3: {}", fix_iterations, fix.summary), 0, Some(0.5)).await;
+                    info!(
+                        "Attempting fix iteration {} with edit {}",
+                        fix_iterations, fix.id
+                    );
+                    self.emit_trace(
+                        TraceStepType::Act,
+                        &format!("Fix iteration {}/3: {}", fix_iterations, fix.summary),
+                        0,
+                        Some(0.5),
+                    )
+                    .await;
 
                     // Governance gate for fix apply
                     let req = GovernanceRequest {
@@ -148,7 +212,9 @@ impl WorkflowOrchestrator {
                     };
                     match self.governance.approve(&self.context, &req).await {
                         Ok(Decision::Approved) => {
-                            if let Ok(proposed_fix) = self.edit_applier.propose(fix.clone(), agent_id).await {
+                            if let Ok(proposed_fix) =
+                                self.edit_applier.propose(fix.clone(), agent_id).await
+                            {
                                 let _ = self.edit_applier.review(true, agent_id).await;
                                 let _ = self.edit_applier.apply(&proposed_fix, agent_id).await;
                             }
@@ -191,10 +257,14 @@ impl WorkflowOrchestrator {
 
         self.emit_trace(
             TraceStepType::EditApplied,
-            &format!("Workflow complete: tests={}, commit={:?}, fixes={}", tests_passed, commit_hash, fix_iterations),
+            &format!(
+                "Workflow complete: tests={}, commit={:?}, fixes={}",
+                tests_passed, commit_hash, fix_iterations
+            ),
             0,
             Some(if tests_passed { 1.0 } else { 0.0 }),
-        ).await;
+        )
+        .await;
 
         Ok(WorkflowOutcome {
             edit: applied,
@@ -205,7 +275,13 @@ impl WorkflowOrchestrator {
         })
     }
 
-    async fn emit_trace(&self, step_type: TraceStepType, details: &str, iteration: usize, confidence: Option<f32>) {
+    async fn emit_trace(
+        &self,
+        step_type: TraceStepType,
+        details: &str,
+        iteration: usize,
+        confidence: Option<f32>,
+    ) {
         if let Some(ref tx) = self.trace_tx {
             let event = TraceEvent {
                 step: LoopState::Acting,

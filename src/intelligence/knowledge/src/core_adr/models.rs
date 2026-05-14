@@ -17,12 +17,12 @@ pub enum AdrStatus {
 /// ADR条目结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdrEntry {
-    pub id: String,           // ADR-NNNN
+    pub id: String, // ADR-NNNN
     pub title: String,
     pub status: AdrStatus,
     pub date: DateTime<Utc>,
     pub tags: Vec<String>,
-    pub content: String,      // Markdown内容（不含Frontmatter）
+    pub content: String, // Markdown内容（不含Frontmatter）
 }
 
 /// ADR索引（内存缓存）

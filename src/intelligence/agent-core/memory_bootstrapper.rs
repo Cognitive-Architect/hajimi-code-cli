@@ -45,13 +45,17 @@ impl MemoryBootstrapper {
     /// Initialize MemoryGateway, enable Auto/Graph/Dream tiers, restore latest Checkpoint,
     /// and generate a human-readable project memory summary.
     pub async fn load_project_memory(&self) -> Result<BootstrapResult, AgentError> {
-        let mut gateway =
-            memory::memory_gateway::MemoryGateway::new_with_project(&self.device_id, Some(&self.project_id));
+        let mut gateway = memory::memory_gateway::MemoryGateway::new_with_project(
+            &self.device_id,
+            Some(&self.project_id),
+        );
         let _ = gateway.enable_auto(&self.project_id);
         gateway.enable_graph(&self.project_id);
         let _ = gateway.enable_dream(&self.project_id);
         if gateway.episodic.is_none() {
-            if let Ok(episodic) = memory::episodic::EpisodicMemory::new_with_persist(&self.project_id) {
+            if let Ok(episodic) =
+                memory::episodic::EpisodicMemory::new_with_persist(&self.project_id)
+            {
                 gateway.episodic = Some(episodic);
             }
         }
@@ -92,7 +96,13 @@ impl MemoryBootstrapper {
     }
 
     /// Record an episode via the gateway.
-    pub fn record_episode(gateway: &memory::memory_gateway::MemoryGateway, action_type: &str, content: &str, outcome: &str, confidence: f32) -> Option<String> {
+    pub fn record_episode(
+        gateway: &memory::memory_gateway::MemoryGateway,
+        action_type: &str,
+        content: &str,
+        outcome: &str,
+        confidence: f32,
+    ) -> Option<String> {
         gateway.record_episode(action_type, content, outcome, confidence)
     }
 
@@ -162,7 +172,11 @@ impl MemoryBootstrapper {
                 "反思{}: 问题[{}] 建议[{}]\n",
                 i + 1,
                 if issues.is_empty() { "无" } else { &issues },
-                if suggestions.is_empty() { "无" } else { &suggestions }
+                if suggestions.is_empty() {
+                    "无"
+                } else {
+                    &suggestions
+                }
             ));
         }
 
@@ -190,15 +204,26 @@ impl MemoryBootstrapper {
     fn build_summary_prompt(ctx: &SummaryContext) -> String {
         include_str!("prompts/summary_prompt.md")
             .replace("{plan}", &ctx.plan_description)
-            .replace("{reflections}", if ctx.reflections.is_empty() { "暂无反思记录" } else { &ctx.reflections })
+            .replace(
+                "{reflections}",
+                if ctx.reflections.is_empty() {
+                    "暂无反思记录"
+                } else {
+                    &ctx.reflections
+                },
+            )
             .replace("{progress}", &ctx.goal_progress)
-            .replace("{hints}", if ctx.blackboard_hints.is_empty() { "无" } else { &ctx.blackboard_hints })
+            .replace(
+                "{hints}",
+                if ctx.blackboard_hints.is_empty() {
+                    "无"
+                } else {
+                    &ctx.blackboard_hints
+                },
+            )
     }
 
-    async fn generate_natural_language_summary(
-        &self,
-        prompt: &str,
-    ) -> Result<String, AgentError> {
+    async fn generate_natural_language_summary(&self, prompt: &str) -> Result<String, AgentError> {
         let client = self
             .llm_client
             .as_ref()
@@ -231,8 +256,9 @@ impl MemoryBootstrapper {
 
     /// Save natural-language summary to ~/.hajimi/memory/{project_id}/summary.md
     pub(crate) async fn save_summary_to_disk(&self, summary: &str) -> std::io::Result<()> {
-        let base = dirs::config_dir()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "config dir not found"))?;
+        let base = dirs::config_dir().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "config dir not found")
+        })?;
         let dir = base.join(".hajimi").join("memory").join(&self.project_id);
         tokio::fs::create_dir_all(&dir).await?;
         tokio::fs::write(dir.join("summary.md"), summary).await
@@ -241,7 +267,11 @@ impl MemoryBootstrapper {
     /// Load natural-language summary from disk if it exists.
     pub(crate) async fn load_summary_from_disk(&self) -> Option<String> {
         let base = dirs::config_dir()?;
-        let path = base.join(".hajimi").join("memory").join(&self.project_id).join("summary.md");
+        let path = base
+            .join(".hajimi")
+            .join("memory")
+            .join(&self.project_id)
+            .join("summary.md");
         if !path.exists() {
             return None;
         }

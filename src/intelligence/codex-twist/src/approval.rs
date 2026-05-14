@@ -4,11 +4,11 @@
 /// 审批策略 - 控制AI执行权限（5级完整模式，向后兼容）
 #[derive(Clone, Debug, PartialEq)]
 pub enum ApprovalPolicy {
-    AskBeforeExec,  // 每次执行前询问
+    AskBeforeExec,   // 每次执行前询问
     AskForDangerous, // 仅危险操作询问（如rm、sudo）
     AskOnceThenAuto, // 首次询问，后续自动
-    FullAuto,       // 完全自动（不询问）
-    FullDeny,       // 完全拒绝（沙箱模式）
+    FullAuto,        // 完全自动（不询问）
+    FullDeny,        // 完全拒绝（沙箱模式）
 }
 
 /// 审批策略 - 3级精简模式（新增推荐API）
@@ -32,7 +32,9 @@ impl ApprovalPolicyLevel {
 
 #[allow(clippy::derivable_impls)]
 impl Default for ApprovalPolicy {
-    fn default() -> Self { ApprovalPolicy::AskBeforeExec }
+    fn default() -> Self {
+        ApprovalPolicy::AskBeforeExec
+    }
 }
 
 impl ApprovalPolicy {
@@ -62,9 +64,16 @@ impl ApprovalPolicy {
 /// 危险命令检测
 fn is_dangerous_command(command: &str) -> bool {
     let dangerous_patterns = [
-        "rm -rf", "rm -r /", "sudo", "chmod 777", "> /dev", "mkfs", "dd if=",
+        "rm -rf",
+        "rm -r /",
+        "sudo",
+        "chmod 777",
+        "> /dev",
+        "mkfs",
+        "dd if=",
         ":(){ :|:& };:", // Fork bomb
-        "curl | sh", "wget | sh", // Pipe to shell
+        "curl | sh",
+        "wget | sh", // Pipe to shell
     ];
     let lower_cmd = command.to_lowercase();
     dangerous_patterns.iter().any(|&p| lower_cmd.contains(p))
@@ -81,7 +90,12 @@ pub struct ApprovalRequest {
 
 /// 风险等级
 #[derive(Clone, Debug, PartialEq)]
-pub enum RiskLevel { Low, Medium, High, Critical }
+pub enum RiskLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
 
 impl ApprovalRequest {
     /// 创建新审批请求
@@ -98,7 +112,9 @@ impl ApprovalRequest {
     pub fn prompt(&self) -> String {
         format!(
             "🔒 需要审批\n\n命令: {}\n描述: {}\n风险: {}\n\n是否允许执行? (y/n)",
-            self.command, self.description, risk_emoji(&self.risk_level)
+            self.command,
+            self.description,
+            risk_emoji(&self.risk_level)
         )
     }
 }
@@ -119,17 +135,29 @@ fn assess_risk(command: &str) -> RiskLevel {
 
 /// 生成命令描述
 fn describe_command(command: &str) -> String {
-    if command.starts_with("ls") || command.starts_with("dir") { "列出目录内容".to_string() }
-    else if command.starts_with("cat") || command.starts_with("type") { "读取文件内容".to_string() }
-    else if command.starts_with("rm") { "删除文件或目录".to_string() }
-    else if command.starts_with("mkdir") || command.starts_with("md") { "创建目录".to_string() }
-    else if command.starts_with("cp") || command.starts_with("copy") { "复制文件".to_string() }
-    else if command.starts_with("mv") || command.starts_with("move") { "移动文件".to_string() }
-    else if command.starts_with("git") { "Git版本控制操作".to_string() }
-    else if command.starts_with("cargo") { "Rust项目构建".to_string() }
-    else if command.starts_with("npm") || command.starts_with("yarn") { "Node.js包管理".to_string() }
-    else if command.starts_with("docker") { "Docker容器操作".to_string() }
-    else { "执行系统命令".to_string() }
+    if command.starts_with("ls") || command.starts_with("dir") {
+        "列出目录内容".to_string()
+    } else if command.starts_with("cat") || command.starts_with("type") {
+        "读取文件内容".to_string()
+    } else if command.starts_with("rm") {
+        "删除文件或目录".to_string()
+    } else if command.starts_with("mkdir") || command.starts_with("md") {
+        "创建目录".to_string()
+    } else if command.starts_with("cp") || command.starts_with("copy") {
+        "复制文件".to_string()
+    } else if command.starts_with("mv") || command.starts_with("move") {
+        "移动文件".to_string()
+    } else if command.starts_with("git") {
+        "Git版本控制操作".to_string()
+    } else if command.starts_with("cargo") {
+        "Rust项目构建".to_string()
+    } else if command.starts_with("npm") || command.starts_with("yarn") {
+        "Node.js包管理".to_string()
+    } else if command.starts_with("docker") {
+        "Docker容器操作".to_string()
+    } else {
+        "执行系统命令".to_string()
+    }
 }
 
 /// 风险等级表情
@@ -145,7 +173,9 @@ fn risk_emoji(level: &RiskLevel) -> &'static str {
 /// 生成请求ID
 fn generate_request_id() -> String {
     let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     format!("req-{}", ts)
 }
 
@@ -186,8 +216,17 @@ mod tests {
 
     #[test]
     fn test_approval_policy_level() {
-        assert_eq!(ApprovalPolicyLevel::Ask.to_policy(), ApprovalPolicy::AskForDangerous);
-        assert_eq!(ApprovalPolicyLevel::Auto.to_policy(), ApprovalPolicy::FullAuto);
-        assert_eq!(ApprovalPolicyLevel::Deny.to_policy(), ApprovalPolicy::FullDeny);
+        assert_eq!(
+            ApprovalPolicyLevel::Ask.to_policy(),
+            ApprovalPolicy::AskForDangerous
+        );
+        assert_eq!(
+            ApprovalPolicyLevel::Auto.to_policy(),
+            ApprovalPolicy::FullAuto
+        );
+        assert_eq!(
+            ApprovalPolicyLevel::Deny.to_policy(),
+            ApprovalPolicy::FullDeny
+        );
     }
 }

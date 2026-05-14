@@ -20,15 +20,24 @@ async fn test_sync_gateway_20_iteration_consistency() {
 
     // Seed session tier with deterministic keys
     for i in 0..10 {
-        gw.push_vector(&format!("seed_{}", i), &format!("data_{}", i)).unwrap();
+        gw.push_vector(&format!("seed_{}", i), &format!("data_{}", i))
+            .unwrap();
     }
 
     for i in 0..20 {
         let query = format!("seed_{}", i % 10);
-        let r = gw.retrieve_multi(MemoryTier::fallback_order(), &query).await.unwrap();
+        let r = gw
+            .retrieve_multi(MemoryTier::fallback_order(), &query)
+            .await
+            .unwrap();
         assert!(!r.is_empty(), "Iteration {}: no results for {}", i, query);
         // Session tier must always return the seeded entry
-        assert_eq!(r[0].0, MemoryTier::Session, "Session tier not first at iteration {}", i);
+        assert_eq!(
+            r[0].0,
+            MemoryTier::Session,
+            "Session tier not first at iteration {}",
+            i
+        );
     }
 }
 
@@ -39,16 +48,26 @@ async fn test_sync_gateway_blackboard_sync_roundtrip() {
     let mut gw = sg.lock().await;
 
     let mut snapshot = BlackboardSnapshot::new();
-    snapshot.entries.insert("bb_key1".into(), "bb_value1".into());
-    snapshot.entries.insert("bb_key2".into(), "bb_value2".into());
+    snapshot
+        .entries
+        .insert("bb_key1".into(), "bb_value1".into());
+    snapshot
+        .entries
+        .insert("bb_key2".into(), "bb_value2".into());
 
     gw.sync_with_blackboard(&snapshot).await.unwrap();
 
-    let r1 = gw.retrieve_from_tier(MemoryTier::Session, "bb_key1").await.unwrap();
+    let r1 = gw
+        .retrieve_from_tier(MemoryTier::Session, "bb_key1")
+        .await
+        .unwrap();
     assert_eq!(r1.len(), 1);
     assert_eq!(r1[0].content, "bb_value1");
 
-    let r2 = gw.retrieve_from_tier(MemoryTier::Session, "bb_key2").await.unwrap();
+    let r2 = gw
+        .retrieve_from_tier(MemoryTier::Session, "bb_key2")
+        .await
+        .unwrap();
     assert_eq!(r2.len(), 1);
     assert_eq!(r2[0].content, "bb_value2");
 }
@@ -78,7 +97,11 @@ async fn test_sync_gateway_concurrent_stress() {
     let mut gw = sg.lock().await;
     let health = gw.tier_health(MemoryTier::Session).await.unwrap();
     assert!(health.available);
-    assert!(health.entry_count >= 50, "Expected >=50 entries, got {}", health.entry_count);
+    assert!(
+        health.entry_count >= 50,
+        "Expected >=50 entries, got {}",
+        health.entry_count
+    );
 }
 
 /// Event persistence: push_event stores data retrievable via session search.
@@ -108,7 +131,10 @@ async fn test_sync_gateway_crash_recovery() {
     // In reality, MemoryGateway persists to disk; here we just verify
     // the data survived within the same Arc<Mutex<_>> reference.
     let mut gw = sg.lock().await;
-    let r = gw.retrieve_from_tier(MemoryTier::Session, "recover_key").await.unwrap();
+    let r = gw
+        .retrieve_from_tier(MemoryTier::Session, "recover_key")
+        .await
+        .unwrap();
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].content, "recover_value");
 }
@@ -119,7 +145,12 @@ async fn test_sync_gateway_tier_health_all_available() {
     let sg = create_sync_gateway();
     let mut gw = sg.lock().await;
 
-    for tier in [MemoryTier::Session, MemoryTier::Auto, MemoryTier::Dream, MemoryTier::Graph] {
+    for tier in [
+        MemoryTier::Session,
+        MemoryTier::Auto,
+        MemoryTier::Dream,
+        MemoryTier::Graph,
+    ] {
         let h = gw.tier_health(tier).await.unwrap();
         assert!(h.available, "Tier {:?} not available", tier);
     }

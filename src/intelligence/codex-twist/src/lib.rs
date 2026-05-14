@@ -1,10 +1,10 @@
 //! Codex-Twist 轻量级Thread/Turn架构移植
-//! 
+//!
 //! 从OpenAI Codex核心概念提取：
 //! - Thread: 对话会话容器
 //! - Turn: 单次用户输入到AI回复的完整交互
 //! - Approval: 安全审批系统
-//! 
+//!
 //! 关键改造：
 //! - 云端JSON存储 → LCR本地.hctx存储
 //! - OAuth认证 → 用户自填API Key
@@ -25,10 +25,10 @@ pub mod ffi;
 // 重新导出常用类型
 pub use approval::{ApprovalPolicy, ApprovalRequest, ApprovalResult, RiskLevel};
 pub use lcr_adapter::ParseError;
+pub use memory::token_tracker::{GlobalStats, SessionStats, TokenUsageTracker};
 pub use storage::{ContextChunk, HctxStorage, StorageError};
 pub use thread::{Thread, ThreadConfig, ThreadId, ThreadStats};
 pub use turn::{ResponseContent, TokenUsage, ToolCall, ToolResult, Turn, TurnStatus};
-pub use memory::token_tracker::{TokenUsageTracker, SessionStats, GlobalStats};
 
 /// 模块版本
 pub const VERSION: &str = "0.1.0";

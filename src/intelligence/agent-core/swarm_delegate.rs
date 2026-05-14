@@ -41,9 +41,15 @@ impl SwarmDelegate {
 
         Some(match result {
             Some(r) => {
-                let _ = blackboard.write(&format!("worker_result_{}", task.id), &r.output, agent_id).await;
+                let _ = blackboard
+                    .write(&format!("worker_result_{}", task.id), &r.output, agent_id)
+                    .await;
                 if r.success {
-                    Ok(crate::planner::TaskResult { success: true, output: r.output, timestamp: chrono::Utc::now() })
+                    Ok(crate::planner::TaskResult {
+                        success: true,
+                        output: r.output,
+                        timestamp: chrono::Utc::now(),
+                    })
                 } else {
                     Err(ReplError::Session(format!("Worker failed: {}", r.output)))
                 }
@@ -62,14 +68,17 @@ impl SwarmDelegate {
 mod tests {
     use super::*;
     use crate::governance::DefaultGovernance;
-    use crate::swarm::{Supervisor, TaskAssignment, WorkerResult};
     use crate::ports::WorkerMetrics;
+    use crate::swarm::{Supervisor, TaskAssignment, WorkerResult};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn test_swarm_delegate_pop_result_empty() {
-        let supervisor = Supervisor::new(Arc::new(DefaultGovernance::new()), crate::AgentContext::new());
+        let supervisor = Supervisor::new(
+            Arc::new(DefaultGovernance::new()),
+            crate::AgentContext::new(),
+        );
         let swarm = Arc::new(Mutex::new(supervisor));
         let result = SwarmDelegate::pop_result(&swarm, "nonexistent").await;
         assert!(result.is_none());
@@ -77,11 +86,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_swarm_delegate_no_idle_worker() {
-        let supervisor = Supervisor::new(Arc::new(DefaultGovernance::new()), crate::AgentContext::new());
+        let supervisor = Supervisor::new(
+            Arc::new(DefaultGovernance::new()),
+            crate::AgentContext::new(),
+        );
         let swarm = Arc::new(Mutex::new(supervisor));
         let blackboard = Arc::new(Blackboard::new());
-        let task = Task { id: "t1".to_string(), parent_subgoal: "sg1".to_string(), description: "Test".to_string(), tool_calls: vec![], status: crate::planner::PlanStatus::Pending, result: None };
+        let task = Task {
+            id: "t1".to_string(),
+            parent_subgoal: "sg1".to_string(),
+            description: "Test".to_string(),
+            tool_calls: vec![],
+            status: crate::planner::PlanStatus::Pending,
+            result: None,
+        };
         let result = SwarmDelegate::try_delegate(&swarm, &blackboard, "agent-1", &task).await;
-        assert!(result.is_none(), "Expected None when no idle worker available");
+        assert!(
+            result.is_none(),
+            "Expected None when no idle worker available"
+        );
     }
 }

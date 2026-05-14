@@ -9,7 +9,11 @@ pub enum WasmMemoryError {
     InvalidMemoryRange,
     ZeroDimension,
     /// 内存访问越界：ptr/len 超出 WASM_MAX_MEMORY 上限
-    OutOfBounds { ptr: usize, len: usize, max: usize },
+    OutOfBounds {
+        ptr: usize,
+        len: usize,
+        max: usize,
+    },
 }
 
 impl std::fmt::Display for WasmMemoryError {
@@ -20,7 +24,11 @@ impl std::fmt::Display for WasmMemoryError {
             WasmMemoryError::InvalidMemoryRange => write!(f, "Invalid memory range"),
             WasmMemoryError::ZeroDimension => write!(f, "Dimension cannot be zero"),
             WasmMemoryError::OutOfBounds { ptr, len, max } => {
-                write!(f, "Memory access out of bounds: ptr=0x{:x}, len={}, max={}", ptr, len, max)
+                write!(
+                    f,
+                    "Memory access out of bounds: ptr=0x{:x}, len={}, max={}",
+                    ptr, len, max
+                )
             }
         }
     }
@@ -61,5 +69,7 @@ pub fn check_memory_range(num_vectors: usize, dim: usize) -> Result<usize, WasmM
     if dim == 0 {
         return Err(WasmMemoryError::ZeroDimension);
     }
-    num_vectors.checked_mul(dim).ok_or(WasmMemoryError::InvalidMemoryRange)
+    num_vectors
+        .checked_mul(dim)
+        .ok_or(WasmMemoryError::InvalidMemoryRange)
 }

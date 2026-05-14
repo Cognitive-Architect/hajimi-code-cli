@@ -19,10 +19,10 @@ pub enum EngineError {
 
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
-    
+
     #[error("LLM error: {0}")]
     LlmError(String),
-    
+
     #[error("Streaming error: {0}")]
     StreamingError(String),
 }
