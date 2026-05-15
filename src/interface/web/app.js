@@ -77,6 +77,8 @@ window.app = {
     this.setupSessionBrowser();
     this.setupResourceDashboard();
     this.setupInspector();
+    this.setupSettingsTabs();
+    this.setupMoreMenus();
 
     // Build command list
     this.commands = [
@@ -84,14 +86,19 @@ window.app = {
       { id: 'file.openFolder', label: '文件: 打开文件夹', key: 'Ctrl+K Ctrl+O', action: () => this.openFolder() },
       { id: 'view.chat-sessions', label: '视图: 显示会话列表', key: 'Ctrl+Shift+C', action: () => this.showSidebar('chat-sessions') },
       { id: 'view.explorer', label: '视图: 显示文件', key: 'Ctrl+Shift+E', action: () => this.showSidebar('explorer') },
-      { id: 'view.models', label: '视图: 显示模型', key: 'Ctrl+Shift+M', action: () => this.showSidebar('models') },
-      { id: 'view.system', label: '视图: 显示系统', key: 'Ctrl+Shift+Y', action: () => this.showSidebar('system') },
-      { id: 'view.agent-trace', label: '视图: 显示 Agent Trace', key: 'Ctrl+Shift+A', action: () => this.showSidebar('agent-trace') },
+      { id: 'view.providers', label: '视图: 显示模型设置', key: 'Ctrl+Shift+M', action: () => { this.showSidebar('settings'); this.switchSettingsTab('providers'); } },
+      { id: 'view.governance', label: '视图: 显示治理控制', key: 'Ctrl+Shift+G', action: () => { this.showSidebar('settings'); this.switchSettingsTab('governance'); } },
+      { id: 'view.audit', label: '视图: 显示审计日志', key: 'Ctrl+Shift+Y', action: () => { this.showSidebar('settings'); this.switchSettingsTab('audit'); } },
       { id: 'view.settings', label: '视图: 显示设置', key: 'Ctrl+Shift+S', action: () => this.showSidebar('settings') },
       { id: 'palette', label: '命令面板', key: 'Ctrl+Shift+P', action: () => this.showCommandPalette() },
       { id: 'chat.new', label: '对话: 新会话', key: '', action: () => this.newChatSession() },
       { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.gitCommit() },
       { id: 'providers.refresh', label: '模型: 刷新提供商列表', key: '', action: () => this.loadProviders() },
+      { id: 'audit.log', label: '系统: 刷新审计日志', key: '', action: () => this.loadAuditLogs() },
+      { id: 'system.resources', label: '系统: 打开资源监控', key: '', action: () => { this.showSidebar('settings'); this.switchSettingsTab('audit'); } },
+      { id: 'session.export', label: '会话: 导出所有检查点', key: '', action: () => this.exportAllCheckpoints() },
+      { id: 'trace.clear', label: 'Trace: 清空', key: '', action: () => this.clearTraceCards() },
+      { id: 'trace.pause', label: 'Trace: 暂停/继续', key: '', action: () => this.toggleTracePause() },
       // Phase 4 Day 5: Agent Command Palette commands
       { id: 'agent.refactor', label: '@agent refactor — 重构选中代码', key: '', action: () => this.runAgentCommand('@agent refactor selection') },
       { id: 'agent.review-pr', label: '@agent review-pr — 审查 PR', key: '', action: () => this.runAgentCommand('@agent review-pr') },
@@ -115,6 +122,13 @@ window.app = {
   },
 
   showSidebar(view) {
+    // Redirect old views to settings tabs
+    if (view === 'models' || view === 'system') {
+      this.showSidebar('settings');
+      this.switchSettingsTab(view === 'models' ? 'providers' : 'governance');
+      return;
+    }
+
     this.sidebarView = view;
     document.querySelectorAll('.activity-item').forEach(el => {
       el.classList.toggle('active', el.dataset.view === view);
@@ -128,6 +142,39 @@ window.app = {
     if (view === 'settings') {
       this.loadProviders();
       this.loadAgentProviders();
+      this.loadMcpServers();
+    }
+  },
+
+  setupSettingsTabs() {
+    const tabs = document.querySelectorAll('.settings-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        this.switchSettingsTab(tab.dataset.tab);
+      });
+    });
+  },
+
+  switchSettingsTab(tabId) {
+    document.querySelectorAll('.settings-tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.settings-tab-panel').forEach(el => {
+      const isActive = el.dataset.settingsPanel === tabId;
+      el.classList.toggle('active', isActive);
+      el.style.display = isActive ? 'block' : 'none';
+    });
+
+    if (tabId === 'providers') {
+      this.loadProviders();
+      this.loadAgentProviders();
+    } else if (tabId === 'mcp') {
+      this.loadMcpServers();
+    } else if (tabId === 'governance') {
+      // Governance logic if needed
+    } else if (tabId === 'audit') {
+      this.loadCheckpoints();
+      this.loadAuditLogs();
     }
   },
 
@@ -173,8 +220,217 @@ window.app = {
 
     // Update panel visibility
     document.querySelectorAll('.inspector-panel').forEach(el => {
-      el.classList.toggle('active', el.dataset.inspectorPanel === tabId);
+      const isActive = el.dataset.inspectorPanel === tabId;
+      el.classList.toggle('active', isActive);
+      if (isActive) {
+        if (tabId === 'diff-preview') this.safeRenderInspectorDiffPreview();
+        if (tabId === 'agent-trace') this.safeRenderTraceInspector();
+      }
     });
+  },
+
+  withInspectorGuard(label, renderFn) {
+    try {
+      renderFn();
+    } catch (e) {
+      console.warn(`Inspector render skipped (${label}):`, e);
+    }
+  },
+
+  safeUpdateTaskDetails(statusText) {
+    this.withInspectorGuard('task details', () => this.updateTaskDetails(statusText));
+  },
+
+  safeRenderContextFiles() {
+    this.withInspectorGuard('context files', () => this.renderContextFiles());
+  },
+
+  safeRenderModelInfo() {
+    this.withInspectorGuard('model info', () => this.renderModelInfo());
+  },
+
+  safeRenderInspectorDiffPreview() {
+    this.withInspectorGuard('diff preview', () => this.renderInspectorDiffPreview());
+  },
+
+  safeRenderTraceInspector() {
+    this.withInspectorGuard('trace summary', () => this.renderTraceInspector());
+  },
+
+  openDiffPreview(file = null) {
+    if (file) this.currentDiffFile = file;
+    const inspector = document.getElementById('rightInspector');
+    if (inspector) inspector.style.display = '';
+    this.showInspectorTab('diff-preview');
+  },
+
+  updateTaskDetails(statusText) {
+    const statusEl = document.getElementById('inspectorTaskStatus');
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color:var(--fg-dim);">${this.escapeHtml(statusText || '就绪')}</span>`;
+    }
+    this.renderTaskSteps();
+  },
+
+  renderTaskSteps() {
+    const el = document.getElementById('inspectorTaskSteps');
+    if (!el) return;
+    if (!this.traceEvents || this.traceEvents.length === 0) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">等待任务开始...</span>';
+      return;
+    }
+    const steps = this.traceEvents.filter(ev => ev.step_type === 'Act' || ev.step_type === 'Plan');
+    if (steps.length === 0) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">尚无执行步骤</span>';
+      return;
+    }
+    el.innerHTML = steps.slice(-3).map(s => `
+      <div style="font-size:11px;margin-bottom:2px;display:flex;gap:4px;overflow:hidden;">
+        <span style="color:var(--fg-cyan); font-weight:bold;flex-shrink:0;">${s.step}</span>
+        <span style="color:var(--fg-default);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;">${this.escapeHtml(s.details)}</span>
+      </div>
+    `).join('');
+  },
+
+  renderEditSummary() {
+    const el = document.getElementById('inspectorEditSummary');
+    if (!el) return;
+    if (!this.currentEditPayload) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">无待处理修改</span>';
+      return;
+    }
+    const hunks = this.currentEditPayload.hunks;
+    const count = typeof hunks === 'number' ? hunks : (hunks ? hunks.length : 0);
+    el.innerHTML = `
+      <div style="font-size:11px;">
+        <div style="font-weight:bold;color:var(--fg-magenta);">${count} 个待处理修改</div>
+        <div style="color:var(--fg-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtml(this.currentEditPayload.summary || '无')}</div>
+      </div>
+    `;
+  },
+
+  renderContextFiles() {
+    const contextEl = document.getElementById('inspectorContextFiles');
+    if (contextEl) {
+      if (!this.chatContextFiles || this.chatContextFiles.length === 0) {
+        contextEl.innerHTML = '<span style="color:var(--fg-dim);">暂无上下文文件</span>';
+      } else {
+        contextEl.innerHTML = this.chatContextFiles.map(path => {
+          const name = String(path).split(/[\\/]/).pop();
+          return `<div style="font-size:12px;margin-bottom:4px;color:var(--fg-default);">${this.escapeHtml(name)}</div>`;
+        }).join('');
+      }
+    }
+  },
+
+  renderModelInfo() {
+    const modelEl = document.getElementById('inspectorModelInfo');
+    if (modelEl) {
+      if (!this.activeProviderId) {
+        modelEl.innerHTML = '<span style="color:var(--fg-dim);">未选择模型</span>';
+      } else {
+        const cfg = this.providerConfigs.find(c => c.id === this.activeProviderId);
+        const name = cfg ? (cfg.name || cfg.id) : this.activeProviderId;
+        const model = cfg ? cfg.model : '';
+        modelEl.innerHTML = `<div style="font-size:12px;color:var(--fg-default);">
+          <div style="font-weight:bold;">${this.escapeHtml(name)}</div>
+          <div style="color:var(--fg-dim);margin-top:2px;">${this.escapeHtml(model || '')}</div>
+        </div>`;
+      }
+    }
+  },
+
+  renderInspectorDiffPreview() {
+    const container = document.getElementById('inspectorDiffContent');
+    if (!container) return;
+
+    if (!this.currentEditPayload || !this.currentEditPayload.hunks) {
+      const fallbackText = this.currentDiffFile
+        ? `可通过旧 Diff 入口查看 ${this.escapeHtml(this.currentDiffFile)}`
+        : '选择文件或等待 Agent 建议修改后显示 Diff';
+      container.innerHTML = `<div class="inspector-empty-state">
+        <span>${fallbackText}</span>
+        ${this.currentDiffFile ? '<button class="modal-btn secondary btn-secondary" id="inspectorOldDiffBtn" style="margin-top:8px;">打开旧 Diff 入口</button>' : ''}
+      </div>`;
+      const fallbackBtn = document.getElementById('inspectorOldDiffBtn');
+      if (fallbackBtn) fallbackBtn.addEventListener('click', () => this.showGitDiff(this.currentDiffFile));
+      return;
+    }
+
+    let html = `<div class="inspector-card" style="padding:0; overflow:hidden;">
+      <div class="inspector-card-title" style="padding:12px 12px 8px;">${this.escapeHtml(this.currentEditPayload.summary || '修改建议')}</div>
+      <div class="inspector-card-body" id="inspectorDiffList" style="padding:0;">`;
+
+    const hunks = this.currentEditPayload.hunks;
+    if (typeof hunks === 'number') {
+      html += `<div style="padding:12px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容见主编辑器)</div>`;
+    } else {
+      const displayHunks = Array.isArray(hunks) ? hunks : [];
+      if (displayHunks.length === 0) {
+        html += `<div style="padding:12px;color:var(--fg-dim);font-size:12px;">无可用修改详情</div>`;
+      } else {
+        displayHunks.forEach((hunk, i) => {
+          const oldLines = Array.isArray(hunk.old_lines) ? hunk.old_lines : [];
+          const newLines = Array.isArray(hunk.new_lines) ? hunk.new_lines : [];
+          const filePath = hunk.file_path || this.currentDiffFile || 'unknown';
+          const startLine = hunk.start_line || 0;
+          html += `
+            <div class="inspector-diff-hunk" style="border-top:1px solid var(--border);padding:8px;">
+              <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;font-family:var(--font-mono);">${this.escapeHtml(filePath)}:${startLine}</div>
+              <div style="font-family:var(--font-mono);font-size:11px;background:var(--bg-subtle);border-radius:4px;padding:6px;overflow-x:auto;line-height:1.4;">
+                ${oldLines.slice(0, 5).map(l => `<div style="color:var(--fg-red);white-space:pre;">- ${this.escapeHtml(l)}</div>`).join('')}
+                ${oldLines.length > 5 ? '<div style="color:var(--fg-dim);font-size:9px;">...</div>' : ''}
+                ${newLines.slice(0, 5).map(l => `<div style="color:var(--fg-green);white-space:pre;">+ ${this.escapeHtml(l)}</div>`).join('')}
+                ${newLines.length > 5 ? '<div style="color:var(--fg-dim);font-size:9px;">...</div>' : ''}
+              </div>
+            </div>
+          `;
+        });
+      }
+    }
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+  },
+
+  renderDiffPreview() {
+    this.renderInspectorDiffPreview();
+  },
+
+  renderTraceInspector() {
+    const container = document.getElementById('inspectorTraceContent');
+    if (!container) return;
+
+    if (!this.traceEvents || this.traceEvents.length === 0) {
+      container.innerHTML = '<div class="inspector-empty-state"><span>任务执行后显示 Trace</span></div>';
+      return;
+    }
+
+    const recentEvents = this.traceEvents.slice(-15).reverse();
+    const colors = { Observe: 'var(--fg-green)', Retrieve: 'var(--fg-cyan)', Plan: 'var(--fg-red)', Act: 'var(--fg-magenta)', Reflect: 'var(--fg-magenta)', Store: 'var(--fg-dim)', Decide: 'var(--fg-cyan)', Other: 'var(--fg-dim)' };
+
+    container.innerHTML = `
+      <div class="inspector-card" style="padding:8px;">
+        <div class="inspector-card-title">最近执行步骤</div>
+        <div class="inspector-card-body" style="padding:0;">
+          ${recentEvents.map(ev => {
+            const color = colors[ev.step_type] || colors.Other;
+            const step = this.escapeHtml(ev.step || ev.step_type || 'Other');
+            const iteration = this.escapeHtml(String(ev.iteration ?? '-'));
+            const details = this.escapeHtml(ev.details || '');
+            return `
+              <div style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;font-size:11px;line-height:1.4;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                  <span style="font-weight:bold;color:${color};text-transform:uppercase;">${step}</span>
+                  <span style="color:var(--fg-dim);font-size:10px;">#${iteration}</span>
+                </div>
+                <div style="color:var(--fg-default);">${details}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
   },
 
   // ============================================================
@@ -497,13 +753,17 @@ window.app = {
   },
 
   setupFileTreeToolbar() {
-    const btns = document.querySelectorAll('.sidebar-view[data-view="explorer"] .sidebar-action-btn');
-    if (!btns.length) return;
-    // Order: new file, new folder, refresh, collapse all
-    btns[0]?.addEventListener('click', () => this.createNewFile());
-    btns[1]?.addEventListener('click', () => this.createNewFolder());
-    btns[2]?.addEventListener('click', () => this.loadFileTree());
-    btns[3]?.addEventListener('click', () => this.collapseAllFolders());
+    const newFileBtn = document.getElementById('newFileBtn');
+    if (newFileBtn) newFileBtn.addEventListener('click', () => this.createNewFile());
+
+    const explorerMoreBtn = document.getElementById('explorerMoreBtn');
+    if (explorerMoreBtn) {
+      explorerMoreBtn.addEventListener('click', (e) => this.showDropdownMenu(e, [
+        { label: '新建文件夹', action: () => this.createNewFolder() },
+        { label: '刷新', action: () => this.loadFileTree() },
+        { label: '全部折叠', action: () => this.collapseAllFolders() }
+      ]));
+    }
   },
 
   async createNewFile() {
@@ -641,8 +901,64 @@ window.app = {
   },
 
   // ============================================================
-  // Context Menu
+  // Context & Dropdown Menu
   // ============================================================
+  showDropdownMenu(event, items) {
+    this.hideContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.id = 'contextMenu';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+
+    menu.innerHTML = items.map((item, i) =>
+      `<div class="context-menu-item${item.danger ? ' danger' : ''}" data-index="${i}">${item.label}</div>`
+    ).join('');
+
+    menu.querySelectorAll('.context-menu-item').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        items[parseInt(el.dataset.index)].action();
+        this.hideContextMenu();
+      });
+    });
+
+    document.body.appendChild(menu);
+
+    const closeHandler = (e) => {
+      if (!menu.contains(e.target)) {
+        this.hideContextMenu();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  },
+
+  setupMoreMenus() {
+    const bindMoreBtn = (id, items) => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.addEventListener('click', (e) => this.showDropdownMenu(e, items));
+      }
+    };
+
+    bindMoreBtn('sessionMoreBtn', [
+      { label: '导出会话', action: () => this.exportAllCheckpoints() }
+    ]);
+
+    bindMoreBtn('traceMoreBtn', [
+      { label: '清空 Trace', action: () => this.clearTraceCards(), danger: true },
+      { label: '暂停/继续 Trace', action: () => this.toggleTracePause() }
+    ]);
+
+    bindMoreBtn('settingsMoreBtn', [
+      { label: '管理 Profile', action: () => { this.showSidebar('settings'); this.switchSettingsTab('general'); } },
+      { label: '模型设置', action: () => { this.showSidebar('settings'); this.switchSettingsTab('providers'); } },
+      { label: 'MCP 服务器', action: () => { this.showSidebar('settings'); this.switchSettingsTab('mcp'); } },
+      { label: '治理控制', action: () => { this.showSidebar('settings'); this.switchSettingsTab('governance'); } },
+      { label: '审计与资源', action: () => { this.showSidebar('settings'); this.switchSettingsTab('audit'); } }
+    ]);
+  },
   showContextMenu(event, node) {
     this.hideContextMenu();
     const menu = document.createElement('div');
@@ -1247,6 +1563,51 @@ window.app = {
     messages.scrollTop = messages.scrollHeight;
   },
 
+  addTaskStepsCard(steps = []) {
+    const messages = document.getElementById('aiChatMessages');
+    if (!messages) return;
+    const div = document.createElement('div');
+    div.className = 'chat-message ai agent-card task-steps-card';
+    div.style.borderLeft = '3px solid var(--accent-primary)';
+
+    div.innerHTML = `
+      <div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--fg-default);">任务执行进度</div>
+      <div class="task-steps-list">
+        ${steps.map((s, i) => `
+          <div style="display:flex;gap:8px;margin-bottom:6px;font-size:12px;">
+            <span style="color:var(--fg-dim);font-family:var(--font-mono);width:16px;">${i + 1}.</span>
+            <span style="color:${s.status === 'done' ? 'var(--fg-green)' : 'var(--fg-default)'};">${this.escapeHtml(s.label)}</span>
+            ${s.status === 'done' ? '<span style="color:var(--fg-green);">✓</span>' : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  },
+
+  addEditSummaryCard(summary = '', files = []) {
+    const messages = document.getElementById('aiChatMessages');
+    if (!messages) return;
+    const div = document.createElement('div');
+    div.className = 'chat-message ai agent-card edit-summary-card';
+    div.style.borderLeft = '3px solid var(--fg-magenta)';
+
+    div.innerHTML = `
+      <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:var(--fg-default);">修改摘要</div>
+      <div style="font-size:12px;color:var(--fg-dim);margin-bottom:8px;">${this.escapeHtml(summary)}</div>
+      <div class="edit-files-list">
+        ${files.map(f => `
+          <div style="font-size:11px;font-family:var(--font-mono);background:var(--bg-subtle);padding:2px 6px;border-radius:3px;margin-bottom:2px;display:inline-block;margin-right:4px;">
+            📄 ${this.escapeHtml(f)}
+          </div>
+        `).join('')}
+      </div>
+    `;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  },
+
   async saveFile() {
     this.showErrorToast('保存功能在当前布局中不可用');
   },
@@ -1563,10 +1924,6 @@ window.app = {
   },
 
   setupAgentTrace() {
-    const clearBtn = document.getElementById('clearTraceBtn');
-    const pauseBtn = document.getElementById('pauseTraceBtn');
-    if (clearBtn) clearBtn.addEventListener('click', () => this.clearTraceCards());
-    if (pauseBtn) pauseBtn.addEventListener('click', () => this.toggleTracePause(pauseBtn));
     this.startTraceSubscription();
   },
 
@@ -1585,6 +1942,7 @@ window.app = {
           this.traceEvents.push(event);
           if (this.traceEvents.length > 100) this.traceEvents.shift();
           if (this.sidebarView === 'agent-trace') this.renderTraceCards();
+          this.safeRenderTraceInspector();
           if (event.step_type === 'EditProposed') this.onEditProposed(event);
           if (event.thinking_content) {
             const activeThinking = document.querySelector('.chat-message.ai .thinking-block');
@@ -1647,15 +2005,18 @@ window.app = {
   },
 
   clearTraceCards() {
+    if (!confirm('确定要清空 Agent Trace 记录吗？')) return;
     this.traceEvents = [];
     this.renderTraceCards();
   },
 
   toggleTracePause(btn) {
     this.tracePaused = !this.tracePaused;
-    btn.innerHTML = this.tracePaused
-      ? '▶'
-      : '⏸';
+    const target = btn || document.getElementById('pauseTraceBtn');
+    if (target) {
+      target.innerHTML = this.tracePaused ? '▶' : '⏸';
+      target.title = this.tracePaused ? '继续' : '暂停';
+    }
   },
 
   addOutput(text, type = 'info') {
@@ -1886,19 +2247,23 @@ window.app = {
     if (this.chatContextFiles.includes(path)) return;
     this.chatContextFiles.push(path);
     this.renderChatContext();
+    this.safeRenderContextFiles();
   },
 
   removeChatContextFile(path) {
     this.chatContextFiles = this.chatContextFiles.filter(p => p !== path);
     this.renderChatContext();
+    this.safeRenderContextFiles();
   },
 
   clearChatContext() {
+    if (!confirm('确定要清空当前的 AI 上下文和对话吗？')) return;
     this.chatContextFiles = [];
     this.chatMessages = [];
     this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
     this.cumulativeStats = { promptTokens: 0, completionTokens: 0, requestCount: 0 };
     this.renderChatContext();
+    this.safeRenderContextFiles();
     const chatMsgContainer = document.getElementById('aiChatMessages');
     if (chatMsgContainer) chatMsgContainer.innerHTML = '';
     this.updateTokenDisplay();
@@ -2161,6 +2526,9 @@ window.app = {
     this.isProcessing = true;
     chatSendBtn.disabled = true;
     this.showStatusIndicator('working');
+    this.safeUpdateTaskDetails('处理中...');
+    this.safeRenderContextFiles();
+    this.safeRenderModelInfo();
 
     // Handle slash commands
     if (text.startsWith('/')) {
@@ -2172,6 +2540,7 @@ window.app = {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.safeUpdateTaskDetails('就绪');
         this.saveChatSessions();
         this.renderSessionList();
       }
@@ -2187,6 +2556,7 @@ window.app = {
       this.isProcessing = false;
       chatSendBtn.disabled = false;
       this.hideStatusIndicator();
+      this.safeUpdateTaskDetails('就绪');
       return;
     }
 
@@ -2220,6 +2590,7 @@ window.app = {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.safeUpdateTaskDetails('就绪');
         this.updateTokenDisplay();
         this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
@@ -2236,6 +2607,7 @@ window.app = {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
+        this.safeUpdateTaskDetails('就绪');
         this.updateTokenDisplay();
         this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
@@ -2800,6 +3172,7 @@ window.app = {
         <span class="operation-summary-text">${this.escapeHtml(summaryText)}</span>
         ${reason ? `<span class="operation-summary-reason">${this.escapeHtml(reason)}</span>` : ''}
         <span class="operation-summary-progress"></span>
+        <button class="operation-summary-diff-entry" title="在检查器中查看 Diff">Diff 预览</button>
         <button class="operation-summary-toggle" title="展开/折叠">▼</button>
       </div>
       <div class="operation-summary-details" data-lazy="true">
@@ -2812,9 +3185,14 @@ window.app = {
       </div>`;
 
     const toggle = bar.querySelector('.operation-summary-toggle');
+    const diffEntry = bar.querySelector('.operation-summary-diff-entry');
     toggle.addEventListener('click', () => this.toggleDetails(bar));
+    diffEntry.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openDiffPreview(this.currentDiffFile);
+    });
     bar.querySelector('.operation-summary-header').addEventListener('click', (e) => {
-      if (e.target !== toggle) this.toggleDetails(bar);
+      if (e.target !== toggle && e.target !== diffEntry) this.toggleDetails(bar);
     });
     return bar;
   },
@@ -2832,7 +3210,7 @@ window.app = {
       details.classList.add('visible');
       toggle.textContent = '▲';
       if (details.dataset.lazy === 'true') {
-        this.renderDiffPreview(details.querySelector('.operation-summary-diff-preview'), bar._summary);
+        this.renderOperationDiffPreview(details.querySelector('.operation-summary-diff-preview'), bar._summary);
         details.dataset.lazy = 'false';
       }
     }
@@ -2882,7 +3260,7 @@ window.app = {
 
   /// Render a virtual diff preview inside the operation summary bar (B-11/12).
   /// Limits output to 50 lines; excess hidden behind a "view full file" link.
-  renderDiffPreview(container, summary) {
+  renderOperationDiffPreview(container, summary) {
     if (!container || !summary) return;
     const edited = summary.files_edited || 0;
     const created = summary.files_created || 0;
@@ -3071,6 +3449,7 @@ window.app = {
       this.providerConfigs = custom || [];
       this.renderModelButton();
       this.renderProviderList();
+      this.safeRenderModelInfo();
     } catch (e) {
       console.error('loadProviders error:', e);
     }
@@ -3168,11 +3547,12 @@ window.app = {
     const displayName = cfg ? (cfg.name || cfg.model || id) : id;
     const statusModel = document.getElementById('statusModel');
     if (statusModel) statusModel.textContent = displayName;
+    this.safeRenderModelInfo();
     console.log(`Switched to model: ${displayName}`);
   },
 
   renderProviderList() {
-    const list = document.getElementById('providerList');
+    const list = document.getElementById('providerListTab');
     if (!list) return;
 
     const workspaceTag = this.currentWorkspace
@@ -3187,19 +3567,26 @@ window.app = {
     list.innerHTML = this.providerConfigs.map(cfg => `
       <div class="provider-item">
         <div class="provider-item-info">
-          <div class="provider-item-name">${cfg.name}</div>
-          <div class="provider-item-meta">${cfg.model} · ${cfg.baseUrl}</div>
+          <div class="provider-item-name">${this.escapeHtml(cfg.name || cfg.id)}</div>
+          <div class="provider-item-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.baseUrl || '')}</div>
         </div>
         <div class="provider-item-actions">
-          <button class="provider-item-btn" onclick="app.editProviderConfig('${cfg.id}')">编辑</button>
-          <button class="provider-item-btn delete" onclick="app.deleteProviderConfig('${cfg.id}')">删除</button>
+          <button class="provider-item-btn" data-provider-edit="${this.escapeHtml(cfg.id)}">编辑</button>
+          <button class="provider-item-btn delete" data-provider-delete="${this.escapeHtml(cfg.id)}">删除</button>
         </div>
       </div>
     `).join('') + `<div class="provider-source-hint">来源: ${workspaceTag}</div>`;
+
+    list.querySelectorAll('[data-provider-edit]').forEach(btn => {
+      btn.addEventListener('click', () => this.editProviderConfig(btn.dataset.providerEdit));
+    });
+    list.querySelectorAll('[data-provider-delete]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteProviderConfig(btn.dataset.providerDelete));
+    });
   },
 
   setupProviderSettings() {
-    const addBtn = document.getElementById('addProviderBtn');
+    const addBtn = document.getElementById('addProviderBtnTab');
     const cancelBtn = document.getElementById('cancelProvider');
     const saveBtn = document.getElementById('saveProvider');
     const closeBtn = document.getElementById('providerModalClose');
@@ -3214,8 +3601,8 @@ window.app = {
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveProviderConfig());
     if (closeBtn) closeBtn.addEventListener('click', () => this.closeProviderModal());
 
-    const exportBtn = document.getElementById('exportProviderBtn');
-    const importBtn = document.getElementById('importProviderBtn');
+    const exportBtn = document.getElementById('exportProviderBtnTab');
+    const importBtn = document.getElementById('importProviderBtnTab');
     if (exportBtn) exportBtn.addEventListener('click', () => this.openBackupModal('export'));
     if (importBtn) importBtn.addEventListener('click', () => this.openBackupModal('import'));
 
@@ -3491,13 +3878,13 @@ window.app = {
     const invoke = tauri.core?.invoke || tauri.invoke;
     try {
       const map = await invoke('get_agent_providers');
-      const list = document.getElementById('agentProviderList');
-      const select = document.getElementById('agentBindProvider');
+      const list = document.getElementById('agentProviderListTab');
+      const select = document.getElementById('agentBindProviderTab');
       if (!list) return;
       // Update provider dropdown
       let opts = '<option value="">-- 默认 --</option>';
       this.providerConfigs.forEach(c => {
-        opts += `<option value="${c.id}">${c.name}</option>`;
+        opts += `<option value="${this.escapeHtml(c.id)}">${this.escapeHtml(c.name || c.id)}</option>`;
       });
       if (select) select.innerHTML = opts;
       // Render bound list
@@ -3508,20 +3895,23 @@ window.app = {
       }
       list.innerHTML = entries.map(([agentId, providerId]) => {
         const cfg = this.providerConfigs.find(c => c.id === providerId);
-        const name = cfg ? cfg.name : providerId;
-        return `<div class="agent-provider-item"><span>${agentId}</span><span>→ ${name}</span><button onclick="app.unbindAgentProvider('${agentId}')">解绑</button></div>`;
+        const name = cfg ? (cfg.name || cfg.id) : providerId;
+        return `<div class="agent-provider-item"><span>${this.escapeHtml(agentId)}</span><span>→ ${this.escapeHtml(name)}</span><button data-agent-unbind="${this.escapeHtml(agentId)}">解绑</button></div>`;
       }).join('');
+      list.querySelectorAll('[data-agent-unbind]').forEach(btn => {
+        btn.addEventListener('click', () => this.unbindAgentProvider(btn.dataset.agentUnbind));
+      });
     } catch (e) {
       console.error('loadAgentProviders error:', e);
     }
   },
 
   setupAgentProvider() {
-    const bindBtn = document.getElementById('agentBindBtn');
+    const bindBtn = document.getElementById('agentBindBtnTab');
     if (bindBtn) {
       bindBtn.addEventListener('click', async () => {
-        const agentId = document.getElementById('agentBindId')?.value.trim();
-        const providerId = document.getElementById('agentBindProvider')?.value || null;
+        const agentId = document.getElementById('agentBindIdTab')?.value.trim();
+        const providerId = document.getElementById('agentBindProviderTab')?.value || null;
         if (!agentId) { this.showErrorToast('请输入 Agent ID'); return; }
         const tauri = window.__TAURI__;
         if (!tauri) return;
@@ -3529,7 +3919,7 @@ window.app = {
         try {
           await invoke('set_agent_provider', { agentId, providerId });
           await this.loadAgentProviders();
-          document.getElementById('agentBindId').value = '';
+          document.getElementById('agentBindIdTab').value = '';
         } catch (e) {
           this.showErrorToast('绑定失败: ' + (e.message || e));
         }
@@ -3557,15 +3947,15 @@ window.app = {
   // ============================================================
   setupMcpSettings() {
     this.loadMcpServers();
-    const connectBtn = document.getElementById('mcpConnectBtn');
+    const connectBtn = document.getElementById('mcpConnectBtnTab');
     if (connectBtn) {
       connectBtn.addEventListener('click', () => this.mcpConnectFromInput());
     }
   },
 
   async mcpConnectFromInput() {
-    const urlInput = document.getElementById('mcpServerUrl');
-    const transportSelect = document.getElementById('mcpTransport');
+    const urlInput = document.getElementById('mcpServerUrlTab');
+    const transportSelect = document.getElementById('mcpTransportTab');
     const serverUrl = urlInput?.value.trim();
     const transport = transportSelect?.value || 'stdio';
     if (!serverUrl) { this.showErrorToast('请输入 MCP 服务器命令'); return; }
@@ -3576,7 +3966,7 @@ window.app = {
       this.mcpServers.push({ url: serverUrl, transport, tools: result.tool_names || [] });
       this.saveMcpServers();
       this.renderMcpServers();
-      this.showErrorToast(`MCP 连接成功: ${result.tools || 0} 个工具`);
+      this.showErrorToast(`MCP 连接成功: ${result.tool_names?.length || 0} 个工具`);
       if (urlInput) urlInput.value = '';
     } catch (e) {
       this.showErrorToast('MCP 连接失败: ' + (e.message || e));
@@ -3608,7 +3998,8 @@ window.app = {
   },
 
   renderMcpServers() {
-    const list = document.getElementById('mcpServerList');
+    const list = document.getElementById('mcpServerListTab');
+    if (!list) return;
     if (!list) return;
     if (!this.mcpServers.length) {
       list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务器</div>';
@@ -3861,7 +4252,7 @@ window.app = {
     const invoke = tauri.core?.invoke || tauri.invoke;
     try {
       const logs = await invoke('get_audit_logs', { limit: 100, offset: 0 });
-      const tbody = document.getElementById('auditLogBody');
+      const tbody = document.getElementById('auditLogBodyTab');
       if (!tbody) return;
       if (!logs || !logs.length) {
         tbody.innerHTML = '<tr><td colspan="4" class="audit-empty">暂无记录</td></tr>';
@@ -3878,30 +4269,32 @@ window.app = {
   },
 
   setupAuditLog() {
-    const refreshBtn = document.getElementById('refreshAuditBtn');
+    const refreshBtn = document.getElementById('refreshAuditBtnTab');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.loadAuditLogs());
     }
   },
 
   setupGovernance() {
-    const pauseBtn = document.getElementById('pauseLoopBtn');
-    const resumeBtn = document.getElementById('resumeLoopBtn');
-    const levelSelect = document.getElementById('approvalLevelSelect');
-    const injectBtn = document.getElementById('injectMemoryBtn');
-    const updateBtn = document.getElementById('updatePlanBtn');
+    const pauseBtn = document.getElementById('pauseLoopBtnTab');
+    const resumeBtn = document.getElementById('resumeLoopBtnTab');
+    const levelSelect = document.getElementById('approvalLevelSelectTab');
+    const injectBtn = document.getElementById('injectMemoryBtnTab');
+    const updateBtn = document.getElementById('updatePlanBtnTab');
     if (pauseBtn) pauseBtn.addEventListener('click', () => this.invokeGovernance('pause_loop'));
     if (resumeBtn) resumeBtn.addEventListener('click', () => this.invokeGovernance('resume_loop'));
     if (levelSelect) levelSelect.addEventListener('change', (e) => this.invokeGovernance('set_approval_level', { level: e.target.value }));
     if (injectBtn) injectBtn.addEventListener('click', () => {
-      const key = document.getElementById('injectMemoryKey').value.trim();
-      const value = document.getElementById('injectMemoryValue').value.trim();
+      const key = document.getElementById('injectMemoryKeyTab').value.trim();
+      const value = document.getElementById('injectMemoryValueTab').value.trim();
       if (!key || !value) { this.showErrorToast('请输入 key 和 value'); return; }
+      if (!confirm('确定要手动注入内存状态吗？')) return;
       this.invokeGovernance('inject_memory', { key, value });
     });
     if (updateBtn) updateBtn.addEventListener('click', () => {
-      const plan = document.getElementById('updatePlanInput').value.trim();
+      const plan = document.getElementById('updatePlanInputTab').value.trim();
       if (!plan) { this.showErrorToast('请输入 plan 描述'); return; }
+      if (!confirm('确定要手动修改执行 Plan 吗？')) return;
       this.invokeGovernance('update_plan', { plan });
     });
   },
@@ -3918,15 +4311,13 @@ window.app = {
   },
 
   setupSessionBrowser() {
-    const refreshBtn = document.getElementById('refreshCheckpointsBtn');
-    const exportAllBtn = document.getElementById('exportAllBtn');
+    const refreshBtn = document.getElementById('refreshCheckpointsBtnTab');
     if (refreshBtn) refreshBtn.addEventListener('click', () => this.loadCheckpoints());
-    if (exportAllBtn) exportAllBtn.addEventListener('click', () => this.exportAllCheckpoints());
     this.loadCheckpoints();
   },
 
   async loadCheckpoints() {
-    const list = document.getElementById('checkpointList');
+    const list = document.getElementById('checkpointListTab');
     if (!list) return;
     const tauri = window.__TAURI__;
     if (!tauri) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
@@ -3986,21 +4377,6 @@ window.app = {
   setupResourceDashboard() {
     this.updateMetrics();
     this.metricsInterval = setInterval(() => this.updateMetrics(), 3000);
-  },
-
-  async updateMetrics() {
-    const tauri = window.__TAURI__;
-    if (!tauri) {
-      document.getElementById('metricIteration').textContent = 'N/A';
-      return;
-    }
-    try {
-      const m = await tauri.core.invoke('get_resource_metrics');
-      document.getElementById('metricIteration').textContent = m.iteration_count != null ? m.iteration_count : 'N/A';
-      document.getElementById('metricBlackboard').textContent = m.blackboard_size != null ? m.blackboard_size : 'N/A';
-      document.getElementById('metricFailureRate').textContent = m.failure_rate_percent != null ? m.failure_rate_percent.toFixed(1) + '%' : 'N/A';
-      document.getElementById('metricLatency').textContent = m.callback_latency_ms != null ? m.callback_latency_ms + 'ms' : 'N/A';
-    } catch (e) {}
   },
 
   showErrorToast(message) {
@@ -4246,7 +4622,9 @@ window.app = {
     try {
       const edit = JSON.parse(event.edit_payload);
       this.currentEditPayload = edit;
+      this.currentDiffFile = edit.hunks && edit.hunks.length > 0 ? edit.hunks[0].file_path : null;
       this.showEditPanel(edit);
+      this.openDiffPreview(this.currentDiffFile);
     } catch (e) {
       console.error('Failed to parse edit payload:', e);
     }
@@ -4293,6 +4671,7 @@ window.app = {
     const panel = document.getElementById('inlineEditPanel');
     if (panel) panel.style.display = 'none';
     this.currentEditPayload = null;
+    this.renderEditSummary();
   },
 
   async acceptAllEdits() {
@@ -4313,6 +4692,8 @@ window.app = {
         new_string: (hunk.new_lines || []).join('\n'),
       };
     });
+    const confirmed = confirm(`确定要应用 ${edits.length} 个选中的修改片段吗？`);
+    if (!confirmed) return;
     try {
       await invoke('apply_edits', { edits });
       this.showErrorToast('修改已应用');
@@ -4503,21 +4884,21 @@ window.app = {
 
   async updateMetrics() {
     const tauri = window.__TAURI__;
+    const setMetric = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
     if (!tauri) {
-      document.getElementById('metricIteration').textContent = 'N/A';
+      setMetric('metricIterationTab', 'N/A');
+      setMetric('metricBlackboardTab', 'N/A');
+      setMetric('metricEditCountTab', 'N/A');
       return;
     }
     try {
       const m = await tauri.core.invoke('get_resource_metrics');
-      document.getElementById('metricIteration').textContent = m.iteration_count != null ? m.iteration_count : 'N/A';
-      document.getElementById('metricBlackboard').textContent = m.blackboard_size != null ? m.blackboard_size : 'N/A';
-      document.getElementById('metricFailureRate').textContent = m.failure_rate_percent != null ? m.failure_rate_percent.toFixed(1) + '%' : 'N/A';
-      document.getElementById('metricLatency').textContent = m.callback_latency_ms != null ? m.callback_latency_ms + 'ms' : 'N/A';
-      // Phase 4 Day 5: Edit metrics
-      const editCount = document.getElementById('metricEditCount');
-      if (editCount) editCount.textContent = m.edit_count != null ? m.edit_count : '0';
-      const appliedCount = document.getElementById('metricAppliedCount');
-      if (appliedCount) appliedCount.textContent = m.applied_count != null ? m.applied_count : '0';
+      setMetric('metricIterationTab', m.iteration_count != null ? m.iteration_count : 'N/A');
+      setMetric('metricBlackboardTab', m.blackboard_size != null ? m.blackboard_size : 'N/A');
+      setMetric('metricEditCountTab', m.edit_count != null ? m.edit_count : '0');
     } catch (e) {}
   },
 

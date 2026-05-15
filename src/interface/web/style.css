@@ -2760,6 +2760,22 @@ textarea:disabled {
   color: var(--fg-default);
 }
 
+.operation-summary-diff-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--fg-default);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.operation-summary-diff-entry:hover {
+  border-color: var(--fg-cyan);
+  color: var(--fg-cyan);
+}
+
 .operation-summary-toggle {
   background: transparent;
   border: none;

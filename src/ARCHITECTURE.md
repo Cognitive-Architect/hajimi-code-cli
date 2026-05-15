@@ -1,9 +1,9 @@
-﻿# HAJIMI V3 架构文档
+# HAJIMI V3 架构文档
 
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
-> **当前状态**: ✅ Agent Core 266测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复） <!-- D4-AUDIT-2026-04-28: metrics from real commands -->  
+> **当前状态**: ✅ Agent Core 266测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
 > **最后更新**: 2026-04-30
 
 ---
@@ -141,6 +141,31 @@
 | `mcp-server/` | MCP服务器 | **15工具真实RPC** ⭐ | ✅ 稳定 |
 | `web/` | Web界面 | 纯 HTML/CSS/JS, Tauri v2 前端 | ✅ 稳定 |
 | `desktop/` | 桌面后端 | Tauri v2 Rust 后端，38+工具注册 | ✅ 稳定 |
+
+---
+
+### Phase 5 UI Interaction Core 架构收口（2026-05-15）
+
+Phase 5 UI Interaction Core Remediation 已完成并通过 Day 10 QA handoff。该阶段只修改 Interface 层，保持 Rust 后端、Agent Core、Tool System 与 MCP RPC 边界不变。
+
+**交付后的界面结构**:
+- Chat-first 主工作区：Agent Chat / task feed 是默认第一视角，文件、diff、trace、evidence 等上下文下沉到 Right Inspector。
+- 7 区域布局：Window Top Bar、Activity Bar、Main Workspace、Right Inspector、Composer、Status Bar、Settings。
+- Right Inspector：承载 Task Details、Diff Preview、Agent Trace、Evidence panels，避免主区被辅助信息打散。
+- Settings Integration：Providers、Agent Provider Binding、MCP、Governance、Audit logs、Resource Metrics、Session Browser 统一归入 Settings，减少 Activity Bar 噪声。
+- Advanced Agent Cards：`Task Steps` 与 `Edit Summary` 已有前端结构化渲染入口，等待后端真实流式数据继续接入。
+
+**架构约束**:
+- 前端仍为 vanilla HTML/CSS/JS；禁止在该阶段补引入 React/Vue/Vite/Webpack。
+- `src/interface/web/index.html`、`src/interface/web/app.js`、`src/interface/web/style.css` 继续作为 UI 合约核心文件。
+- 已移动 UI 节点必须同步维护 DOM ID 与 JS 事件绑定，遵守 Protected DOM Contract。
+- 已知债务集中记录在 `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md`。
+
+**Day 10 QA handoff 证据**:
+- `node --check src\interface\web\app.js`: PASS。
+- `cargo check --workspace`: PASS。
+- `cargo tauri dev`: PASS，Tauri dev build 启动 `target\debug\hajimi-desktop.exe`，webview 成功请求 `/`, `/style.css`, `/app.js`, `/logo.jpg`。
+- Day 10 Git 坐标：`v3.8.0-batch-1` / `f1d49e864d24d2ef4edff2b9896a2e225c875653`。
 
 ---
 
@@ -422,6 +447,7 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 | 源代码索引 | `src/INDEX.md` | 详细文件索引 |
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发指南 |
 | 技术文档 | `docs/debt/` | 技术约束与限制说明 |
+| 技术约束文档 | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` | UI交互核心重构期间无框架约束声明 |
 
 ---
 

@@ -1,10 +1,10 @@
-﻿# HAJIMI V3 源代码索引
+# HAJIMI V3 源代码索引
 
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)  
 > **最后更新**: 2026-04-30  
 > **代码总行数**: ~182,362行（.rs/.js/.ts/.html/.css，不含 .md 与依赖，实测2026-04-28）; 含文档（.md）总计 ~186,441行  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
-> **当前状态**: ✅ Agent Core 266测试通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Hajimi IDE v1 就绪 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
+> **当前状态**: ✅ Agent Core 266测试通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成；Hajimi IDE v1 就绪 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
 
 ---
 
@@ -609,7 +609,40 @@ interface/mcp-server/
 | **技术约束文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
 | **历史约束记录** | `docs/debt/agent-core-debt-history.md` |
 | **活跃约束声明** | `docs/debt/DEBT-ACTIVE-DECLARATION.md` |
+| **UI交互约束声明** | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` |
 
+
+---
+
+## 🧭 Phase 5 UI Interaction Core 交付索引
+
+**状态**: ✅ Day 10 QA handoff 完成，复审 A 级 / Go。
+
+**正式入口文件**:
+
+| 文件 | 职责 | Phase 5 交付状态 |
+|:---|:---|:---|
+| `src/interface/web/index.html` | Tauri Web UI DOM 合约；7 区域布局；Settings panels；Right Inspector panels | Chat-first layout、Settings Integration、Inspector panels 已落地 |
+| `src/interface/web/app.js` | 前端状态、事件绑定、Command Palette、Agent cards、Inspector data binding、diff/trace/evidence rendering | Day 1-10 UI 交互核心已接入，保持 vanilla JS |
+| `src/interface/web/style.css` | 设计 tokens、布局、cards、menus、Settings、Inspector、Evidence panels 样式 | Phase 5 视觉系统与组件状态已收口 |
+| `src/interface/desktop/src/main.rs` | Tauri command / event bridge；web 前端调用后端能力的入口 | Phase 5 未改变后端边界 |
+
+**已开发完成的 UI 能力**:
+- Chat-first 信息架构：Agent Chat / task feed 作为主工作区。
+- 7 区域骨架：Window Top Bar、Activity Bar、Main Workspace、Right Inspector、Composer、Status Bar、Settings。
+- Right Inspector：Task Details、Diff Preview、Agent Trace、Evidence panels。
+- Design Tokens CSS：深浅/高对比主题变量与组件状态。
+- Basic Agent Cards：Agent run、tool call、approval、result、error 等基础卡片结构。
+- More Menu + Command Palette：被迁移动作通过菜单和命令入口恢复可达。
+- Inspector Data Binding v1：选中任务、上下文文件、trace 状态与 inspector 同步。
+- Diff / Trace / Evidence panels：accept/reject/selective diff 预览、trace/evidence 展示与清理确认。
+- Settings Integration：Providers、Agent Provider Binding、MCP、Governance、Audit Logs、Resource Metrics、Session Browser 统一归入 Settings。
+- QA Handoff：`node --check`、`cargo check --workspace`、`cargo tauri dev` smoke、Git 坐标与债务文档已归档。
+
+**后续接手注意事项**:
+- 新 UI 功能优先维护 `index.html` / `app.js` / `style.css` 的 DOM ID 与事件绑定同步。
+- `Task Steps` 和 `Edit Summary` 前端结构已存在；下一步应接真实后端流式数据，不要写静态成功态。
+- 不要把 `docs/receipts/` 当作唯一交接入口；正式开发背景以本索引、`src/ARCHITECTURE.md` 与 `docs/debt/` 为准。
 
 ---
 

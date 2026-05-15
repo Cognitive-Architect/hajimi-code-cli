@@ -31,8 +31,7 @@
       <div class="activity-bar-top">
         <div class="activity-item active" data-view="chat-sessions" title="聊天">💬</div>
         <div class="activity-item" data-view="explorer" title="文件">📁</div>
-        <div class="activity-item" data-view="models" title="模型">🧠</div>
-        <div class="activity-item" data-view="system" title="系统">🔧</div>
+        <!-- Models and System moved to Settings -->
       </div>
       <div class="activity-bar-bottom">
         <div class="activity-item" data-view="settings" title="设置">⚙️</div>
@@ -48,6 +47,7 @@
             <span class="sidebar-title">会话</span>
             <div class="sidebar-actions">
               <button class="sidebar-action-btn" id="newSessionBtn" title="新会话">+</button>
+              <button class="sidebar-action-btn more-btn" id="sessionMoreBtn" title="更多">...</button>
             </div>
           </div>
           <div class="session-list" id="sessionList">
@@ -63,222 +63,199 @@
           <div class="sidebar-header">
             <span class="sidebar-title">文件</span>
             <div class="sidebar-actions">
-              <button class="sidebar-action-btn" title="新建文件">+</button>
-              <button class="sidebar-action-btn" title="新建文件夹">📁+</button>
-              <button class="sidebar-action-btn" title="刷新">↻</button>
-              <button class="sidebar-action-btn" title="全部折叠">⇱</button>
+              <button class="sidebar-action-btn" id="newFileBtn" title="新建文件">+</button>
+              <button class="sidebar-action-btn more-btn" id="explorerMoreBtn" title="更多">...</button>
             </div>
           </div>
           <div class="file-tree" id="fileTree"></div>
         </div>
 
-        <!-- 2.3 Agent Trace -->
-        <div class="sidebar-panel" data-panel="agent-trace" id="tracePanelSidebar">
-          <div class="sidebar-header">
-            <span class="sidebar-title">Agent Trace</span>
-            <div class="sidebar-actions">
-              <button class="sidebar-action-btn" id="clearTraceBtn" title="清空">🗑</button>
-              <button class="sidebar-action-btn" id="pauseTraceBtn" title="暂停">⏸</button>
-            </div>
-          </div>
-          <div class="trace-tabs" style="display:flex;border-bottom:1px solid var(--border);font-size:12px;">
-            <div class="trace-tab active" data-tab="trace" style="padding:6px 12px;cursor:pointer;">Trace</div>
-            <div class="trace-tab" data-tab="edit-history" style="padding:6px 12px;cursor:pointer;">Edit History</div>
-          </div>
-          <div class="trace-panel" id="tracePanel" style="flex:1;overflow-y:auto;padding:8px;font-size:12px;">
-            <div class="trace-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无思考过程</div>
-          </div>
-          <div class="edit-history-panel" id="editHistoryPanel" style="display:none;flex:1;overflow-y:auto;padding:8px;font-size:12px;">
-            <div class="edit-history-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无编辑历史</div>
-          </div>
-          <div id="sessionReplayBar" style="display:none;padding:6px 8px;border-top:1px solid var(--border);font-size:11px;align-items:center;gap:8px;">
-            <span style="color:var(--fg-dim);">Replay</span>
-            <button id="replayPrevBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">← Prev</button>
-            <button id="replayNextBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">Next →</button>
-            <button id="replayCloseBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">Close</button>
-            <span id="replayStatus" style="color:var(--fg-dim);margin-left:auto;"></span>
-          </div>
-        </div>
+        <!-- 2.3 Removed redundant Agent Trace panel (now in Right Inspector) -->
 
-        <!-- Models Panel -->
-        <div class="sidebar-panel" data-panel="models" id="modelsPanel">
-          <div class="sidebar-header">
-            <span class="sidebar-title">模型</span>
-          </div>
-          <div class="settings-list">
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <span>模型配置</span>
-                <div class="settings-section-actions">
-                  <button class="settings-add-btn btn-secondary" id="exportProviderBtn">导出</button>
-                  <button class="settings-add-btn btn-secondary" id="importProviderBtn">导入</button>
-                  <button class="settings-add-btn btn-primary" id="addProviderBtn">+ 添加</button>
-                </div>
-              </div>
-              <div class="provider-list" id="providerList"></div>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <span>Agent Provider 绑定</span>
-              </div>
-              <div class="agent-provider-panel" id="agentProviderPanel">
-                <div class="agent-provider-row">
-                  <input type="text" id="agentBindId" placeholder="agent ID">
-                  <select id="agentBindProvider">
-                    <option value="">-- 默认 --</option>
-                  </select>
-                  <button class="settings-add-btn" id="agentBindBtn">绑定</button>
-                </div>
-                <div class="agent-provider-list" id="agentProviderList"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- System Panel -->
-        <div class="sidebar-panel" data-panel="system" id="systemPanel">
-          <div class="sidebar-header">
-            <span class="sidebar-title">系统</span>
-          </div>
-          <div class="settings-list">
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <span>MCP 服务器</span>
-                <button class="settings-add-btn" id="mcpConnectBtn">连接测试</button>
-              </div>
-              <div class="mcp-panel" id="mcpPanel">
-                <div class="mcp-row">
-                  <input type="text" id="mcpServerUrl" placeholder="命令路径 (如: npx @modelcontextprotocol/server-filesystem /path)">
-                  <select id="mcpTransport">
-                    <option value="stdio">stdio</option>
-                  </select>
-                </div>
-                <div class="mcp-server-list" id="mcpServerList"></div>
-              </div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-card-title">治理控制</div>
-              <div class="settings-card-row">
-                <span class="settings-card-label">状态</span>
-                <span id="governanceStatus" class="settings-card-value status-green">运行中</span>
-              </div>
-              <div class="settings-card-actions">
-                <button class="settings-card-btn secondary" id="pauseLoopBtn">暂停</button>
-                <button class="settings-card-btn secondary" id="resumeLoopBtn">继续</button>
-              </div>
-              <div class="settings-card-field">
-                <label>审批级别</label>
-                <select id="approvalLevelSelect">
-                  <option value="Auto">Auto</option>
-                  <option value="Advisory">Advisory</option>
-                  <option value="Required">Required</option>
-                  <option value="Critical">Critical</option>
-                  <option value="Override">Override</option>
-                </select>
-              </div>
-              <div class="settings-card-field">
-                <label>注入记忆</label>
-                <div class="settings-card-input-group">
-                  <input type="text" id="injectMemoryKey" placeholder="key">
-                  <input type="text" id="injectMemoryValue" placeholder="value">
-                  <button class="settings-card-btn btn-primary" id="injectMemoryBtn">注入</button>
-                </div>
-              </div>
-              <div class="settings-card-field">
-                <label>修改 Plan</label>
-                <div class="settings-card-input-group">
-                  <input type="text" id="updatePlanInput" placeholder="新 plan 描述">
-                  <button class="settings-card-btn btn-secondary" id="updatePlanBtn">更新</button>
-                </div>
-              </div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-card-title">会话浏览器</div>
-              <div class="settings-card-actions">
-                <button class="settings-card-btn btn-secondary" id="refreshCheckpointsBtn">刷新</button>
-                <button class="settings-card-btn btn-primary" id="exportAllBtn">全部导出</button>
-              </div>
-              <div class="checkpoint-list" id="checkpointList">
-                <div class="checkpoint-empty">暂无检查点</div>
-              </div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-card-title">资源监控</div>
-              <div class="metrics-grid">
-                <div class="metric-card">
-                  <div class="metric-label">迭代</div>
-                  <div id="metricIteration" class="metric-value green">0</div>
-                </div>
-                <div class="metric-card">
-                  <div class="metric-label">Blackboard</div>
-                  <div id="metricBlackboard" class="metric-value cyan">0</div>
-                </div>
-                <div class="metric-card">
-                  <div class="metric-label">失败率</div>
-                  <div id="metricFailureRate" class="metric-value red">0%</div>
-                </div>
-                <div class="metric-card">
-                  <div class="metric-label">延迟</div>
-                  <div id="metricLatency" class="metric-value dim">0ms</div>
-                </div>
-                <div class="metric-card">
-                  <div class="metric-label">Edits</div>
-                  <div id="metricEditCount" class="metric-value magenta">0</div>
-                </div>
-                <div class="metric-card">
-                  <div class="metric-label">Applied</div>
-                  <div id="metricAppliedCount" class="metric-value green">0</div>
-                </div>
-              </div>
-              <div id="alertBanner" class="alert-banner" style="display:none;"></div>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <span>审计日志</span>
-                <button class="settings-add-btn" id="refreshAuditBtn">刷新</button>
-              </div>
-              <div class="audit-log-panel" id="auditLogPanel">
-                <div class="audit-log-table-wrap">
-                  <table class="audit-log-table" id="auditLogTable">
-                    <thead><tr><th>Provider</th><th>模型</th><th>时间</th><th>状态</th></tr></thead>
-                    <tbody id="auditLogBody"><tr><td colspan="4" class="audit-empty">点击刷新查看</td></tr></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
         <!-- Settings Panel -->
         <div class="sidebar-panel" data-panel="settings" id="settingsPanel">
           <div class="sidebar-header">
             <span class="sidebar-title">设置</span>
+            <div class="sidebar-actions">
+              <button class="sidebar-action-btn more-btn" id="settingsMoreBtn" title="更多">...</button>
+            </div>
           </div>
-          <div class="settings-list">
-            <div class="settings-item">
-              <label>当前 Profile</label>
-              <div class="profile-select-row">
-                <select id="profileSelect">
-                  <option value="">default</option>
-                </select>
-                <button class="settings-add-btn icon-btn" id="createProfileBtn" title="新建 Profile">+</button>
-                <button class="settings-add-btn danger-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
+          <div class="settings-tabs" id="settingsTabs" style="display:flex;border-bottom:1px solid var(--border);font-size:12px;overflow-x:auto;">
+            <div class="settings-tab active" data-tab="general" style="padding:6px 10px;cursor:pointer;white-space:nowrap;">通用</div>
+            <div class="settings-tab" data-tab="providers" style="padding:6px 10px;cursor:pointer;white-space:nowrap;">模型</div>
+            <div class="settings-tab" data-tab="mcp" style="padding:6px 10px;cursor:pointer;white-space:nowrap;">MCP</div>
+            <div class="settings-tab" data-tab="governance" style="padding:6px 10px;cursor:pointer;white-space:nowrap;">治理</div>
+            <div class="settings-tab" data-tab="audit" style="padding:6px 10px;cursor:pointer;white-space:nowrap;">审计</div>
+          </div>
+          <div class="settings-tab-content" style="flex:1;overflow-y:auto;">
+            <!-- General Settings -->
+            <div class="settings-tab-panel active" data-settings-panel="general">
+              <div class="settings-list">
+                <div class="settings-item">
+                  <label>当前 Profile</label>
+                  <div class="profile-select-row">
+                    <select id="profileSelect">
+                      <option value="">default</option>
+                    </select>
+                    <button class="settings-add-btn icon-btn" id="createProfileBtn" title="新建 Profile">+</button>
+                    <button class="settings-add-btn danger-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
+                  </div>
+                </div>
+                <div class="settings-item">
+                  <label>主题</label>
+                  <select id="settingTheme">
+                    <option value="dark">暗色</option>
+                    <option value="light">亮色</option>
+                    <option value="system">跟随系统</option>
+                  </select>
+                </div>
+                <div class="settings-item">
+                  <label>字体大小</label>
+                  <input type="number" id="settingFontSize" value="14" min="8" max="32">
+                </div>
+                <div class="settings-item">
+                  <label>自动换行</label>
+                  <input type="checkbox" id="settingWordWrap" checked>
+                </div>
               </div>
             </div>
-            <div class="settings-item">
-              <label>主题</label>
-              <select id="settingTheme">
-                <option value="dark">暗色</option>
-                <option value="light">亮色</option>
-                <option value="system">跟随系统</option>
-              </select>
+            <!-- Providers Settings -->
+            <div class="settings-tab-panel" data-settings-panel="providers" style="display:none;">
+              <div class="settings-list">
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span>模型配置</span>
+                    <div class="settings-section-actions">
+                      <button class="settings-add-btn btn-secondary" id="exportProviderBtnTab">导出</button>
+                      <button class="settings-add-btn btn-secondary" id="importProviderBtnTab">导入</button>
+                      <button class="settings-add-btn btn-primary" id="addProviderBtnTab">+ 添加</button>
+                    </div>
+                  </div>
+                  <div class="provider-list" id="providerListTab"></div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span>Agent Provider 绑定</span>
+                  </div>
+                  <div class="agent-provider-panel">
+                    <div class="agent-provider-row">
+                      <input type="text" id="agentBindIdTab" placeholder="agent ID">
+                      <select id="agentBindProviderTab">
+                        <option value="">-- 默认 --</option>
+                      </select>
+                      <button class="settings-add-btn" id="agentBindBtnTab">绑定</button>
+                    </div>
+                    <div class="agent-provider-list" id="agentProviderListTab"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="settings-item">
-              <label>字体大小</label>
-              <input type="number" id="settingFontSize" value="14" min="8" max="32">
+            <!-- MCP Settings -->
+            <div class="settings-tab-panel" data-settings-panel="mcp" style="display:none;">
+              <div class="settings-list">
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span>MCP 服务器</span>
+                  </div>
+                  <div class="mcp-panel">
+                    <div class="mcp-row">
+                      <input type="text" id="mcpServerUrlTab" placeholder="命令路径 (如: npx @modelcontextprotocol/server-filesystem /path)">
+                      <select id="mcpTransportTab">
+                        <option value="stdio">stdio</option>
+                      </select>
+                      <button class="settings-add-btn" id="mcpConnectBtnTab">连接</button>
+                    </div>
+                    <div class="mcp-server-list" id="mcpServerListTab"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="settings-item">
-              <label>自动换行</label>
-              <input type="checkbox" id="settingWordWrap" checked>
+            <!-- Governance Settings -->
+            <div class="settings-tab-panel" data-settings-panel="governance" style="display:none;">
+              <div class="settings-list">
+                <div class="settings-card">
+                  <div class="settings-card-title">治理控制</div>
+                  <div class="settings-card-row">
+                    <span class="settings-card-label">状态</span>
+                    <span id="governanceStatusTab" class="settings-card-value status-green">运行中</span>
+                  </div>
+                  <div class="settings-card-actions">
+                    <button class="settings-card-btn secondary" id="pauseLoopBtnTab">暂停</button>
+                    <button class="settings-card-btn secondary" id="resumeLoopBtnTab">继续</button>
+                  </div>
+                  <div class="settings-card-field">
+                    <label>审批级别</label>
+                    <select id="approvalLevelSelectTab">
+                      <option value="Auto">Auto</option>
+                      <option value="Advisory">Advisory</option>
+                      <option value="Required">Required</option>
+                      <option value="Critical">Critical</option>
+                      <option value="Override">Override</option>
+                    </select>
+                  </div>
+                  <div class="settings-card-field">
+                    <label>注入记忆</label>
+                    <div class="settings-card-input-group">
+                      <input type="text" id="injectMemoryKeyTab" placeholder="key">
+                      <input type="text" id="injectMemoryValueTab" placeholder="value">
+                      <button class="settings-card-btn btn-primary" id="injectMemoryBtnTab">注入</button>
+                    </div>
+                  </div>
+                  <div class="settings-card-field">
+                    <label>修改 Plan</label>
+                    <div class="settings-card-input-group">
+                      <input type="text" id="updatePlanInputTab" placeholder="新 plan 描述">
+                      <button class="settings-card-btn btn-secondary" id="updatePlanBtnTab">更新</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+            <!-- Audit & Metrics Settings -->
+            <div class="settings-tab-panel" data-settings-panel="audit" style="display:none;">
+              <div class="settings-list">
+                <div class="settings-card">
+                  <div class="settings-card-title">资源监控</div>
+                  <div class="metrics-grid">
+                    <div class="metric-card">
+                      <div class="metric-label">迭代</div>
+                      <div id="metricIterationTab" class="metric-value green">0</div>
+                    </div>
+                    <div class="metric-card">
+                      <div class="metric-label">Blackboard</div>
+                      <div id="metricBlackboardTab" class="metric-value cyan">0</div>
+                    </div>
+                    <div class="metric-card">
+                      <div class="metric-label">Edits</div>
+                      <div id="metricEditCountTab" class="metric-value magenta">0</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-card">
+                  <div class="settings-card-title">会话浏览器</div>
+                  <div class="settings-card-actions">
+                    <button class="settings-card-btn btn-secondary" id="refreshCheckpointsBtnTab">刷新</button>
+                  </div>
+                  <div class="checkpoint-list" id="checkpointListTab"></div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-header">
+                    <span>审计日志</span>
+                  </div>
+                  <div class="audit-log-panel">
+                    <button class="settings-card-btn btn-secondary" id="refreshAuditBtnTab" style="margin-bottom:8px;">刷新审计</button>
+                    <div class="audit-log-table-wrap">
+                      <table class="audit-log-table">
+                        <thead><tr><th>Provider</th><th>模型</th><th>时间</th><th>状态</th></tr></thead>
+                        <tbody id="auditLogBodyTab"><tr><td colspan="4" class="audit-empty">点击刷新查看</td></tr></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>
@@ -380,6 +357,18 @@
             <div class="inspector-card-title">模型信息</div>
             <div class="inspector-card-body" id="inspectorModelInfo">
               <span style="color:var(--fg-dim);">未选择模型</span>
+            </div>
+          </div>
+          <div class="inspector-card">
+            <div class="inspector-card-title">Task Steps</div>
+            <div class="inspector-card-body" id="inspectorTaskSteps">
+              <span style="color:var(--fg-dim);">等待任务开始...</span>
+            </div>
+          </div>
+          <div class="inspector-card">
+            <div class="inspector-card-title">Edit Summary</div>
+            <div class="inspector-card-body" id="inspectorEditSummary">
+              <span style="color:var(--fg-dim);">无待处理修改</span>
             </div>
           </div>
         </div>
