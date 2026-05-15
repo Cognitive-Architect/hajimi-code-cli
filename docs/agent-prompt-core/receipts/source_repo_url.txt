@@ -1,4 +1,0 @@
-https://github.com/Cognitive-Architect/hajimi-code-cli
-observed_ref: v3.8.0-batch-1
-observed_date: 2026-05-10
-source_scope: docs-only prompt framework package; no source code edits performed.
