@@ -76,6 +76,7 @@ window.app = {
     this.setupGovernance();
     this.setupSessionBrowser();
     this.setupResourceDashboard();
+    this.setupInspector();
 
     // Build command list
     this.commands = [
@@ -141,6 +142,39 @@ window.app = {
       sidebar.style.width = '0px';
       sidebar.style.display = 'none';
     }
+  },
+
+  // ============================================================
+  // Right Inspector
+  // ============================================================
+  setupInspector() {
+    const tabs = document.querySelectorAll('.inspector-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabId = tab.dataset.inspectorTab;
+        this.showInspectorTab(tabId);
+      });
+    });
+
+    const closeBtn = document.getElementById('inspectorCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        const inspector = document.getElementById('rightInspector');
+        if (inspector) inspector.style.display = 'none';
+      });
+    }
+  },
+
+  showInspectorTab(tabId) {
+    // Update active tab styling
+    document.querySelectorAll('.inspector-tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.inspectorTab === tabId);
+    });
+
+    // Update panel visibility
+    document.querySelectorAll('.inspector-panel').forEach(el => {
+      el.classList.toggle('active', el.dataset.inspectorPanel === tabId);
+    });
   },
 
   // ============================================================
@@ -1121,7 +1155,7 @@ window.app = {
     const messages = document.getElementById('aiChatMessages');
     if (!messages) return;
     const div = document.createElement('div');
-    div.className = 'chat-message ai';
+    div.className = 'chat-message ai agent-card';
     const truncated = content.length > 3000 ? content.slice(0, 3000) + '\n...' : content;
     div.innerHTML = `
       <div class="file-preview-header" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:4px;font-size:12px;font-family:var(--font-mono);color:var(--fg-dim);">
@@ -1146,7 +1180,7 @@ window.app = {
     const messages = document.getElementById('aiChatMessages');
     if (!messages) return;
     const div = document.createElement('div');
-    div.className = 'chat-message ai diff-card';
+    div.className = 'chat-message ai agent-card diff-card';
     const label = filePath.split('/').pop();
     const cardId = 'diff-' + Date.now();
     div.id = cardId;
@@ -2523,8 +2557,8 @@ window.app = {
 
     const msgContainer = document.getElementById('aiChatMessages');
     const msgDiv = document.createElement('div');
-    msgDiv.className = 'chat-message ai';
-    msgDiv.innerHTML = '<div class="chat-message-avatar">H</div><div class="chat-message-body"></div>';
+    msgDiv.className = 'chat-message ai agent-card';
+    msgDiv.innerHTML = '<div class="chat-message-avatar">H</div><div class="chat-message-body message-card"></div>';
     const body = msgDiv.querySelector('.chat-message-body');
     msgContainer.appendChild(msgDiv);
     msgContainer.scrollTop = msgContainer.scrollHeight;
@@ -2637,9 +2671,9 @@ window.app = {
   addChatMessage(role, text) {
     const container = document.getElementById('aiChatMessages');
     const div = document.createElement('div');
-    div.className = `chat-message ${role}`;
+    div.className = `chat-message ${role}${role === 'ai' || role === 'assistant' ? ' agent-card' : ''}`;
     const avatar = role === 'user' ? 'You' : 'H';
-    div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body">${this.formatText(text)}</div>`;
+    div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body message-card">${this.formatText(text)}</div>`;
     container.appendChild(div);
     // Inject copy buttons on code blocks
     div.querySelectorAll('pre code').forEach(codeEl => {
@@ -2666,11 +2700,11 @@ window.app = {
     const id = 't-' + Date.now();
     const container = document.getElementById('aiChatMessages');
     const div = document.createElement('div');
-    div.className = 'chat-message ai';
+    div.className = 'chat-message ai agent-card';
     div.id = id;
     div.innerHTML = `
       <div class="chat-message-avatar">H</div>
-      <div class="chat-message-body">
+      <div class="chat-message-body message-card">
         <div class="thinking-indicator">
           <div class="thinking-dot"></div>
           <div class="thinking-dot"></div>
@@ -3909,8 +3943,8 @@ window.app = {
             <span style="color:var(--fg-dim);">${chk.timestamp || ''}</span>
           </div>
           <div style="display:flex;gap:4px;margin-top:4px;">
-            <button class="modal-btn secondary" style="font-size:11px;padding:2px 6px;" onclick="app.restoreCheckpoint('${chk.id}')">恢复</button>
-            <button class="modal-btn secondary" style="font-size:11px;padding:2px 6px;" onclick="app.exportCheckpoint('${chk.id}')">导出</button>
+            <button class="modal-btn secondary btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="app.restoreCheckpoint('${chk.id}')">恢复</button>
+            <button class="modal-btn secondary btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="app.exportCheckpoint('${chk.id}')">导出</button>
           </div>
         </div>
       `).join('');

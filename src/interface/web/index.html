@@ -9,6 +9,22 @@
   <link rel="icon" href="logo.jpg" type="image/jpeg">
 </head>
 <body>
+  <!-- 0. Window Top Bar (Day 2 新增) -->
+  <div class="window-top-bar" id="windowTopBar">
+    <div class="top-bar-left">
+      <img src="logo.jpg" alt="H" width="18" height="18" style="border-radius:3px;">
+      <span class="top-bar-project" id="topBarProject">hajimi-code-cli</span>
+      <span class="top-bar-branch" id="topBarBranch">main</span>
+    </div>
+    <div class="top-bar-center">
+      <button class="top-bar-search-btn" id="topBarSearchBtn" title="搜索 (Ctrl+K)">🔍 搜索...</button>
+    </div>
+    <div class="top-bar-right">
+      <button class="top-bar-icon-btn icon-btn" id="topBarNotifyBtn" title="通知">🔔</button>
+      <button class="top-bar-icon-btn icon-btn" id="topBarSettingsBtn" title="设置">⚙️</button>
+    </div>
+  </div>
+
   <div class="workspace chat-first" id="workspace">
     <!-- 1. 左侧 Activity Bar -->
     <aside class="activity-bar" id="activityBar">
@@ -77,14 +93,13 @@
           </div>
           <div id="sessionReplayBar" style="display:none;padding:6px 8px;border-top:1px solid var(--border);font-size:11px;align-items:center;gap:8px;">
             <span style="color:var(--fg-dim);">Replay</span>
-            <button id="replayPrevBtn" class="modal-btn secondary" style="font-size:10px;padding:2px 6px;">← Prev</button>
-            <button id="replayNextBtn" class="modal-btn secondary" style="font-size:10px;padding:2px 6px;">Next →</button>
-            <button id="replayCloseBtn" class="modal-btn secondary" style="font-size:10px;padding:2px 6px;">Close</button>
+            <button id="replayPrevBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">← Prev</button>
+            <button id="replayNextBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">Next →</button>
+            <button id="replayCloseBtn" class="modal-btn secondary btn-secondary" style="font-size:10px;padding:2px 6px;">Close</button>
             <span id="replayStatus" style="color:var(--fg-dim);margin-left:auto;"></span>
           </div>
         </div>
 
-        <!-- 2.7 设置（含 Provider / MCP / 审计日志 / Governance / Session Browser / Resource Dashboard） -->
         <!-- Models Panel -->
         <div class="sidebar-panel" data-panel="models" id="modelsPanel">
           <div class="sidebar-header">
@@ -95,9 +110,9 @@
               <div class="settings-section-header">
                 <span>模型配置</span>
                 <div class="settings-section-actions">
-                  <button class="settings-add-btn" id="exportProviderBtn">导出</button>
-                  <button class="settings-add-btn" id="importProviderBtn">导入</button>
-                  <button class="settings-add-btn" id="addProviderBtn">+ 添加</button>
+                  <button class="settings-add-btn btn-secondary" id="exportProviderBtn">导出</button>
+                  <button class="settings-add-btn btn-secondary" id="importProviderBtn">导入</button>
+                  <button class="settings-add-btn btn-primary" id="addProviderBtn">+ 添加</button>
                 </div>
               </div>
               <div class="provider-list" id="providerList"></div>
@@ -165,22 +180,22 @@
                 <div class="settings-card-input-group">
                   <input type="text" id="injectMemoryKey" placeholder="key">
                   <input type="text" id="injectMemoryValue" placeholder="value">
-                  <button class="settings-card-btn primary" id="injectMemoryBtn">注入</button>
+                  <button class="settings-card-btn btn-primary" id="injectMemoryBtn">注入</button>
                 </div>
               </div>
               <div class="settings-card-field">
                 <label>修改 Plan</label>
                 <div class="settings-card-input-group">
                   <input type="text" id="updatePlanInput" placeholder="新 plan 描述">
-                  <button class="settings-card-btn primary" id="updatePlanBtn">更新</button>
+                  <button class="settings-card-btn btn-secondary" id="updatePlanBtn">更新</button>
                 </div>
               </div>
             </div>
             <div class="settings-card">
               <div class="settings-card-title">会话浏览器</div>
               <div class="settings-card-actions">
-                <button class="settings-card-btn secondary" id="refreshCheckpointsBtn">刷新</button>
-                <button class="settings-card-btn primary" id="exportAllBtn">全部导出</button>
+                <button class="settings-card-btn btn-secondary" id="refreshCheckpointsBtn">刷新</button>
+                <button class="settings-card-btn btn-primary" id="exportAllBtn">全部导出</button>
               </div>
               <div class="checkpoint-list" id="checkpointList">
                 <div class="checkpoint-empty">暂无检查点</div>
@@ -244,8 +259,8 @@
                 <select id="profileSelect">
                   <option value="">default</option>
                 </select>
-                <button class="settings-add-btn" id="createProfileBtn" title="新建 Profile">+</button>
-                <button class="settings-add-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
+                <button class="settings-add-btn icon-btn" id="createProfileBtn" title="新建 Profile">+</button>
+                <button class="settings-add-btn danger-btn" id="deleteProfileBtn" title="删除 Profile">🗑</button>
               </div>
             </div>
             <div class="settings-item">
@@ -271,8 +286,8 @@
 
     <!-- 3. 主区域 + 底部 Footer 的列容器 -->
     <div class="main-column" id="mainColumn">
-      <!-- 3.1 主区域：全屏聊天消息流 -->
-      <main class="main-area" id="mainArea">
+      <!-- 3.1 主区域：Agent Workspace -->
+      <main class="main-area agent-workspace" id="mainArea">
       <!-- 聊天头部：Logo + 模型选择 + 新会话 -->
       <div class="chat-header" id="chatHeader">
         <div class="chat-header-left">
@@ -292,8 +307,8 @@
         </div>
         <div class="chat-context-list ai-chat-context-list" id="aiChatContextList"></div>
       </div>
-      <!-- 聊天消息流 -->
-      <div class="chat-container" id="chatContainer">
+      <!-- 聊天消息流 (Agent Feed) -->
+      <div class="chat-container agent-feed" id="chatContainer">
         <div class="chat-messages ai-chat-messages" id="aiChatMessages"></div>
       </div>
     </main>
@@ -314,8 +329,8 @@
           <button class="composer-send ai-chat-send-btn" id="aiChatSendBtn">➤</button>
         </div>
         <div class="composer-toolbar">
-          <button class="composer-tool-btn" id="addContextBtn" title="添加上下文文件">+</button>
-          <button class="composer-tool-btn" id="editModeBtn" title="编辑模式">✎</button>
+          <button class="composer-tool-btn icon-btn" id="addContextBtn" title="添加上下文文件">+</button>
+          <button class="composer-tool-btn icon-btn" id="editModeBtn" title="编辑模式">✎</button>
           <span class="composer-hint">Enter 发送 · Shift+Enter 换行 · @ 引用文件</span>
         </div>
       </div>
@@ -334,9 +349,57 @@
       </div>
     </footer>
     </div>
+
+    <!-- 5. Right Inspector (Day 2 新增骨架) -->
+    <aside class="right-inspector" id="rightInspector">
+      <div class="inspector-header">
+        <span class="inspector-title">检查器</span>
+        <button class="inspector-close-btn icon-btn" id="inspectorCloseBtn" title="关闭">×</button>
+      </div>
+      <div class="inspector-tabs" id="inspectorTabs">
+        <div class="inspector-tab active" data-inspector-tab="task-detail">任务详情</div>
+        <div class="inspector-tab" data-inspector-tab="diff-preview">Diff 预览</div>
+        <div class="inspector-tab" data-inspector-tab="agent-trace">Agent Trace</div>
+      </div>
+      <div class="inspector-content" id="inspectorContent">
+        <!-- Tab: 任务详情 (默认显示) -->
+        <div class="inspector-panel active" data-inspector-panel="task-detail" id="inspectorTaskDetail">
+          <div class="inspector-card">
+            <div class="inspector-card-title">任务状态</div>
+            <div class="inspector-card-body" id="inspectorTaskStatus">
+              <span style="color:var(--fg-dim);">就绪</span>
+            </div>
+          </div>
+          <div class="inspector-card">
+            <div class="inspector-card-title">上下文文件</div>
+            <div class="inspector-card-body" id="inspectorContextFiles">
+              <span style="color:var(--fg-dim);">暂无上下文文件</span>
+            </div>
+          </div>
+          <div class="inspector-card">
+            <div class="inspector-card-title">模型信息</div>
+            <div class="inspector-card-body" id="inspectorModelInfo">
+              <span style="color:var(--fg-dim);">未选择模型</span>
+            </div>
+          </div>
+        </div>
+        <!-- Tab: Diff 预览 -->
+        <div class="inspector-panel" data-inspector-panel="diff-preview" id="inspectorDiffContent">
+          <div class="inspector-empty-state">
+            <span>选择文件后显示 Diff</span>
+          </div>
+        </div>
+        <!-- Tab: Agent Trace -->
+        <div class="inspector-panel" data-inspector-panel="agent-trace" id="inspectorTraceContent">
+          <div class="inspector-empty-state">
+            <span>任务执行后显示 Trace</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
-  <!-- 5. 全局覆盖层 -->
+  <!-- 6. 全局覆盖层 -->
   <!-- 命令面板 -->
   <div class="command-palette hidden" id="commandPalette">
     <div class="command-palette-box">
@@ -359,7 +422,7 @@
         <div class="model-picker-empty">暂无配置模型，点击下方按钮添加。</div>
       </div>
       <div class="modal-footer">
-        <button class="modal-btn primary" id="modelPickerAddBtn">+ 添加新模型</button>
+        <button class="modal-btn primary btn-primary" id="modelPickerAddBtn">+ 添加新模型</button>
       </div>
     </div>
   </div>
@@ -417,9 +480,9 @@
         </div>
       </form>
       <div class="modal-footer">
-        <button class="modal-btn secondary" id="cancelProvider">取消</button>
-        <button class="modal-btn secondary" id="testProviderBtn">测试连接</button>
-        <button class="modal-btn primary" id="saveProvider">保存</button>
+        <button class="modal-btn secondary btn-secondary" id="cancelProvider">取消</button>
+        <button class="modal-btn secondary btn-secondary" id="testProviderBtn">测试连接</button>
+        <button class="modal-btn primary btn-primary" id="saveProvider">保存</button>
       </div>
     </div>
   </div>
@@ -445,8 +508,8 @@
         </div>
       </form>
       <div class="modal-footer">
-        <button class="modal-btn secondary" id="cancelBackup">取消</button>
-        <button class="modal-btn primary" id="confirmBackup">确认</button>
+        <button class="modal-btn secondary btn-secondary" id="cancelBackup">取消</button>
+        <button class="modal-btn primary btn-primary" id="confirmBackup">确认</button>
       </div>
     </div>
   </div>
