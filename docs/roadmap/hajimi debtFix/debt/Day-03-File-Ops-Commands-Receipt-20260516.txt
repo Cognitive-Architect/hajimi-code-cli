@@ -1,0 +1,145 @@
+# Day 03 修复与验证 Receipt
+
+**工单编号**: B-03/15
+**任务名称**: 文件操作专用 Tauri Commands + 前端接入
+**修改日期**: 2026-05-16
+**修改人**: Engineer
+
+---
+
+## 提交信息
+
+- Commit: `fix(interface/web): route file operations through dedicated tauri commands`
+- 分支: `v3.8.0-batch-1`
+- HEAD: `d697414f42584a0d0c9c85346a6a692e691c4dad` (before) → 新 commit 待生成
+- 变更文件:
+  - `src/interface/desktop/src/main.rs`
+  - `src/interface/web/app.js`
+  - `docs/roadmap/hajimi debtFix/debt/HAJIMI_DEBT_CURRENT_STATUS_2026-05-15.md`（状态同步）
+
+---
+
+## 本轮目标与实际结果
+
+- **目标**: 修复 `mkdir/mv/rm` 文件操作前后端错配（CS-HAJIMI-004）
+- **实际完成**:
+  1. 新增 `create_dir(path, app_handle)` Tauri command，使用 `PathIntent::NewDir`
+  2. 新增 `rename_path(old_path, new_path, app_handle)` Tauri command，源用 `AnyExisting`，目标用 `NewFile` 父目录校验
+  3. 新增 `delete_path(path, recursive: bool, app_handle)` Tauri command，使用 `AnyExisting`
+  4. 三个 command 注册到 `generate_handler![]`（main.rs:1954-1956）
+  5. 前端 `createNewFolder()` 切换到 `invoke('create_dir')`（app.js:795）
+  6. 前端 `renameFile()` 切换到 `invoke('rename_path')`（app.js:1028）
+  7. 前端 `deleteFile()` 切换到 `invoke('delete_path', {recursive: true})`（app.js:1045）
+- **未完成/不在范围**: ShellTool 白名单收紧属 Day 04
+
+---
+
+## 自动化质量检查报告
+
+### 1. Rust 编译
+```text
+cargo check -p hajimi-desktop
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.93s
+```
+✅ 通过
+
+### 2. Rust 格式
+```text
+cargo fmt -- --check
+(no output)
+```
+✅ 通过
+
+### 3. JavaScript 语法
+```text
+node --check src/interface/web/app.js
+(no output)
+```
+✅ 通过
+
+### 4. 旧调用移除验证
+```text
+rg -n "cmd: 'mkdir'|cmd: 'mv'|cmd: 'rm'" src/interface/web/app.js
+```
+输出：无命中
+✅ 通过（前端已移除旧 `run_command` 调用）
+
+### 5. 新 Command 注册验证
+```text
+rg -n "create_dir|rename_path|delete_path" src/interface/desktop/src/main.rs
+```
+输出（关键行）：
+- 286: `fn create_dir(...)`
+- 293: `fn rename_path(...)`
+- 303: `fn delete_path(...)`
+- 1954-1956: 已注册到 `generate_handler![]`
+- 268, 289, 303: 全部复用 `resolve_workspace_path`
+
+✅ 通过
+
+### 6. Shell 白名单未放大验证
+```text
+rg -n "\"mkdir\"|\"mv\"|\"rm\"" src/engine/tool-system/src/shell.rs
+```
+输出：无命中
+✅ 通过（白名单未加入 `mkdir/mv/rm`）
+
+---
+
+## 债务声明
+
+- **DEBT-TEST-B03-001**: 本日未完成实机 Tauri dev 验证（UI 流程 + symlink 拒绝）
+  - **原因**: 工单约束为"基础验证通过"，实机 Tauri dev 需 Day 04 后结合 shell 白名单收紧一起验收
+  - **补验日期**: 建议 Day 04 收卷前完成 Tauri dev 手动验收
+
+---
+
+## 风险与回滚点
+
+### 主要风险
+- 文件删除误操作（已由前端 `confirm()` 缓解）
+- rename 目标路径越界（已由 resolver `NewFile` intent 保护）
+
+### 回滚方式
+```bash
+git restore src/interface/desktop/src/main.rs src/interface/web/app.js
+```
+
+---
+
+## 债务状态迁移
+
+- `CS-HAJIMI-004`: `OPEN` → `VERIFY`
+- 迁移理由: 功能代码已修复，自动化验证通过；实机 UI 验收待 Day 04 补充
+
+---
+
+## 收卷格式
+
+```markdown
+## 工单 B-03/15 完成并提交
+
+### 提交信息
+- Commit: `fix(interface/web): route file operations through dedicated tauri commands`
+- 分支: `v3.8.0-batch-1`
+- 变更文件:
+  - `src/interface/desktop/src/main.rs`
+  - `src/interface/web/app.js`
+
+### 本轮目标与实际结果
+- 目标: 修复 `mkdir/mv/rm` 文件操作错配
+- 实际完成: 三个 command + 三处前端替换
+- 未完成/不在范围: ShellTool 白名单收紧属 Day 04
+
+### 自动化质量检查报告
+- `cargo check -p hajimi-desktop`: ✅ 通过
+- `node --check src/interface/web/app.js`: ✅ 通过
+- `rg -n "cmd: 'mkdir'|cmd: 'mv'|cmd: 'rm'" ...`: ✅ 无命中
+
+### 债务声明
+- `DEBT-TEST-B03-001`: 实机 Tauri dev 验证待 Day 04 补验
+
+### 风险与回滚点
+- 主要风险: 文件删除误操作
+- 回滚方式: `git restore src/interface/desktop/src/main.rs src/interface/web/app.js`
+```

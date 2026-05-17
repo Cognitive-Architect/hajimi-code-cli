@@ -1,0 +1,26 @@
+{
+  "id": "reflector_failure_tool_retry",
+  "title": "Reflect tool failure with retry using changed args",
+  "contract_mapping": [
+    "REFLECTOR-CONTRACT.md#Failure And Fallback",
+    "EXECUTOR-CONTRACT.md#Failure And Fallback"
+  ],
+  "input": {
+    "execution_result": "read_file failed: path not found",
+    "expected_evidence": ["error message", "failed path"]
+  },
+  "expected": {
+    "schema_version": "ReflectorCritiqueV1",
+    "success": false,
+    "severity": "Medium",
+    "confidence": 0.82,
+    "evidence": ["read_file returned path not found"],
+    "root_cause": {"category": "ToolFailure", "description": "The requested file path does not exist.", "confidence": 0.86},
+    "issues": ["Tool failed on the provided path."],
+    "new_risks": [],
+    "suggestions": ["Search for the nearest matching file before retrying."],
+    "plan_adjustment": {"action": "RetryWithNewArgs", "reason": "Retry only after correcting the path.", "revised_subgoals": ["search for the correct path"], "suggested_tools": ["search"]},
+    "stop_loss": {"triggered": false, "reason": "Only one failed attempt observed.", "escalation_target": "user"}
+  },
+  "expected_failure_reason": "Fails if retry repeats the same arguments or omits root cause."
+}

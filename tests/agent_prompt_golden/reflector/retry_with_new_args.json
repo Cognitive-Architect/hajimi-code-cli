@@ -1,0 +1,26 @@
+{
+  "id": "reflector_retry_with_new_args",
+  "title": "Reflect validation failure and revise args",
+  "contract_mapping": [
+    "REFLECTOR-CONTRACT.md#Stop-Loss Contract",
+    "EXECUTOR-CONTRACT.md#Evidence Fields"
+  ],
+  "input": {
+    "execution_result": "cargo test failed because filter matched zero tests",
+    "expected_evidence": ["exit code", "stderr"]
+  },
+  "expected": {
+    "schema_version": "ReflectorCritiqueV1",
+    "success": false,
+    "severity": "Medium",
+    "confidence": 0.88,
+    "evidence": ["test filter matched zero tests"],
+    "root_cause": {"category": "ValidationFailure", "description": "The validation command did not exercise the intended tests.", "confidence": 0.9},
+    "issues": ["Validation evidence is insufficient."],
+    "new_risks": [],
+    "suggestions": ["Retry with a broader prompt_golden filter or full lib test."],
+    "plan_adjustment": {"action": "RetryWithNewArgs", "reason": "The command should change to collect real evidence.", "revised_subgoals": ["run broader test filter"], "suggested_tools": ["cargo_test"]},
+    "stop_loss": {"triggered": false, "reason": "A changed validation command is available.", "escalation_target": "user"}
+  },
+  "expected_failure_reason": "Fails if validation failure is accepted as success."
+}

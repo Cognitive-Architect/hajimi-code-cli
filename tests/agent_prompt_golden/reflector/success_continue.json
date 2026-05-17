@@ -1,0 +1,26 @@
+{
+  "id": "reflector_success_continue",
+  "title": "Reflect successful validation and continue",
+  "contract_mapping": [
+    "REFLECTOR-CONTRACT.md#Output Schema",
+    "REFLECTOR-CONTRACT.md#Evidence Fields"
+  ],
+  "input": {
+    "execution_result": "cargo test -p intelligence-agent-core --lib prompt_golden passed",
+    "expected_evidence": ["test command", "pass count"]
+  },
+  "expected": {
+    "schema_version": "ReflectorCritiqueV1",
+    "success": true,
+    "severity": "Low",
+    "confidence": 0.94,
+    "evidence": ["cargo test -p intelligence-agent-core --lib prompt_golden passed"],
+    "root_cause": {"category": "None", "description": "Validation passed.", "confidence": 0.95},
+    "issues": [],
+    "new_risks": [],
+    "suggestions": ["Continue to final reporting."],
+    "plan_adjustment": {"action": "Continue", "reason": "Evidence satisfies the planned validation.", "revised_subgoals": [], "suggested_tools": null},
+    "stop_loss": {"triggered": false, "reason": "No repeated failure.", "escalation_target": "user"}
+  },
+  "expected_failure_reason": "Fails if success lacks evidence or recommends needless retry."
+}

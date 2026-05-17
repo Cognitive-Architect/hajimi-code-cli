@@ -623,9 +623,11 @@ interface/mcp-server/
 | 文件 | 职责 | Phase 5 交付状态 |
 |:---|:---|:---|
 | `src/interface/web/index.html` | Tauri Web UI DOM 合约；7 区域布局；Settings panels；Right Inspector panels | Chat-first layout、Settings Integration、Inspector panels 已落地 |
-| `src/interface/web/app.js` | 前端状态、事件绑定、Command Palette、Agent cards、Inspector data binding、diff/trace/evidence rendering | Day 1-10 UI 交互核心已接入，保持 vanilla JS |
+| `src/interface/web/app.js` | 前端状态、事件绑定、Command Palette、Agent cards、Inspector data binding、diff/trace/evidence rendering | Day 1-10 UI 交互核心已接入；Day 13-14 保留兼容 wrapper 并渐进接入 `modules/security-dom.js`、`workspace.js`、`sessions.js`、`thinking-ui.js` |
+| `src/interface/web/modules/` | 无 bundler IIFE frontend modules | `security-dom.js` / `workspace.js` / `sessions.js` / `thinking-ui.js`，承接安全渲染、workspace、会话、Thinking/Trace 高频逻辑 |
 | `src/interface/web/style.css` | 设计 tokens、布局、cards、menus、Settings、Inspector、Evidence panels 样式 | Phase 5 视觉系统与组件状态已收口 |
-| `src/interface/desktop/src/main.rs` | Tauri command / event bridge；web 前端调用后端能力的入口 | Phase 5 未改变后端边界 |
+| `src/interface/desktop/src/main.rs` | Tauri command / event bridge；web 前端调用后端能力的入口 | Day 2-10 接入 workspace resolver、专用文件操作、checkpoint export/compare/restore/replay；CSP 配置位于 `tauri.conf.json` |
+| `src/intelligence/agent-core/prompt_golden_tests.rs` | Prompt golden regression harness | 显式加载 `tests/agent_prompt_golden/` fixtures，覆盖 Planner/Reflector/ToolCall 契约回归 |
 
 **已开发完成的 UI 能力**:
 - Chat-first 信息架构：Agent Chat / task feed 作为主工作区。

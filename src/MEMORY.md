@@ -1,11 +1,69 @@
 # HAJIMI V3 数据诚实性与上下文债务基线
 
-> **文档版本**: v1.1 (Phase 3 Completed)
+> **文档版本**: v1.2 (Architecture Background Added)
 > **生成日期**: 2026-04-30
-> **最后更新**: 2026-04-30
-> **Git 基线**: `848a9b032109bf77b794725b9c18aeff715a3cb2` → `fde8969`
-> **状态**: ✅ **Phase 3a/3b 全部完成**（17/17 工单清偿）
+> **最后更新**: 2026-05-16
 > **关联规范**: `src/CONTRIBUTING.md` 数据诚实性章节
+
+---
+
+## 🏛️ 架构背景快速参考（来自 ARCHITECTURE/INDEX/CONTRIBUTING）
+
+**核心原则**: 四层分层 + 数据诚实 + P0安全 + 债务清偿文化
+
+### 四层架构（硬性约束：下层禁止依赖上层）
+```
+interface/      # 界面层 - 可依赖全下层
+    ↓
+intelligence/   # 智能层 - 依赖 foundation + engine
+    ↓
+engine/         # 引擎层 - 仅依赖 foundation
+    ↓
+foundation/     # 地基层 - 零依赖
+```
+
+**关键模块**:
+- **Foundation (7)**: eventloop/, format/, hash/, network/, security/, storage/ (16分片), wasm/ (HNSW)
+- **Engine (4)**: llm-core/, search/ (Tantivy), tool-system/ (40+工具+白名单), worker/
+- **Intelligence (7)**: agent-core/ (7步循环+Swarm), chimera/, cloud/, codex-twist/, knowledge/, memory/ (5层), pgvector/
+- **Interface (3)**: mcp-server/ (真实RPC), web/ (Tauri前端), desktop/ (Tauri后端)
+
+### Agent Core 核心特性
+- **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
+- **Swarm**: Supervisor-Worker 多Agent协作 + WorkerLifecycleManager
+- **治理**: 5级审批（Auto/Advisory/Required/Critical/Override）
+- **LLM桥接**: PlannerLlmBridge / ReflectorLlmBridge（零侵入）
+- **EditApplier**: hunk-level diff + 冲突检测 + 原子写入 + 唯一.bak备份
+- **WorkflowOrchestrator**: Test→Fix→Commit 闭环
+
+### Memory System 5层
+Session (LRU 4K) → Auto (JSONL) → Dream (SQLite+Embedding+HNSW) → Graph (知识图谱) → Cloud (同步)
+- Phase 3b完成: EpisodicMemory持久化 + DreamMemory HNSW索引
+
+### P0安全规范（CONTRIBUTING.md）
+- Shell白名单参数化（38命令，无`bash -c`）
+- 网络服务: CSPRNG（无`Math.random`）
+- 加密操作: `timingSafeEqual`防时序攻击
+- unsafe: 100% SAFETY注释覆盖
+
+### 数据诚实性（每次更新文档必执行）
+```bash
+# 代码行数
+find src -name "*.rs" | wc -l
+# 测试验证
+cargo test -p intelligence-agent-core -- --list
+# 编译检查
+cargo check --workspace 2>&1 | grep -c "warning:"
+```
+
+### 质量基线（实测2026-04-28/30）
+- Agent Core测试: **266通过**（89 lib + 177 E2E）
+- Rust文件: 242个
+- 代码总行数: ~182,362行
+- 编译: 0 errors，unsafe SAFETY 100%
+- TODO: ~630（431 unwrap + 184 expect + 15 panic）
+
+**详细文档**: `src/ARCHITECTURE.md`、`src/INDEX.md`、`src/CONTRIBUTING.md`
 
 ---
 

@@ -286,7 +286,7 @@ window.app = {
     }
     el.innerHTML = steps.slice(-3).map(s => `
       <div style="font-size:11px;margin-bottom:2px;display:flex;gap:4px;overflow:hidden;">
-        <span style="color:var(--fg-cyan); font-weight:bold;flex-shrink:0;">${s.step}</span>
+        <span style="color:var(--fg-cyan); font-weight:bold;flex-shrink:0;">${this.escapeHtml(s.step || s.step_type || '')}</span>
         <span style="color:var(--fg-default);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;">${this.escapeHtml(s.details)}</span>
       </div>
     `).join('');
@@ -516,7 +516,7 @@ window.app = {
     for (const [file, matches] of Object.entries(byFile)) {
       html += `<div class="search-result-file">${this.escapeHtml(file)}</div>`;
       matches.forEach(m => {
-        html += `<div class="search-result-line" data-file="${this.escapeHtml(m.file)}" data-line="${m.line}">
+        html += `<div class="search-result-line" data-file="${this.escapeAttr(m.file)}" data-line="${this.escapeAttr(m.line)}">
           <span class="search-result-lineno">${m.line}</span>
           <span class="search-result-content">${this.escapeHtml(m.content)}</span>
         </div>`;
@@ -599,7 +599,7 @@ window.app = {
       else if (status.includes('?')) { statusClass = 'untracked'; statusLabel = '?'; }
       else if (status.includes('M') || status.includes('R')) { statusClass = 'modified'; statusLabel = 'M'; }
 
-      html += `<div class="git-file ${statusClass}" data-file="${this.escapeHtml(file)}">
+      html += `<div class="git-file ${statusClass}" data-file="${this.escapeAttr(file)}">
         <span class="git-file-icon">${statusLabel}</span>
         <span class="git-file-name">${this.escapeHtml(file)}</span>
       </div>`;
@@ -690,66 +690,11 @@ window.app = {
   // File Tree
   // ============================================================
   async loadFileTree(path) {
-    const tauri = window.__TAURI__;
-    if (!tauri) {
-      // Fallback: show a placeholder when Tauri is not available
-      this.fileTree = { name: 'workspace', type: 'folder', path: '.', expanded: true, children: [] };
-      this.renderFileTree();
-      return;
-    }
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    const rootPath = path || this.currentWorkspace || '.';
-    try {
-      const entries = await invoke('list_dir', { path: rootPath });
-      this.fileTree = await this.buildTreeFromEntries(rootPath, entries);
-      this.renderFileTree();
-    } catch (e) {
-      console.error('loadFileTree error:', e);
-      this.showErrorToast('加载文件树失败: ' + (e.message || e));
-    }
+    return window.HajimiWorkspace.loadFileTree(this, path);
   },
 
   async buildTreeFromEntries(dirPath, entries) {
-    const tauri = window.__TAURI__;
-    const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
-    const children = [];
-    // Sort: folders first, then files, both alphabetically
-    const sorted = (entries || []).sort((a, b) => {
-      const aIsDir = !a.includes('.');
-      const bIsDir = !b.includes('.');
-      if (aIsDir && !bIsDir) return -1;
-      if (!aIsDir && bIsDir) return 1;
-      return a.localeCompare(b);
-    });
-    for (const name of sorted) {
-      const fullPath = dirPath + '/' + name;
-      // Heuristic: no dot in name → likely folder
-      let isFolder = !name.includes('.');
-      // For dot-prefixed names (e.g. .github), we must probe
-      if (name.startsWith('.') && invoke) {
-        try {
-          await invoke('list_dir', { path: fullPath });
-          isFolder = true;
-        } catch (e) {
-          isFolder = false;
-        }
-      }
-      if (isFolder) {
-        let folderChildren = [];
-        if (invoke) {
-          try {
-            const subEntries = await invoke('list_dir', { path: fullPath });
-            folderChildren = await this.buildTreeFromEntries(fullPath, subEntries);
-          } catch (e) {
-            // Permission denied or not a directory — leave empty
-          }
-        }
-        children.push({ name, type: 'folder', path: fullPath, expanded: false, children: folderChildren });
-      } else {
-        children.push({ name, type: 'file', path: fullPath, lang: this.guessLang(name) });
-      }
-    }
-    return { name: dirPath.split('/').pop() || dirPath, type: 'folder', path: dirPath, expanded: true, children };
+    return window.HajimiWorkspace.buildTreeFromEntries(this, dirPath, entries);
   },
 
   setupFileTreeToolbar() {
@@ -784,100 +729,19 @@ window.app = {
   },
 
   async createNewFolder() {
-    const name = prompt('输入新文件夹名称:');
-    if (!name) return;
-    const basePath = this.currentWorkspace || '.';
-    const path = basePath + '/' + name;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    try {
-      await invoke('run_command', { cmd: 'mkdir', args: [path] });
-      this.loadFileTree();
-    } catch (e) {
-      this.showErrorToast('创建文件夹失败: ' + (e.message || e));
-    }
+    return window.HajimiWorkspace.createNewFolder(this);
   },
 
   collapseAllFolders() {
-    const collapse = (node) => {
-      if (node.type === 'folder') {
-        node.expanded = false;
-        if (node.children) node.children.forEach(collapse);
-      }
-    };
-    if (this.fileTree) collapse(this.fileTree);
-    this.renderFileTree();
+    return window.HajimiWorkspace.collapseAllFolders(this);
   },
 
   renderFileTree() {
-    const container = document.getElementById('fileTree');
-    container.innerHTML = '';
-    if (!this.fileTree) {
-      container.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">加载中...</div>';
-      return;
-    }
-    this.renderTreeNode(this.fileTree, container, 0);
+    return window.HajimiWorkspace.renderFileTree(this);
   },
 
   renderTreeNode(node, container, depth) {
-    if (node.type === 'folder') {
-      const folderEl = document.createElement('div');
-      folderEl.className = `file-tree-item folder${node.expanded ? ' expanded' : ''}`;
-      folderEl.style.paddingLeft = `${8 + depth * 16}px`;
-      folderEl.innerHTML = `
-        <span class="tree-toggle">▶</span>
-        <span class="tree-icon">
-          📁
-        </span>
-        <span class="tree-label">${node.name}</span>
-      `;
-      folderEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        node.expanded = !node.expanded;
-        this.renderFileTree();
-      });
-      folderEl.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.showContextMenu(e, node);
-      });
-      container.appendChild(folderEl);
-
-      const childrenContainer = document.createElement('div');
-      childrenContainer.className = 'file-tree-children';
-      if (node.expanded) {
-        childrenContainer.style.display = 'block';
-      }
-      if (node.children) {
-        node.children.forEach(child => this.renderTreeNode(child, childrenContainer, depth + 1));
-      }
-      container.appendChild(childrenContainer);
-    } else {
-      const fileEl = document.createElement('div');
-      fileEl.className = 'file-tree-item';
-      fileEl.style.paddingLeft = `${8 + depth * 16}px`;
-      const iconColor = this.getFileIconColor(node.name);
-      fileEl.innerHTML = `
-        <span class="tree-toggle"></span>
-        <span class="tree-icon file-icon" style="color:${iconColor}">
-          ${this.getFileIconSvg(node.name)}
-        </span>
-        <span class="tree-label">${node.name}</span>
-      `;
-      fileEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.querySelectorAll('.file-tree-item').forEach(el => el.classList.remove('selected'));
-        fileEl.classList.add('selected');
-        this.openFile(node.path);
-      });
-      fileEl.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.showContextMenu(e, node);
-      });
-      container.appendChild(fileEl);
-    }
+    return window.HajimiWorkspace.renderTreeNode(this, node, container, depth);
   },
 
   getFileIconColor(filename) {
@@ -912,7 +776,7 @@ window.app = {
     menu.style.top = event.pageY + 'px';
 
     menu.innerHTML = items.map((item, i) =>
-      `<div class="context-menu-item${item.danger ? ' danger' : ''}" data-index="${i}">${item.label}</div>`
+      `<div class="context-menu-item${item.danger ? ' danger' : ''}" data-index="${i}">${this.escapeHtml(item.label)}</div>`
     ).join('');
 
     menu.querySelectorAll('.context-menu-item').forEach((el) => {
@@ -979,7 +843,7 @@ window.app = {
     items.push({ label: '在终端中打开', action: () => this.openInTerminal(node.path) });
 
     menu.innerHTML = items.map(item =>
-      `<div class="context-menu-item${item.danger ? ' danger' : ''}">${item.label}</div>`
+      `<div class="context-menu-item${item.danger ? ' danger' : ''}">${this.escapeHtml(item.label)}</div>`
     ).join('');
 
     menu.querySelectorAll('.context-menu-item').forEach((el, i) => {
@@ -1016,39 +880,11 @@ window.app = {
   },
 
   async renameFile(oldPath) {
-    const oldName = oldPath.split('/').pop();
-    const newName = prompt('重命名为:', oldName);
-    if (!newName || newName === oldName) return;
-    const dir = oldPath.substring(0, oldPath.lastIndexOf('/'));
-    const newPath = dir + '/' + newName;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    try {
-      await invoke('run_command', { cmd: 'mv', args: [oldPath, newPath] });
-      this.loadFileTree();
-      // If file is open in a tab, close it
-      const tab = this.tabs.find(t => t.id === oldPath);
-      if (tab) this._doCloseTab(oldPath);
-    } catch (e) {
-      this.showErrorToast('重命名失败: ' + (e.message || e));
-    }
+    return window.HajimiWorkspace.renameFile(this, oldPath);
   },
 
   async deleteFile(path) {
-    const name = path.split('/').pop();
-    if (!confirm(`确定要删除 "${name}" 吗？`)) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    try {
-      await invoke('run_command', { cmd: 'rm', args: ['-rf', path] });
-      this.loadFileTree();
-      const tab = this.tabs.find(t => t.id === path);
-      if (tab) this._doCloseTab(path);
-    } catch (e) {
-      this.showErrorToast('删除失败: ' + (e.message || e));
-    }
+    return window.HajimiWorkspace.deleteFile(this, path);
   },
 
   openInTerminal(path) {
@@ -1126,9 +962,9 @@ window.app = {
   renderTabs() {
     const tabBar = document.getElementById('tabBar');
     tabBar.innerHTML = this.tabs.map(tab => `
-      <div class="tab${tab.id === this.activeTab ? ' active' : ''}${tab.dirty ? ' dirty' : ''}" data-file="${tab.id}">
+      <div class="tab${tab.id === this.activeTab ? ' active' : ''}${tab.dirty ? ' dirty' : ''}" data-file="${this.escapeAttr(tab.id)}">
         <span class="tab-icon">${this.getTabIcon(tab.id)}</span>
-        <span class="tab-label">${tab.dirty ? '● ' : ''}${tab.label}</span>
+        <span class="tab-label">${tab.dirty ? '● ' : ''}${this.escapeHtml(tab.label)}</span>
         <span class="tab-close">×</span>
       </div>
     `).join('');
@@ -1179,7 +1015,7 @@ window.app = {
       currentPath = currentPath ? `${currentPath}/${part}` : part;
       const isLast = i === parts.length - 1;
       html += `<span class="breadcrumb-separator">${i > 0 ? '›' : ''}</span>`;
-      html += `<span class="breadcrumb-item${isLast ? ' active' : ''}" data-path="${this.escapeHtml(currentPath)}">${this.escapeHtml(part)}</span>`;
+      html += `<span class="breadcrumb-item${isLast ? ' active' : ''}" data-path="${this.escapeAttr(currentPath)}">${this.escapeHtml(part)}</span>`;
     });
     bar.innerHTML = html;
 
@@ -1209,22 +1045,22 @@ window.app = {
           <div class="welcome-start">
             <div class="welcome-section">
               <h3>开始</h3>
-              <div class="welcome-link" onclick="app.openFile('src/interface/desktop/src/main.rs')">
+              <div class="welcome-link" data-welcome-action="open-file" data-path="src/interface/desktop/src/main.rs">
                 📄
                 打开 main.rs
               </div>
-              <div class="welcome-link" onclick="app.openFolder()">
+              <div class="welcome-link" data-welcome-action="open-folder">
                 📁
                 打开文件夹
               </div>
-              <div class="welcome-link" onclick="app.cloneRepo()">
+              <div class="welcome-link" data-welcome-action="clone-repo">
                 🌿
                 克隆仓库
               </div>
             </div>
             <div class="welcome-section">
               <h3>最近</h3>
-              <div class="welcome-link" onclick="app.openFile('Cargo.toml')">
+              <div class="welcome-link" data-welcome-action="open-file" data-path="Cargo.toml">
                 ◷
                 hajimi-code-cli
               </div>
@@ -1233,6 +1069,19 @@ window.app = {
         </div>
       </div>
     `;
+
+    container.querySelectorAll('[data-welcome-action]').forEach((link) => {
+      link.addEventListener('click', () => {
+        const action = link.dataset.welcomeAction;
+        if (action === 'open-file') {
+          this.openFile(link.dataset.path);
+        } else if (action === 'open-folder') {
+          this.openFolder();
+        } else if (action === 'clone-repo') {
+          this.cloneRepo();
+        }
+      });
+    });
   },
 
   renderCodeView(container, tab) {
@@ -1807,10 +1656,16 @@ window.app = {
     this.appendTerminalPrompt();
   },
 
+  safeText(value) {
+    return window.HajimiSecurityDom.safeText(value);
+  },
+
   escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return window.HajimiSecurityDom.escapeHtml(text);
+  },
+
+  escapeAttr(text) {
+    return window.HajimiSecurityDom.escapeAttr(text);
   },
 
   // ============================================================
@@ -1888,7 +1743,7 @@ window.app = {
     problems.forEach(p => {
       const icon = p.level === 'error' ? '●' : '◐';
       const cls = p.level === 'error' ? 'problem-error' : 'problem-warning';
-      html += `<div class="problem-item ${cls}" data-file="${this.escapeHtml(p.file)}" data-line="${p.line}">
+      html += `<div class="problem-item ${cls}" data-file="${this.escapeAttr(p.file)}" data-line="${this.escapeAttr(p.line)}">
         <span class="problem-icon">${icon}</span>
         <div class="problem-info">
           <div class="problem-message">${this.escapeHtml(p.message)}</div>
@@ -1928,95 +1783,24 @@ window.app = {
   },
 
   startTraceSubscription() {
-    const tauri = window.__TAURI__;
-    if (!tauri || !tauri.core || !tauri.core.Channel) {
-      this.renderDemoTraceCards();
-      return;
-    }
-    const invoke = tauri.core.invoke;
-    try {
-      const Channel = tauri.core.Channel;
-      const channel = new Channel();
-      channel.onmessage = (event) => {
-        if (!this.tracePaused) {
-          this.traceEvents.push(event);
-          if (this.traceEvents.length > 100) this.traceEvents.shift();
-          if (this.sidebarView === 'agent-trace') this.renderTraceCards();
-          this.safeRenderTraceInspector();
-          if (event.step_type === 'EditProposed') this.onEditProposed(event);
-          if (event.thinking_content) {
-            const activeThinking = document.querySelector('.chat-message.ai .thinking-block');
-            if (activeThinking) {
-              activeThinking.style.display = 'block';
-              const md = activeThinking.querySelector('.thinking-block-markdown');
-              if (md) md.innerHTML = this.renderMarkdown(event.thinking_content);
-            }
-          }
-          if (event.operation_summary) {
-            this.updateOperationSummary(event.operation_summary, event.tool_name);
-          }
-          if (event.step_type === 'Act') {
-            const lower = (event.tool_name || '').toLowerCase();
-            let status = '执行中...';
-            if (lower.includes('edit')) status = '编辑中...';
-            else if (lower.includes('delete')) status = '删除中...';
-            else if (lower.includes('create')) status = '创建中...';
-            this.updateOperationProgress(status);
-          }
-        }
-      };
-      invoke('subscribe_agent_trace', { onEvent: channel }).catch(() => {});
-    } catch (e) {
-      this.renderDemoTraceCards();
-    }
+    return window.HajimiThinkingUI.startTraceSubscription(this);
   },
 
   renderTraceCards() {
-    const panel = document.getElementById('tracePanel');
-    if (!panel) return;
-    if (this.traceEvents.length === 0) {
-      panel.innerHTML = '<div class="trace-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无思考过程</div>';
-      return;
-    }
-    const colors = { Observe: 'var(--fg-green)', Retrieve: 'var(--fg-cyan)', Plan: 'var(--fg-red)', Act: 'var(--fg-dim)', Reflect: 'var(--fg-magenta)', Store: 'var(--fg-dim)', Decide: 'var(--fg-cyan)', Other: 'var(--fg-dim)' };
-    panel.innerHTML = this.traceEvents.slice().reverse().map(ev => {
-      const color = colors[ev.step_type] || colors.Other;
-      const confidence = ev.confidence_score != null ? `<span style="color:var(--fg-red)">(${ev.confidence_score.toFixed(2)})</span>` : '';
-      const plan = ev.plan_summary ? `<div style="margin-top:4px;color:var(--fg-dim);font-size:11px;white-space:pre-wrap;">${ev.plan_summary.substring(0, 200)}</div>` : '';
-      return `<div class="trace-card" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-weight:bold;color:${color};font-size:11px;">${ev.step} ${confidence}</span>
-          <span style="color:var(--fg-dim);font-size:10px;">#${ev.iteration}</span>
-        </div>
-        <div style="color:var(--fg-default);margin-top:2px;font-size:12px;">${ev.details}</div>
-        ${plan}
-      </div>`;
-    }).join('');
+    return window.HajimiThinkingUI.renderTraceCards(this);
   },
 
   renderDemoTraceCards() {
-    this.traceEvents = [
-      { step: 'Planning', details: 'Planning initial goal: 分析代码结构', iteration: 0, timestamp: new Date().toISOString(), step_type: 'Plan', plan_summary: null, reflection_key_points: [], confidence_score: 0.85 },
-      { step: 'Observing', details: 'Observed 12 blackboard keys', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Observe', plan_summary: null, reflection_key_points: [], confidence_score: null },
-      { step: 'Retrieving', details: 'Retrieved 3 entries in 2 tiers (120 tokens)', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Retrieve', plan_summary: null, reflection_key_points: [], confidence_score: null },
-      { step: 'Acting', details: 'Task t1 completed: success=true', iteration: 1, timestamp: new Date().toISOString(), step_type: 'Act', plan_summary: '执行工具调用', reflection_key_points: [], confidence_score: 0.92 },
-    ];
-    this.renderTraceCards();
-  },
-
-  clearTraceCards() {
-    if (!confirm('确定要清空 Agent Trace 记录吗？')) return;
     this.traceEvents = [];
     this.renderTraceCards();
   },
 
+  clearTraceCards() {
+    return window.HajimiThinkingUI.clearTraceCards(this);
+  },
+
   toggleTracePause(btn) {
-    this.tracePaused = !this.tracePaused;
-    const target = btn || document.getElementById('pauseTraceBtn');
-    if (target) {
-      target.innerHTML = this.tracePaused ? '▶' : '⏸';
-      target.title = this.tracePaused ? '继续' : '暂停';
-    }
+    return window.HajimiThinkingUI.toggleTracePause(this, btn);
   },
 
   addOutput(text, type = 'info') {
@@ -2284,7 +2068,7 @@ window.app = {
       const name = path.split('/').pop();
       return `<div class="ai-context-file">
         <span class="ai-context-file-name">${this.escapeHtml(name)}</span>
-        <button class="ai-context-file-remove" data-path="${this.escapeHtml(path)}">×</button>
+        <button class="ai-context-file-remove" data-path="${this.escapeAttr(path)}">×</button>
       </div>`;
     }).join('');
 
@@ -2884,40 +2668,12 @@ window.app = {
   /// Parse thinking tags from accumulated stream buffer (B-09/12).
   /// Returns { thinking, response, state } where state is 'idle'|'thinking'|'response'.
   parseThinkingStream(buffer) {
-    const thinkOpen = '<thinking>';
-    const thinkClose = '</thinking>';
-    const respOpen = '<response>';
-    const respClose = '</response>';
-    const tStart = buffer.indexOf(thinkOpen);
-    if (tStart === -1) {
-      return { thinking: null, response: buffer, state: 'idle' };
-    }
-    const tEnd = buffer.indexOf(thinkClose, tStart);
-    if (tEnd === -1) {
-      const thinking = buffer.slice(tStart + thinkOpen.length);
-      return { thinking, response: null, state: 'thinking' };
-    }
-    const thinking = buffer.slice(tStart + thinkOpen.length, tEnd).trim();
-    let response = '';
-    const rStart = buffer.indexOf(respOpen, tEnd);
-    if (rStart !== -1) {
-      const rEnd = buffer.indexOf(respClose, rStart);
-      response = rEnd !== -1
-        ? buffer.slice(rStart + respOpen.length, rEnd)
-        : buffer.slice(rStart + respOpen.length);
-    } else {
-      response = buffer.slice(tEnd + thinkClose.length);
-    }
-    return { thinking, response, state: 'response' };
+    return window.HajimiThinkingUI.parseThinkingStream(buffer);
   },
 
   /// Schedule DOM update via requestAnimationFrame for non-blocking rendering (B-09/12).
   scheduleDomUpdate(fn) {
-    if (this._pendingRaf) cancelAnimationFrame(this._pendingRaf);
-    this._pendingRaf = requestAnimationFrame(() => {
-      this._pendingRaf = null;
-      fn();
-    });
+    return window.HajimiThinkingUI.scheduleDomUpdate(this, fn);
   },
 
   async streamChat(provider, prompt, config, messages) {
@@ -3069,75 +2825,23 @@ window.app = {
   },
 
   addThinking() {
-    const id = 't-' + Date.now();
-    const container = document.getElementById('aiChatMessages');
-    const div = document.createElement('div');
-    div.className = 'chat-message ai agent-card';
-    div.id = id;
-    div.innerHTML = `
-      <div class="chat-message-avatar">H</div>
-      <div class="chat-message-body message-card">
-        <div class="thinking-indicator">
-          <div class="thinking-dot"></div>
-          <div class="thinking-dot"></div>
-          <div class="thinking-dot"></div>
-        </div>
-      </div>
-    `;
-    const block = this.createThinkingBlock();
-    block.style.display = 'none';
-    div.querySelector('.chat-message-body').appendChild(block);
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-    return id;
+    return window.HajimiThinkingUI.addThinking(this);
   },
 
   removeThinking(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
+    return window.HajimiThinkingUI.removeThinking(id);
   },
 
   createThinkingBlock(content) {
-    const block = document.createElement('div');
-    block.className = 'thinking-block';
-    block.innerHTML = `
-      <div class="thinking-block-header">
-        <span class="thinking-block-icon">🧠</span>
-        <span class="thinking-block-title">Thinking</span>
-        <button class="thinking-block-toggle" title="Toggle" aria-label="Toggle">▼</button>
-      </div>
-      <div class="thinking-block-body">
-        <div class="thinking-block-markdown">${this.renderMarkdown(content || '')}</div>
-      </div>`;
-    const btn = block.querySelector('.thinking-block-toggle');
-    btn.addEventListener('click', () => this.toggleThinking(block));
-    block.querySelector('.thinking-block-header').addEventListener('click', (e) => {
-      if (e.target !== btn) this.toggleThinking(block);
-    });
-    return block;
+    return window.HajimiThinkingUI.createThinkingBlock(this, content);
   },
 
   toggleThinking(block) {
-    const body = block.querySelector('.thinking-block-body');
-    const btn = block.querySelector('.thinking-block-toggle');
-    const collapsed = !body.classList.contains('visible');
-    if (collapsed) {
-      body.classList.add('visible');
-      btn.textContent = '▲';
-    } else {
-      body.classList.remove('visible');
-      btn.textContent = '▼';
-    }
+    return window.HajimiThinkingUI.toggleThinking(block);
   },
 
   updateThinkingContent(id, content) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const block = el.querySelector('.thinking-block');
-    if (!block) return;
-    const md = block.querySelector('.thinking-block-markdown');
-    if (md) md.innerHTML = this.renderMarkdown(content || '');
-    block.style.display = 'block';
+    return window.HajimiThinkingUI.updateThinkingContent(this, id, content);
   },
 
   // ============================================================
@@ -3147,293 +2851,63 @@ window.app = {
   /// Create a Codex-style operation summary bar showing tool execution stats.
   /// Returns null if all stats are zero (hides the bar when no ops performed).
   createOperationSummaryBar(summary, toolName) {
-    const filesEdited = summary.files_edited || 0;
-    const filesCreated = summary.files_created || 0;
-    const filesDeleted = summary.files_deleted || 0;
-    const commandsRun = summary.commands_run || 0;
-    const totalDiffLines = summary.total_diff_lines || 0;
-    const totalOps = filesEdited + filesCreated + filesDeleted + commandsRun;
-    if (totalOps === 0) return null;
-
-    const bar = document.createElement('div');
-    bar.className = 'operation-summary-bar';
-    bar._summary = summary;
-    const parts = [];
-    if (filesEdited > 0) parts.push(`已编辑 ${filesEdited} 个文件`);
-    if (filesCreated > 0) parts.push(`已创建 ${filesCreated} 个文件`);
-    if (filesDeleted > 0) parts.push(`已删除 ${filesDeleted} 个文件`);
-    if (commandsRun > 0) parts.push(`已运行 ${commandsRun} 条命令`);
-    const summaryText = parts.join('，');
-    const reason = this.generateOperationReason(summary, toolName);
-
-    bar.innerHTML = `
-      <div class="operation-summary-header">
-        <span class="operation-summary-icon">⚡</span>
-        <span class="operation-summary-text">${this.escapeHtml(summaryText)}</span>
-        ${reason ? `<span class="operation-summary-reason">${this.escapeHtml(reason)}</span>` : ''}
-        <span class="operation-summary-progress"></span>
-        <button class="operation-summary-diff-entry" title="在检查器中查看 Diff">Diff 预览</button>
-        <button class="operation-summary-toggle" title="展开/折叠">▼</button>
-      </div>
-      <div class="operation-summary-details" data-lazy="true">
-        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>编辑: ${filesEdited}</span></div>
-        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-add">+</span><span>创建: ${filesCreated}</span></div>
-        <div class="operation-summary-stat"><span class="operation-summary-stat-label diff-del">-</span><span>删除: ${filesDeleted}</span></div>
-        <div class="operation-summary-stat"><span class="operation-summary-stat-label">⌘</span><span>命令: ${commandsRun}</span></div>
-        <div class="operation-summary-stat"><span class="operation-summary-stat-label">≡</span><span>Diff 行数: ${totalDiffLines}</span></div>
-        <div class="operation-summary-diff-preview"></div>
-      </div>`;
-
-    const toggle = bar.querySelector('.operation-summary-toggle');
-    const diffEntry = bar.querySelector('.operation-summary-diff-entry');
-    toggle.addEventListener('click', () => this.toggleDetails(bar));
-    diffEntry.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.openDiffPreview(this.currentDiffFile);
-    });
-    bar.querySelector('.operation-summary-header').addEventListener('click', (e) => {
-      if (e.target !== toggle && e.target !== diffEntry) this.toggleDetails(bar);
-    });
-    return bar;
+    return window.HajimiThinkingUI.createOperationSummaryBar(this, summary, toolName);
   },
 
   /// Toggle expand/collapse of operation summary details panel.
   /// Lazy-loads diff preview on first expand (B-11/12).
   toggleDetails(bar) {
-    const details = bar.querySelector('.operation-summary-details');
-    const toggle = bar.querySelector('.operation-summary-toggle');
-    const expanded = details.classList.contains('visible');
-    if (expanded) {
-      details.classList.remove('visible');
-      toggle.textContent = '▼';
-    } else {
-      details.classList.add('visible');
-      toggle.textContent = '▲';
-      if (details.dataset.lazy === 'true') {
-        this.renderOperationDiffPreview(details.querySelector('.operation-summary-diff-preview'), bar._summary);
-        details.dataset.lazy = 'false';
-      }
-    }
+    return window.HajimiThinkingUI.toggleDetails(this, bar);
   },
 
   /// Update or create the operation summary bar in the most recent AI message.
   /// Removes existing bar before inserting a new one to avoid duplicates.
   updateOperationSummary(summary, toolName) {
-    if (!summary || typeof summary !== 'object') return;
-    const container = document.getElementById('aiChatMessages');
-    if (!container) return;
-    const lastAi = container.querySelector('.chat-message.ai:last-child');
-    if (!lastAi) return;
-    const body = lastAi.querySelector('.chat-message-body');
-    if (!body) return;
-    const existing = body.querySelector('.operation-summary-bar');
-    if (existing) existing.remove();
-    const bar = this.createOperationSummaryBar(summary, toolName);
-    if (bar) body.appendChild(bar);
+    return window.HajimiThinkingUI.updateOperationSummary(this, summary, toolName);
   },
 
   /// Generate natural-language operation reason from stats and tool name (B-11/12).
   generateOperationReason(summary, toolName) {
-    const edited = summary.files_edited || 0;
-    const created = summary.files_created || 0;
-    const deleted = summary.files_deleted || 0;
-    const commands = summary.commands_run || 0;
-    const parts = [];
-    if (edited > 0) parts.push(`编辑 ${edited} 个文件`);
-    if (created > 0) parts.push(`创建 ${created} 个新文件`);
-    if (deleted > 0) parts.push(`删除 ${deleted} 个旧文件`);
-    if (commands > 0) parts.push(`运行 ${commands} 条命令`);
-    if (parts.length === 0) return '';
-    let reason = '我准备' + parts.join('，');
-    if (toolName) {
-      const lower = (toolName + '').toLowerCase();
-      if (lower.includes('edit')) reason += '以优化代码结构';
-      else if (lower.includes('delete')) reason += '以清理冗余代码';
-      else if (lower.includes('create')) reason += '以添加新功能';
-      else if (lower.includes('test')) reason += '以验证正确性';
-      else reason += '以完成任务';
-    } else {
-      reason += '以完成任务';
-    }
-    return reason;
+    return window.HajimiThinkingUI.generateOperationReason(summary, toolName);
   },
 
-  /// Render a virtual diff preview inside the operation summary bar (B-11/12).
-  /// Limits output to 50 lines; excess hidden behind a "view full file" link.
+  /// Render an operation diff receipt from real trace summary fields.
+  /// Falls back to an explicit "no file-level diff data" message instead of synthetic file names.
   renderOperationDiffPreview(container, summary) {
-    if (!container || !summary) return;
-    const edited = summary.files_edited || 0;
-    const created = summary.files_created || 0;
-    const deleted = summary.files_deleted || 0;
-    const lines = [];
-    for (let i = 0; i < created; i++) lines.push(`+ 新建文件 #${i + 1}`);
-    for (let i = 0; i < edited; i++) lines.push(`~ 修改文件 #${i + 1}`);
-    for (let i = 0; i < deleted; i++) lines.push(`- 删除文件 #${i + 1}`);
-    const limit = 50;
-    const visible = lines.slice(0, limit);
-    let html = visible.map(l => {
-      const cls = l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : 'diff-hunk';
-      return `<div class="diff-preview-line ${cls}">${this.escapeHtml(l)}</div>`;
-    }).join('');
-    if (lines.length > limit) {
-      html += `<div class="diff-preview-more">... 以及 ${lines.length - limit} 行更多</div>`;
-    }
-    html += `<div class="diff-preview-footer"><span class="diff-preview-link">查看完整文件</span></div>`;
-    container.innerHTML = html;
+    return window.HajimiThinkingUI.renderOperationDiffPreview(this, container, summary);
   },
 
   /// Update real-time progress text on the active operation summary bar (B-11/12).
   updateOperationProgress(text) {
-    if (!text) return;
-    const container = document.getElementById('aiChatMessages');
-    if (!container) return;
-    const lastAi = container.querySelector('.chat-message.ai:last-child');
-    if (!lastAi) return;
-    const bar = lastAi.querySelector('.operation-summary-bar');
-    if (!bar) return;
-    const progress = bar.querySelector('.operation-summary-progress');
-    if (!progress) return;
-    progress.textContent = text;
-    progress.classList.add('active');
+    return window.HajimiThinkingUI.updateOperationProgress(text);
   },
 
   async initWorkspace() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    try {
-      this.currentWorkspace = await invoke('get_current_workspace');
-    } catch (e) {
-      this.currentWorkspace = null;
-    }
+    return window.HajimiWorkspace.initWorkspace(this);
   },
 
   newChatSession() {
-    // Save current session before creating new one
-    if (this.chatMessages.length > 0 && this.activeSessionId) {
-      const session = this.chatSessions.find(s => s.id === this.activeSessionId);
-      if (session) {
-        session.messages = [...this.chatMessages];
-        session.updatedAt = Date.now();
-      }
-    }
-    this.activeSessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    this.chatMessages = [];
-    this.tokenStats = { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 };
-    this.cumulativeStats = { promptTokens: 0, completionTokens: 0, requestCount: 0 };
-    document.getElementById('aiChatMessages').innerHTML = '';
-    this.addChatMessage('ai', '新会话已开始。有什么可以帮您的？');
-    this.updateTokenDisplay();
-    // Add to sessions list
-    this.chatSessions.unshift({
-      id: this.activeSessionId,
-      title: '新会话',
-      preview: '有什么可以帮您的？',
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    this.saveChatSessions();
-    this.renderSessionList();
+    return window.HajimiSessions.newChatSession(this);
   },
 
   loadChatSessions() {
-    try {
-      const raw = localStorage.getItem('hajimi_chat_sessions');
-      if (raw) {
-        this.chatSessions = JSON.parse(raw);
-        if (this.chatSessions.length > 0) {
-          // Restore the most recent session
-          const latest = this.chatSessions[0];
-          this.activeSessionId = latest.id;
-          this.chatMessages = latest.messages || [];
-          this.renderChatMessages();
-          this.renderSessionList();
-        } else {
-          this.newChatSession();
-        }
-      } else {
-        this.newChatSession();
-      }
-    } catch (e) {
-      console.error('loadChatSessions error:', e);
-      this.newChatSession();
-    }
+    return window.HajimiSessions.loadChatSessions(this);
   },
 
   saveChatSessions() {
-    try {
-      // Update current session messages before saving
-      if (this.activeSessionId) {
-        const session = this.chatSessions.find(s => s.id === this.activeSessionId);
-        if (session) {
-          session.messages = [...this.chatMessages];
-          session.updatedAt = Date.now();
-          // Update title/preview from first user message or assistant response
-          const firstUser = this.chatMessages.find(m => m.role === 'user');
-          const firstAi = this.chatMessages.find(m => m.role === 'assistant');
-          if (firstUser) {
-            session.title = firstUser.content.slice(0, 30);
-            session.preview = firstUser.content.slice(0, 60);
-          } else if (firstAi) {
-            session.title = firstAi.content.slice(0, 30);
-            session.preview = firstAi.content.slice(0, 60);
-          }
-        }
-      }
-      localStorage.setItem('hajimi_chat_sessions', JSON.stringify(this.chatSessions));
-    } catch (e) {
-      console.error('saveChatSessions error:', e);
-    }
+    return window.HajimiSessions.saveChatSessions(this);
   },
 
   switchSession(id) {
-    // Save current session first
-    if (this.activeSessionId) {
-      const current = this.chatSessions.find(s => s.id === this.activeSessionId);
-      if (current) {
-        current.messages = [...this.chatMessages];
-        current.updatedAt = Date.now();
-      }
-    }
-    // Switch to target session
-    const target = this.chatSessions.find(s => s.id === id);
-    if (target) {
-      this.activeSessionId = id;
-      this.chatMessages = target.messages || [];
-      this.renderChatMessages();
-      this.updateTokenDisplay();
-      this.renderSessionList();
-      this.saveChatSessions();
-    }
+    return window.HajimiSessions.switchSession(this, id);
   },
 
   renderChatMessages() {
-    const container = document.getElementById('aiChatMessages');
-    container.innerHTML = '';
-    for (const msg of this.chatMessages) {
-      this.addChatMessage(msg.role, msg.content, false);
-    }
+    return window.HajimiSessions.renderChatMessages(this);
   },
 
   renderSessionList() {
-    const list = document.getElementById('sessionList');
-    if (!list) return;
-    list.innerHTML = this.chatSessions.map(s => `
-      <div class="session-item ${s.id === this.activeSessionId ? 'active' : ''}" data-session="${s.id}">
-        <div class="session-title">${this.escapeHtml(s.title || '会话')}</div>
-        <div class="session-preview">${this.escapeHtml(s.preview || '')}</div>
-      </div>
-    `).join('');
-    // Re-bind click handlers
-    list.querySelectorAll('.session-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const id = el.dataset.session;
-        if (id && id !== this.activeSessionId) {
-          this.switchSession(id);
-        }
-      });
-    });
+    return window.HajimiSessions.renderSessionList(this);
   },
 
   // ============================================================
@@ -3509,9 +2983,9 @@ window.app = {
             <div class="model-picker-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.providerType || 'openai-compatible')}</div>
           </div>
           <div class="model-picker-actions">
-            <button class="model-picker-btn use" data-id="${this.escapeHtml(cfg.id)}">${isActive ? '当前' : '使用'}</button>
-            <button class="model-picker-btn" data-edit="${this.escapeHtml(cfg.id)}">编辑</button>
-            <button class="model-picker-btn" data-delete="${this.escapeHtml(cfg.id)}">删除</button>
+            <button class="model-picker-btn use" data-id="${this.escapeAttr(cfg.id)}">${isActive ? '当前' : '使用'}</button>
+            <button class="model-picker-btn" data-edit="${this.escapeAttr(cfg.id)}">编辑</button>
+            <button class="model-picker-btn" data-delete="${this.escapeAttr(cfg.id)}">删除</button>
           </div>
         </div>
       `;
@@ -3556,7 +3030,7 @@ window.app = {
     if (!list) return;
 
     const workspaceTag = this.currentWorkspace
-      ? `<span class="provider-source-tag workspace" title="${this.currentWorkspace}">workspace</span>`
+      ? `<span class="provider-source-tag workspace" title="${this.escapeAttr(this.currentWorkspace)}">workspace</span>`
       : '<span class="provider-source-tag global">global</span>';
 
     if (!this.providerConfigs.length) {
@@ -3571,8 +3045,8 @@ window.app = {
           <div class="provider-item-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.baseUrl || '')}</div>
         </div>
         <div class="provider-item-actions">
-          <button class="provider-item-btn" data-provider-edit="${this.escapeHtml(cfg.id)}">编辑</button>
-          <button class="provider-item-btn delete" data-provider-delete="${this.escapeHtml(cfg.id)}">删除</button>
+          <button class="provider-item-btn" data-provider-edit="${this.escapeAttr(cfg.id)}">编辑</button>
+          <button class="provider-item-btn delete" data-provider-delete="${this.escapeAttr(cfg.id)}">删除</button>
         </div>
       </div>
     `).join('') + `<div class="provider-source-hint">来源: ${workspaceTag}</div>`;
@@ -3805,7 +3279,7 @@ window.app = {
       if (!select) return;
       let html = '<option value="">default</option>';
       (profiles || []).forEach(p => {
-        html += `<option value="${p}" ${p === active ? 'selected' : ''}>${p}</option>`;
+        html += `<option value="${this.escapeAttr(p)}" ${p === active ? 'selected' : ''}>${this.escapeHtml(p)}</option>`;
       });
       select.innerHTML = html;
     } catch (e) {
@@ -3884,7 +3358,7 @@ window.app = {
       // Update provider dropdown
       let opts = '<option value="">-- 默认 --</option>';
       this.providerConfigs.forEach(c => {
-        opts += `<option value="${this.escapeHtml(c.id)}">${this.escapeHtml(c.name || c.id)}</option>`;
+        opts += `<option value="${this.escapeAttr(c.id)}">${this.escapeHtml(c.name || c.id)}</option>`;
       });
       if (select) select.innerHTML = opts;
       // Render bound list
@@ -3896,7 +3370,7 @@ window.app = {
       list.innerHTML = entries.map(([agentId, providerId]) => {
         const cfg = this.providerConfigs.find(c => c.id === providerId);
         const name = cfg ? (cfg.name || cfg.id) : providerId;
-        return `<div class="agent-provider-item"><span>${this.escapeHtml(agentId)}</span><span>→ ${this.escapeHtml(name)}</span><button data-agent-unbind="${this.escapeHtml(agentId)}">解绑</button></div>`;
+        return `<div class="agent-provider-item"><span>${this.escapeHtml(agentId)}</span><span>→ ${this.escapeHtml(name)}</span><button data-agent-unbind="${this.escapeAttr(agentId)}">解绑</button></div>`;
       }).join('');
       list.querySelectorAll('[data-agent-unbind]').forEach(btn => {
         btn.addEventListener('click', () => this.unbindAgentProvider(btn.dataset.agentUnbind));
@@ -4009,7 +3483,7 @@ window.app = {
       <div class="mcp-server-item">
         <div class="mcp-server-info">
           <div class="mcp-server-url">${this.escapeHtml(s.url)}</div>
-          <div class="mcp-server-meta">${s.transport} · ${(s.tools || []).length} 个工具</div>
+          <div class="mcp-server-meta">${this.escapeHtml(s.transport)} · ${(s.tools || []).length} 个工具</div>
         </div>
         <button class="mcp-server-remove" data-index="${i}">断开</button>
       </div>
@@ -4062,16 +3536,16 @@ window.app = {
     list.innerHTML = this.extensions.map(ext => {
       const isInstalled = ext.installed || installedSet.has(ext.id);
       return `
-        <div class="extension-item${isInstalled ? ' installed' : ''}" data-id="${ext.id}">
-          <div class="extension-icon" style="background:${ext.iconColor}">${ext.icon}</div>
+        <div class="extension-item${isInstalled ? ' installed' : ''}" data-id="${this.escapeAttr(ext.id)}">
+          <div class="extension-icon" style="background:${this.escapeAttr(ext.iconColor)}">${this.escapeHtml(ext.icon)}</div>
           <div class="extension-info">
-            <div class="extension-name">${ext.name}</div>
-            <div class="extension-desc">${ext.desc}</div>
-            <div class="extension-meta">${ext.version} • ${ext.publisher}</div>
+            <div class="extension-name">${this.escapeHtml(ext.name)}</div>
+            <div class="extension-desc">${this.escapeHtml(ext.desc)}</div>
+            <div class="extension-meta">${this.escapeHtml(ext.version)} • ${this.escapeHtml(ext.publisher)}</div>
           </div>
           ${isInstalled
-            ? '<span class="extension-status">已安装</span><button class="extension-uninstall-btn" data-id="' + ext.id + '">卸载</button>'
-            : '<button class="extension-install-btn" data-id="' + ext.id + '">安装</button>'}
+            ? '<span class="extension-status">已安装</span><button class="extension-uninstall-btn" data-id="' + this.escapeAttr(ext.id) + '">卸载</button>'
+            : '<button class="extension-install-btn" data-id="' + this.escapeAttr(ext.id) + '">安装</button>'}
         </div>
       `;
     }).join('');
@@ -4261,7 +3735,7 @@ window.app = {
       tbody.innerHTML = logs.map(r => {
         const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : '-';
         const statusCls = r.status === 'completed' ? 'audit-status-ok' : r.status === 'failed' ? 'audit-status-err' : 'audit-status-start';
-        return `<tr><td>${r.providerName || r.provider_name || '-'}</td><td>${r.model || '-'}</td><td>${time}</td><td><span class="audit-status ${statusCls}">${r.status}</span></td></tr>`;
+        return `<tr><td>${this.escapeHtml(r.providerName || r.provider_name || '-')}</td><td>${this.escapeHtml(r.model || '-')}</td><td>${this.escapeHtml(time)}</td><td><span class="audit-status ${statusCls}">${this.escapeHtml(r.status || '')}</span></td></tr>`;
       }).join('');
     } catch (e) {
       console.error('loadAuditLogs error:', e);
@@ -4323,32 +3797,69 @@ window.app = {
     if (!tauri) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
     try {
       const checkpoints = await tauri.core.invoke('list_checkpoints');
+      this.checkpoints = checkpoints || [];
       if (!checkpoints || checkpoints.length === 0) {
         list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>';
         return;
       }
-      list.innerHTML = checkpoints.map((chk, idx) => `
+      list.innerHTML = checkpoints.map((chk, idx) => {
+        const previous = checkpoints[idx + 1];
+        const compareButton = previous
+          ? `<button class="modal-btn secondary btn-secondary checkpoint-compare-btn" style="font-size:11px;padding:2px 6px;" data-id-a="${this.escapeAttr(previous.id || '')}" data-id-b="${this.escapeAttr(chk.id || '')}">比较</button>`
+          : '';
+        return `
         <div style="border-bottom:1px solid var(--border);padding:6px 0;">
           <div style="display:flex;justify-content:space-between;">
-            <span style="font-weight:bold;">${chk.id || 'chk_' + idx}</span>
-            <span style="color:var(--fg-dim);">${chk.timestamp || ''}</span>
+            <span style="font-weight:bold;">${this.escapeHtml(chk.label || chk.id || 'chk_' + idx)}</span>
+            <span style="color:var(--fg-dim);">${this.escapeHtml(chk.timestamp || '')}</span>
+          </div>
+          <div style="color:var(--fg-dim);font-size:11px;margin-top:2px;">
+            ${this.escapeHtml(chk.diff_summary?.summary || chk.metadata?.step_type || '')}
           </div>
           <div style="display:flex;gap:4px;margin-top:4px;">
-            <button class="modal-btn secondary btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="app.restoreCheckpoint('${chk.id}')">恢复</button>
-            <button class="modal-btn secondary btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="app.exportCheckpoint('${chk.id}')">导出</button>
+            <button class="modal-btn secondary btn-secondary checkpoint-restore-btn" style="font-size:11px;padding:2px 6px;" data-id="${this.escapeAttr(chk.id || '')}">恢复</button>
+            <button class="modal-btn secondary btn-secondary checkpoint-export-btn" style="font-size:11px;padding:2px 6px;" data-id="${this.escapeAttr(chk.id || '')}">导出</button>
+            <button class="modal-btn secondary btn-secondary checkpoint-replay-btn" style="font-size:11px;padding:2px 6px;" data-id="${this.escapeAttr(chk.id || '')}">回放</button>
+            ${compareButton}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('') + '<div id="checkpointCompareResultTab" style="margin-top:8px;color:var(--fg-dim);font-size:11px;"></div>';
+      list.querySelectorAll('.checkpoint-restore-btn').forEach(btn => {
+        btn.addEventListener('click', () => this.restoreCheckpoint(btn.dataset.id));
+      });
+      list.querySelectorAll('.checkpoint-export-btn').forEach(btn => {
+        btn.addEventListener('click', () => this.exportCheckpoint(btn.dataset.id));
+      });
+      list.querySelectorAll('.checkpoint-replay-btn').forEach(btn => {
+        btn.addEventListener('click', () => this.replayCheckpoint(btn.dataset.id));
+      });
+      list.querySelectorAll('.checkpoint-compare-btn').forEach(btn => {
+        btn.addEventListener('click', () => this.compareCheckpoints(btn.dataset.idA, btn.dataset.idB));
+      });
     } catch (e) {
       list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">加载失败</div>';
     }
   },
 
   async restoreCheckpoint(id) {
-    if (!confirm('确定要恢复此检查点吗？')) return;
     const tauri = window.__TAURI__;
     if (!tauri) return;
-    try { await tauri.core.invoke('restore_checkpoint', { id }); this.showToast('恢复成功'); }
+    try {
+      const plan = await tauri.core.invoke('restore_checkpoint', { id, confirmRestore: false, dryRun: true });
+      const files = plan.files || [];
+      const warnings = plan.warnings || [];
+      const risk = [
+        `即将恢复 ${files.length} 个文件。`,
+        `Backup: ${plan.backup_dir || '-'}`,
+        warnings.length ? `警告: ${warnings.join('; ')}` : '后端将先备份再写入。',
+        '确认后才会执行写入。'
+      ].join('\n');
+      if (!confirm(risk)) return;
+      const result = await tauri.core.invoke('restore_checkpoint', { id, confirmRestore: true, dryRun: false });
+      this.showToast(`恢复完成，backup: ${result.backup_dir || '-'}`);
+      await this.loadCheckpoints();
+    }
     catch (e) { this.showErrorToast(`恢复失败: ${e}`); }
   },
 
@@ -4361,6 +3872,59 @@ window.app = {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `checkpoint_${id}.json`; a.click(); URL.revokeObjectURL(url);
     } catch (e) { this.showErrorToast(`导出失败: ${e}`); }
+  },
+
+  async compareCheckpoints(idA, idB) {
+    const tauri = window.__TAURI__;
+    if (!tauri) return;
+    const target = document.getElementById('checkpointCompareResultTab');
+    try {
+      const result = await tauri.core.invoke('compare_checkpoints', { idA, idB });
+      const added = result.files_added?.length || 0;
+      const modified = result.files_modified?.length || 0;
+      const removed = result.files_removed?.length || 0;
+      const summary = result.summary || `${added} added, ${modified} modified, ${removed} removed`;
+      const source = result.data_source || 'checkpoint';
+      if (target) {
+        target.innerHTML = `
+          <div style="border:1px solid var(--border);border-radius:4px;padding:6px;background:var(--bg-hover);">
+            <div style="font-weight:bold;color:var(--fg-default);">Compare: ${this.escapeHtml(result.id_a || idA)} → ${this.escapeHtml(result.id_b || idB)}</div>
+            <div>${this.escapeHtml(summary)}</div>
+            <div>added ${added} · modified ${modified} · removed ${removed} · source ${this.escapeHtml(source)}</div>
+          </div>`;
+      }
+      this.showToast(result.same ? '检查点无差异' : '检查点差异已生成');
+    } catch (e) {
+      if (target) target.textContent = `比较失败: ${e}`;
+      this.showErrorToast(`比较失败: ${e}`);
+    }
+  },
+
+  replayCheckpoint(id) {
+    const checkpoint = (this.checkpoints || []).find(chk => chk.id === id);
+    if (!checkpoint) {
+      this.showErrorToast(`回放失败: checkpoint not found: ${id}`);
+      return;
+    }
+    const event = {
+      id: checkpoint.id,
+      timestamp: checkpoint.timestamp,
+      step_type: checkpoint.metadata?.step_type || 'Checkpoint',
+      summary: checkpoint.diff_summary?.summary || checkpoint.label || checkpoint.id,
+      checkpoint_id: checkpoint.id,
+      trace_event_ids: checkpoint.trace_event_ids || [],
+      operation_summary: checkpoint.diff_summary ? {
+        files_edited: checkpoint.diff_summary.files_changed || 0,
+        files_created: 0,
+        files_deleted: 0,
+        commands_run: 0,
+        total_diff_lines: checkpoint.diff_summary.additions || checkpoint.diff_summary.deletions || 0,
+        files: checkpoint.files || []
+      } : null,
+      source: 'checkpoint'
+    };
+    this.startSessionReplay([event], 0);
+    this.replayStep(0);
   },
 
   async exportAllCheckpoints() {
@@ -4398,7 +3962,7 @@ window.app = {
   },
 
   formatText(text) {
-    let html = text
+    let html = this.safeText(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -4411,7 +3975,7 @@ window.app = {
 
   /// Render Markdown to HTML with XSS-safe URL sanitization (B-08/12).
   renderMarkdown(text) {
-    let html = text
+    let html = this.safeText(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -4436,7 +4000,7 @@ window.app = {
     // Links with URL sanitization
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
       const safe = this.sanitizeUrl(url);
-      return safe ? `<a href="${safe}" target="_blank" rel="noopener">${label}</a>` : `<span>${label}</span>`;
+      return safe ? `<a href="${this.escapeAttr(safe)}" target="_blank" rel="noopener">${label}</a>` : `<span>${label}</span>`;
     });
     // Line breaks
     html = html.replace(/\n/g, '<br>');
@@ -4496,9 +4060,9 @@ window.app = {
     const filtered = this.commands.filter(c => c.label.toLowerCase().includes(q));
 
     list.innerHTML = filtered.map((c, i) => `
-      <div class="command-item${i === 0 ? ' selected' : ''}" data-index="${i}" data-id="${c.id}">
-        <span>${c.label}</span>
-        ${c.key ? `<span class="command-item-key">${c.key}</span>` : ''}
+      <div class="command-item${i === 0 ? ' selected' : ''}" data-index="${i}" data-id="${this.escapeAttr(c.id)}">
+        <span>${this.escapeHtml(c.label)}</span>
+        ${c.key ? `<span class="command-item-key">${this.escapeHtml(c.key)}</span>` : ''}
       </div>
     `).join('');
 
@@ -4781,7 +4345,7 @@ window.app = {
       const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
       return `<div class="edit-history-item" style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;cursor:pointer;" data-index="${entries.length - 1 - i}">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-weight:bold;font-size:11px;color:${color};">${e.step_type}</span>
+          <span style="font-weight:bold;font-size:11px;color:${color};">${this.escapeHtml(e.step_type || '')}</span>
           <span style="font-size:10px;color:var(--fg-dim);">${time}</span>
         </div>
         <div style="font-size:11px;color:var(--fg-dim);margin-top:2px;">${this.escapeHtml(e.summary || '').substring(0, 120)}</div>
@@ -4798,48 +4362,19 @@ window.app = {
   },
 
   startSessionReplay(entries, startIndex) {
-    this.replayEvents = entries;
-    this.replayIndex = startIndex;
-    const bar = document.getElementById('sessionReplayBar');
-    if (bar) bar.style.display = 'flex';
-    this.updateReplayStatus();
-    // Switch to trace tab for replay context
-    const traceTab = document.querySelector('.trace-tab[data-tab="trace"]');
-    if (traceTab) traceTab.click();
+    return window.HajimiThinkingUI.startSessionReplay(this, entries, startIndex);
   },
 
   replayStep(dir) {
-    const newIdx = this.replayIndex + dir;
-    if (newIdx < 0 || newIdx >= this.replayEvents.length) return;
-    this.replayIndex = newIdx;
-    this.updateReplayStatus();
-    const ev = this.replayEvents[this.replayIndex];
-    if (ev) {
-      const panel = document.getElementById('tracePanel');
-      if (panel) {
-        const entry = document.createElement('div');
-        entry.style.cssText = 'padding:4px 8px;margin:4px 0;background:var(--bg-hover);border-radius:4px;font-size:11px;border-left:3px solid var(--fg-red);';
-        entry.innerHTML = `<strong>Replay [${this.replayIndex + 1}/${this.replayEvents.length}]</strong> ${this.escapeHtml(ev.step_type)}: ${this.escapeHtml(ev.summary || '').substring(0, 100)}`;
-        panel.insertBefore(entry, panel.firstChild);
-        if (ev.thinking_content) this.renderReplayThinking(entry, ev.thinking_content);
-        if (ev.operation_summary) {
-          const bar = this.createOperationSummaryBar(ev.operation_summary, ev.tool_name);
-          if (bar) { bar.style.marginTop = '4px'; entry.appendChild(bar); }
-        }
-      }
-    }
+    return window.HajimiThinkingUI.replayStep(this, dir);
   },
 
   closeSessionReplay() {
-    this.replayIndex = -1;
-    this.replayEvents = [];
-    const bar = document.getElementById('sessionReplayBar');
-    if (bar) bar.style.display = 'none';
+    return window.HajimiThinkingUI.closeSessionReplay(this);
   },
 
   updateReplayStatus() {
-    const el = document.getElementById('replayStatus');
-    if (el) el.textContent = `${this.replayIndex + 1} / ${this.replayEvents.length}`;
+    return window.HajimiThinkingUI.updateReplayStatus(this);
   },
 
   // ============================================================
@@ -4849,37 +4384,18 @@ window.app = {
   /// Build a unified TimelineEvent from type and payload.
   /// Types: user_message, agent_thinking, agent_action, trace_step, tool_result.
   buildTimelineEvent(type, payload) {
-    return {
-      id: 'tl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      timestamp: Date.now(),
-      type: type || 'trace_step',
-      payload: payload || {},
-      source: payload?.agent_id || 'unknown'
-    };
+    return window.HajimiThinkingUI.buildTimelineEvent(type, payload);
   },
 
   /// Convert traceEvents into a unified timeline, optionally filtered.
   /// filter: 'all' | 'thinking' | 'action'.
   getTimelineEvents(filter) {
-    const events = this.traceEvents.map(ev => {
-      let type = 'trace_step';
-      if (ev.thinking_content) type = 'agent_thinking';
-      else if (ev.operation_summary) type = 'agent_action';
-      else if (ev.tool_name) type = 'tool_result';
-      return this.buildTimelineEvent(type, ev);
-    });
-    if (filter === 'thinking') return events.filter(e => e.type === 'agent_thinking');
-    if (filter === 'action') return events.filter(e => e.type === 'agent_action' || e.type === 'tool_result');
-    return events;
+    return window.HajimiThinkingUI.getTimelineEvents(this, filter);
   },
 
   /// Render thinking content inside a Replay entry (B-12/12).
   renderReplayThinking(container, thinking) {
-    if (!container || !thinking) return;
-    const div = document.createElement('div');
-    div.style.cssText = 'margin-top:4px;padding:4px;border-left:2px solid var(--fg-cyan);font-size:11px;color:var(--fg-dim);';
-    div.innerHTML = `<strong>Thinking:</strong> ${this.renderMarkdown(thinking.substring(0, 200))}`;
-    container.appendChild(div);
+    return window.HajimiThinkingUI.renderReplayThinking(this, container, thinking);
   },
 
   async updateMetrics() {

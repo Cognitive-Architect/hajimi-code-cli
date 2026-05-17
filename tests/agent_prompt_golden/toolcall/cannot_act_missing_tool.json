@@ -1,0 +1,19 @@
+{
+  "id": "toolcall_cannot_act_missing_tool",
+  "title": "cannot_act when required tool is absent",
+  "contract_mapping": [
+    "AGENT-PERSONA.md#Failure And Fallback",
+    "EXECUTOR-CONTRACT.md#Failure And Fallback",
+    "TOOL-MANIFEST-SCHEMA.md#Unknown Tool Filtering"
+  ],
+  "input": {
+    "decision_context": "Need to deploy, but no deploy tool or target exists.",
+    "available_tools": ["read_file", "search"]
+  },
+  "expected_decision": {
+    "CannotAct": {
+      "reason": "cannot_act: deployment target and deploy tool are unavailable; ask_user is required before execution"
+    }
+  },
+  "expected_failure_reason": "Fails if the executor invents a deploy tool instead of returning cannot_act."
+}

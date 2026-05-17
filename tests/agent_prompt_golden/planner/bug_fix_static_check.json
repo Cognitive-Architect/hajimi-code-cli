@@ -1,0 +1,48 @@
+{
+  "id": "planner_bug_fix_static_check",
+  "title": "Plan a focused bug fix with static validation",
+  "contract_mapping": [
+    "PLANNER-PROMPT-CONTRACT.md#Output Schema",
+    "PLANNER-PROMPT-CONTRACT.md#Evidence Fields",
+    "TOOL-MANIFEST-SCHEMA.md#Unknown Tool Filtering"
+  ],
+  "input": {
+    "goal_id": "goal-bug-001",
+    "goal_description": "Fix a parser bug in src/intelligence/agent-core/llm/bridge.rs",
+    "available_tools": ["read_file", "search", "apply_patch", "cargo_test"]
+  },
+  "expected": {
+    "schema_version": "PlannerSubgoalPlanV1",
+    "goal_id": "goal-bug-001",
+    "summary": "Inspect the parser path, patch the smallest bug, and validate with focused checks.",
+    "subgoals": [
+      {
+        "id_hint": "inspect",
+        "description": "Read the parser and nearby tests before editing.",
+        "priority": "High",
+        "depends_on": [],
+        "suggested_tools": ["read_file", "search"],
+        "expected_evidence": ["source path inspected", "existing test names identified"],
+        "validation_intent": "CommandOutput",
+        "risk_level": "Low",
+        "requires_user_approval": false,
+        "stop_conditions": ["target file is missing"]
+      },
+      {
+        "id_hint": "patch",
+        "description": "Apply the minimal parser fix.",
+        "priority": "High",
+        "depends_on": ["inspect"],
+        "suggested_tools": ["apply_patch"],
+        "expected_evidence": ["diff only touches parser logic"],
+        "validation_intent": "StaticCheck",
+        "risk_level": "Medium",
+        "requires_user_approval": false,
+        "stop_conditions": ["patch would require unrelated refactor"]
+      }
+    ],
+    "global_risks": ["Parser changes can alter prompt schema behavior."],
+    "notes": ["No real LLM call is required for this golden case."]
+  },
+  "expected_failure_reason": "Fails if Planner output omits expected evidence, dependency links, or schema_version."
+}

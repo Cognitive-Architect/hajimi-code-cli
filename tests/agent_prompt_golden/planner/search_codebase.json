@@ -1,0 +1,36 @@
+{
+  "id": "planner_search_codebase",
+  "title": "Plan a read-only code search",
+  "contract_mapping": [
+    "PLANNER-PROMPT-CONTRACT.md#Input Contract",
+    "PLANNER-PROMPT-CONTRACT.md#Stop Conditions",
+    "TOOL-MANIFEST-SCHEMA.md#Current Generation Mapping"
+  ],
+  "input": {
+    "goal_id": "goal-search-001",
+    "goal_description": "Find where ReflectorCritiqueV1 is parsed.",
+    "available_tools": ["search", "read_file"]
+  },
+  "expected": {
+    "schema_version": "PlannerSubgoalPlanV1",
+    "goal_id": "goal-search-001",
+    "summary": "Search for the schema symbol and inspect the matching parser path.",
+    "subgoals": [
+      {
+        "id_hint": "search",
+        "description": "Search the workspace for ReflectorCritiqueV1.",
+        "priority": "High",
+        "depends_on": [],
+        "suggested_tools": ["search"],
+        "expected_evidence": ["matching file paths and line numbers"],
+        "validation_intent": "CommandOutput",
+        "risk_level": "Low",
+        "requires_user_approval": false,
+        "stop_conditions": ["no search tool is available"]
+      }
+    ],
+    "global_risks": [],
+    "notes": ["This case should remain read-only."]
+  },
+  "expected_failure_reason": "Fails if a read-only search is planned as a write or high-risk operation."
+}

@@ -1,0 +1,27 @@
+{
+  "id": "reflector_stop_loss_repeated_failure",
+  "title": "Reflect repeated failure with stop-loss",
+  "contract_mapping": [
+    "AGENT-PERSONA.md#Failure And Fallback",
+    "REFLECTOR-CONTRACT.md#Stop-Loss Contract",
+    "EXECUTOR-CONTRACT.md#Failure And Fallback"
+  ],
+  "input": {
+    "execution_result": "same tool and same parameters failed twice",
+    "expected_evidence": ["failed fingerprint", "attempt count 2"]
+  },
+  "expected": {
+    "schema_version": "ReflectorCritiqueV1",
+    "success": false,
+    "severity": "Critical",
+    "confidence": 0.96,
+    "evidence": ["same tool fingerprint failed twice", "attempt_count=2"],
+    "root_cause": {"category": "ToolFailure", "description": "The same failing operation was repeated without new evidence.", "confidence": 0.96},
+    "issues": ["Repeated failure reached stop-loss threshold."],
+    "new_risks": ["Continuing could loop without progress."],
+    "suggestions": ["Stop and hand off with the failed fingerprint and last error."],
+    "plan_adjustment": {"action": "StopAndHandoff", "reason": "stop-loss triggered after repeated identical failure", "revised_subgoals": [], "suggested_tools": null},
+    "stop_loss": {"triggered": true, "reason": "stop-loss: repeated identical failure", "escalation_target": "user"}
+  },
+  "expected_failure_reason": "Fails if repeated failure does not trigger stop-loss."
+}

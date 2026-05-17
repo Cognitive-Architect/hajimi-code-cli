@@ -53,6 +53,98 @@ struct EditHistoryEntry {
     checkpoint_id: Option<String>,
 }
 
+/// Day 08 checkpoint file reference for export/compare contracts.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct CheckpointFileRef {
+    path: String,
+    status: String,
+    before_hash: Option<String>,
+    after_hash: Option<String>,
+    content: Option<String>,
+    after_content: Option<String>,
+}
+
+/// Day 08 checkpoint diff summary. Detailed hunks are deferred to Day 09.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct CheckpointDiffSummary {
+    files_changed: usize,
+    hunks: Option<usize>,
+    additions: Option<usize>,
+    deletions: Option<usize>,
+    summary: String,
+}
+
+/// Day 08 checkpoint metadata for trace linkage and schema evolution.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct CheckpointMetadata {
+    source: String,
+    agent_id: Option<String>,
+    iteration: usize,
+    step_type: String,
+    confidence: Option<f32>,
+    schema_version: u32,
+}
+
+/// Minimal desktop-local checkpoint DTO for Day 09 export/compare.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct CheckpointRecord {
+    id: String,
+    timestamp: String,
+    label: String,
+    files: Vec<CheckpointFileRef>,
+    diff_summary: CheckpointDiffSummary,
+    trace_event_ids: Vec<String>,
+    metadata: CheckpointMetadata,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct CheckpointExportBundle {
+    schema_version: u32,
+    exported_at: String,
+    workspace: String,
+    checkpoints: Vec<CheckpointRecord>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+struct CheckpointFileChange {
+    path: String,
+    before_status: Option<String>,
+    after_status: Option<String>,
+    before_hash: Option<String>,
+    after_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+struct CheckpointCompareResult {
+    id_a: String,
+    id_b: String,
+    same: bool,
+    files_added: Vec<CheckpointFileChange>,
+    files_removed: Vec<CheckpointFileChange>,
+    files_modified: Vec<CheckpointFileChange>,
+    summary: String,
+    data_source: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct RestoreFilePlan {
+    path: String,
+    action: String,
+    target_exists: bool,
+    backup_path: Option<String>,
+    reason: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct RestoreResult {
+    checkpoint_id: String,
+    restored_at: String,
+    dry_run: bool,
+    backup_dir: String,
+    files: Vec<RestoreFilePlan>,
+    warnings: Vec<String>,
+}
+
 struct AppState {
     registry: ToolRegistry,
     active_profile: std::sync::Mutex<Option<String>>,
@@ -162,28 +254,472 @@ fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(workspace)
 }
 
-/// 校验路径是否在工作目录沙箱内
-fn validate_path_within_workspace(path: &str, base_dir: &Path) -> Result<PathBuf, String> {
-    // 1. 拒绝显式包含 .. 的路径
-    if path.contains("..") {
+fn checkpoint_store_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = get_workspace_dir(app_handle)?
+        .join(".hajimi")
+        .join("checkpoints");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 checkpoint 目录: {}", e))?;
+    Ok(dir)
+}
+
+fn trace_event_id(event: &TraceEvent) -> String {
+    format!(
+        "trace_{}_{}_{}",
+        event.iteration,
+        format!("{:?}", event.step_type).to_lowercase(),
+        event.timestamp.timestamp_millis()
+    )
+}
+
+fn checkpoint_record_from_trace(event: &TraceEvent) -> CheckpointRecord {
+    let trace_id = trace_event_id(event);
+    let operation = event.operation_summary.as_ref();
+    let files_changed = operation
+        .map(|op| op.files_edited + op.files_created + op.files_deleted)
+        .unwrap_or(0);
+    let total_diff_lines = operation.map(|op| op.total_diff_lines).unwrap_or(0);
+    let label = format!("{:?} iteration {}", event.step_type, event.iteration);
+
+    CheckpointRecord {
+        id: format!("chk_{}", trace_id),
+        timestamp: event.timestamp.to_rfc3339(),
+        label,
+        files: Vec::new(),
+        diff_summary: CheckpointDiffSummary {
+            files_changed,
+            hunks: None,
+            additions: None,
+            deletions: None,
+            summary: if total_diff_lines > 0 {
+                format!(
+                    "{} diff lines reported by trace operation summary",
+                    total_diff_lines
+                )
+            } else {
+                event.details.clone()
+            },
+        },
+        trace_event_ids: vec![trace_id],
+        metadata: CheckpointMetadata {
+            source: "desktop-trace".to_string(),
+            agent_id: None,
+            iteration: event.iteration,
+            step_type: format!("{:?}", event.step_type),
+            confidence: event.confidence_score,
+            schema_version: 1,
+        },
+    }
+}
+
+fn checkpoint_detail_mentions_checkpoint(details: &str) -> bool {
+    details.to_ascii_lowercase().contains("checkpoint")
+}
+
+fn is_checkpoint_store_trace(event: &TraceEvent) -> bool {
+    event.step_type == TraceStepType::Store && checkpoint_detail_mentions_checkpoint(&event.details)
+}
+
+fn write_checkpoint_record(
+    app_handle: &tauri::AppHandle,
+    record: &CheckpointRecord,
+) -> Result<(), String> {
+    let dir = checkpoint_store_dir(app_handle)?;
+    let path = dir.join(format!("{}.json", record.id));
+    let json = serde_json::to_string_pretty(record)
+        .map_err(|e| format!("checkpoint 序列化失败: {}", e))?;
+    std::fs::write(path, json).map_err(|e| format!("checkpoint 写入失败: {}", e))
+}
+
+fn read_checkpoint_records(app_handle: &tauri::AppHandle) -> Result<Vec<CheckpointRecord>, String> {
+    let dir = checkpoint_store_dir(app_handle)?;
+    let mut records = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("checkpoint 读取失败: {}", e))? {
+        let entry = entry.map_err(|e| format!("checkpoint 目录项读取失败: {}", e))?;
+        if entry.path().extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let content = std::fs::read_to_string(entry.path())
+            .map_err(|e| format!("checkpoint 文件读取失败: {}", e))?;
+        let record = serde_json::from_str::<CheckpointRecord>(&content)
+            .map_err(|e| format!("checkpoint JSON 解析失败: {}", e))?;
+        records.push(record);
+    }
+    records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(records)
+}
+
+fn find_checkpoint_record(
+    records: &[CheckpointRecord],
+    id: &str,
+) -> Result<CheckpointRecord, String> {
+    records
+        .iter()
+        .find(|record| record.id == id)
+        .cloned()
+        .ok_or_else(|| format!("checkpoint not found: {}", id))
+}
+
+fn checkpoint_file_change(
+    before: Option<&CheckpointFileRef>,
+    after: Option<&CheckpointFileRef>,
+    path: &str,
+) -> CheckpointFileChange {
+    CheckpointFileChange {
+        path: path.to_string(),
+        before_status: before.map(|file| file.status.clone()),
+        after_status: after.map(|file| file.status.clone()),
+        before_hash: before.and_then(|file| file.after_hash.clone().or(file.before_hash.clone())),
+        after_hash: after.and_then(|file| file.after_hash.clone().or(file.before_hash.clone())),
+    }
+}
+
+fn compare_checkpoint_records(
+    before: &CheckpointRecord,
+    after: &CheckpointRecord,
+) -> CheckpointCompareResult {
+    let before_files: HashMap<&str, &CheckpointFileRef> = before
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file))
+        .collect();
+    let after_files: HashMap<&str, &CheckpointFileRef> = after
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file))
+        .collect();
+
+    let mut files_added = Vec::new();
+    let mut files_removed = Vec::new();
+    let mut files_modified = Vec::new();
+
+    for (path, file) in &after_files {
+        match before_files.get(path) {
+            None => files_added.push(checkpoint_file_change(None, Some(*file), path)),
+            Some(previous)
+                if previous.status != file.status
+                    || previous.before_hash != file.before_hash
+                    || previous.after_hash != file.after_hash =>
+            {
+                files_modified.push(checkpoint_file_change(Some(*previous), Some(*file), path));
+            }
+            _ => {}
+        }
+    }
+
+    for (path, file) in &before_files {
+        if !after_files.contains_key(path) {
+            files_removed.push(checkpoint_file_change(Some(*file), None, path));
+        }
+    }
+
+    files_added.sort_by(|a, b| a.path.cmp(&b.path));
+    files_removed.sort_by(|a, b| a.path.cmp(&b.path));
+    files_modified.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let file_change_count = files_added.len() + files_removed.len() + files_modified.len();
+    let summary_changed = before.diff_summary.summary != after.diff_summary.summary
+        || before.diff_summary.files_changed != after.diff_summary.files_changed
+        || before.diff_summary.hunks != after.diff_summary.hunks
+        || before.diff_summary.additions != after.diff_summary.additions
+        || before.diff_summary.deletions != after.diff_summary.deletions;
+    let trace_changed = before.trace_event_ids != after.trace_event_ids
+        || before.metadata.iteration != after.metadata.iteration
+        || before.metadata.step_type != after.metadata.step_type;
+    let same = file_change_count == 0 && !summary_changed && !trace_changed;
+    let data_source = if !before.files.is_empty() || !after.files.is_empty() {
+        "checkpoint.files".to_string()
+    } else {
+        "checkpoint.diff_summary+metadata".to_string()
+    };
+    let summary = if file_change_count > 0 {
+        format!(
+            "{} added, {} modified, {} removed",
+            files_added.len(),
+            files_modified.len(),
+            files_removed.len()
+        )
+    } else if summary_changed || trace_changed {
+        "No file-level diff data; checkpoint summary or trace metadata changed".to_string()
+    } else {
+        "No differences detected".to_string()
+    };
+
+    CheckpointCompareResult {
+        id_a: before.id.clone(),
+        id_b: after.id.clone(),
+        same,
+        files_added,
+        files_removed,
+        files_modified,
+        summary,
+        data_source,
+    }
+}
+
+fn checkpoint_restore_content(file: &CheckpointFileRef) -> Option<&str> {
+    file.after_content.as_deref().or(file.content.as_deref())
+}
+
+fn sanitize_restore_id(id: &str) -> String {
+    id.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn resolve_restore_target(file_path: &str, base_dir: &Path) -> Result<PathBuf, String> {
+    match resolve_workspace_path(file_path, base_dir, PathIntent::AnyExisting) {
+        Ok(path) => Ok(path),
+        Err(_) => resolve_workspace_path(file_path, base_dir, PathIntent::NewFile),
+    }
+}
+
+fn restore_backup_dir(
+    app_handle: &tauri::AppHandle,
+    checkpoint_id: &str,
+) -> Result<PathBuf, String> {
+    let dir = checkpoint_store_dir(app_handle)?
+        .join("backups")
+        .join(format!(
+            "restore_{}_{}",
+            sanitize_restore_id(checkpoint_id),
+            chrono::Utc::now().timestamp_millis()
+        ));
+    Ok(dir)
+}
+
+fn validate_restore_confirmation(confirm_restore: bool, dry_run: bool) -> Result<(), String> {
+    if !dry_run && !confirm_restore {
+        return Err("restore refused: confirmRestore must be true for write restore".into());
+    }
+    Ok(())
+}
+
+fn build_restore_plan(
+    record: &CheckpointRecord,
+    base_dir: &Path,
+    backup_dir: &Path,
+) -> Result<RestoreResult, String> {
+    if record.files.is_empty() {
+        return Err(format!(
+            "checkpoint {} has no file-level restore data",
+            record.id
+        ));
+    }
+
+    let canonical_base = base_dir
+        .canonicalize()
+        .map_err(|e| format!("无法解析工作目录: {}", e))?;
+    let mut files = Vec::new();
+    let mut warnings = Vec::new();
+
+    for file in &record.files {
+        let safe_target = resolve_restore_target(&file.path, base_dir)
+            .map_err(|e| format!("restore path rejected for '{}': {}", file.path, e))?;
+        if safe_target.exists() && safe_target.is_dir() {
+            return Err(format!("restore target is a directory: {}", file.path));
+        }
+
+        let target_exists = safe_target.exists();
+        let action = match file.status.as_str() {
+            "deleted" | "removed" => "delete",
+            _ => "write",
+        };
+        if action == "write" && checkpoint_restore_content(file).is_none() {
+            warnings.push(format!(
+                "{} has no content snapshot; real restore will be refused",
+                file.path
+            ));
+        }
+
+        let backup_path = if target_exists {
+            let rel = safe_target
+                .strip_prefix(&canonical_base)
+                .map_err(|e| format!("restore target not under workspace: {}", e))?;
+            Some(backup_dir.join(rel).to_string_lossy().to_string())
+        } else {
+            None
+        };
+        files.push(RestoreFilePlan {
+            path: file.path.clone(),
+            action: action.to_string(),
+            target_exists,
+            backup_path,
+            reason: format!("checkpoint status '{}'", file.status),
+        });
+    }
+
+    Ok(RestoreResult {
+        checkpoint_id: record.id.clone(),
+        restored_at: chrono::Utc::now().to_rfc3339(),
+        dry_run: true,
+        backup_dir: backup_dir.to_string_lossy().to_string(),
+        files,
+        warnings,
+    })
+}
+
+fn backup_restore_targets(
+    plan: &RestoreResult,
+    base_dir: &Path,
+    backup_dir: &Path,
+) -> Result<(), String> {
+    std::fs::create_dir_all(backup_dir)
+        .map_err(|e| format!("restore backup init failed: {}", e))?;
+    for item in &plan.files {
+        if !item.target_exists {
+            continue;
+        }
+        let backup_path = item
+            .backup_path
+            .as_ref()
+            .ok_or_else(|| format!("missing backup path for {}", item.path))?;
+        let source = resolve_restore_target(&item.path, base_dir)?;
+        let backup = PathBuf::from(backup_path);
+        if let Some(parent) = backup.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("restore backup parent failed: {}", e))?;
+        }
+        std::fs::copy(&source, &backup)
+            .map_err(|e| format!("restore backup failed for {}: {}", item.path, e))?;
+    }
+    Ok(())
+}
+
+fn rollback_restore(plan: &RestoreResult, base_dir: &Path) {
+    for item in &plan.files {
+        if let Ok(target) = resolve_restore_target(&item.path, base_dir) {
+            if let Some(backup) = item.backup_path.as_ref() {
+                let backup_path = PathBuf::from(backup);
+                if backup_path.exists() {
+                    if let Some(parent) = target.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::copy(backup_path, target);
+                }
+            } else if item.action == "write" && target.exists() {
+                let _ = std::fs::remove_file(target);
+            }
+        }
+    }
+}
+
+fn apply_restore_plan(
+    record: &CheckpointRecord,
+    plan: &RestoreResult,
+    base_dir: &Path,
+) -> Result<(), String> {
+    for item in &plan.files {
+        let file = record
+            .files
+            .iter()
+            .find(|file| file.path == item.path)
+            .ok_or_else(|| format!("restore file missing from checkpoint: {}", item.path))?;
+        let target = resolve_restore_target(&item.path, base_dir)?;
+        let result = if item.action == "delete" {
+            if target.exists() {
+                std::fs::remove_file(&target)
+                    .map_err(|e| format!("restore delete failed for {}: {}", item.path, e))
+            } else {
+                Ok(())
+            }
+        } else {
+            let content = checkpoint_restore_content(file).ok_or_else(|| {
+                format!(
+                    "checkpoint {} lacks content snapshot for {}; dry-run only",
+                    record.id, item.path
+                )
+            })?;
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!("restore parent create failed for {}: {}", item.path, e)
+                })?;
+            }
+            std::fs::write(&target, content)
+                .map_err(|e| format!("restore write failed for {}: {}", item.path, e))
+        };
+
+        if let Err(err) = result {
+            rollback_restore(plan, base_dir);
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+/// 路径意图类型，决定 canonicalize 策略
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PathIntent {
+    /// 目标必须已存在且为文件
+    ExistingFile,
+    /// 目标必须已存在且为目录
+    ExistingDir,
+    /// 目标是新文件，只需父目录存在
+    NewFile,
+    /// 目标是新目录，只需父目录存在
+    NewDir,
+    /// 目标可存在可不存在（任意类型）
+    AnyExisting,
+}
+
+/// 安全解析 workspace 内路径，防止 symlink 逃逸和 traversal 攻击
+fn resolve_workspace_path(
+    input: &str,
+    base_dir: &Path,
+    intent: PathIntent,
+) -> Result<PathBuf, String> {
+    // 1. 拒绝显式 traversal
+    if input.contains("..") {
         return Err("路径包含非法 traversal: ..".to_string());
     }
 
-    // 2. 解析绝对路径
-    let resolved = if Path::new(path).is_absolute() {
-        PathBuf::from(path)
+    // 2. 解析输入路径
+    let input_path = Path::new(input);
+    let resolved = if input_path.is_absolute() {
+        input_path.to_path_buf()
     } else {
-        base_dir.join(path)
+        base_dir.join(input_path)
     };
 
-    // 3. canonicalize（文件不存在时 fallback 到 resolved）
-    let canonical = resolved.canonicalize().unwrap_or(resolved);
-
-    // 4. 确认在 base_dir 内
+    // 3. canonicalize base_dir（必须存在）
     let canonical_base = base_dir
         .canonicalize()
         .map_err(|e| format!("无法解析工作目录: {}", e))?;
 
+    // 4. 根据 intent 决定 canonicalize 策略
+    let canonical = match intent {
+        PathIntent::ExistingFile | PathIntent::ExistingDir | PathIntent::AnyExisting => {
+            // existing 路径必须 canonicalize 目标本身
+            resolved
+                .canonicalize()
+                .map_err(|e| format!("无法解析目标路径: {}", e))?
+        }
+        PathIntent::NewFile | PathIntent::NewDir => {
+            // new 路径只 canonicalize 父目录
+            let parent = resolved
+                .parent()
+                .ok_or_else(|| "无法获取父目录".to_string())?;
+            if !parent.exists() {
+                return Err(format!("父目录不存在: {}", parent.display()));
+            }
+            let canonical_parent = parent
+                .canonicalize()
+                .map_err(|e| format!("无法解析父目录: {}", e))?;
+            // 拼接 leaf name
+            canonical_parent.join(
+                resolved
+                    .file_name()
+                    .ok_or_else(|| "无法获取文件名".to_string())?,
+            )
+        }
+    };
+
+    // 5. 确认在 workspace 内
     if !canonical.starts_with(&canonical_base) {
         return Err(format!(
             "路径越界: {} 不在工作目录 {} 内",
@@ -192,20 +728,30 @@ fn validate_path_within_workspace(path: &str, base_dir: &Path) -> Result<PathBuf
         ));
     }
 
+    match intent {
+        PathIntent::ExistingFile if !canonical.is_file() => {
+            return Err(format!("目标不是文件: {}", canonical.display()));
+        }
+        PathIntent::ExistingDir if !canonical.is_dir() => {
+            return Err(format!("目标不是目录: {}", canonical.display()));
+        }
+        _ => {}
+    }
+
     Ok(canonical)
 }
 
 #[tauri::command]
 fn read_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
     let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::ExistingFile)?;
     std::fs::read_to_string(&safe_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn write_file(path: &str, content: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
     let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::NewFile)?;
     // 确保父目录存在
     if let Some(parent) = safe_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -216,13 +762,59 @@ fn write_file(path: &str, content: &str, app_handle: tauri::AppHandle) -> Result
 #[tauri::command]
 fn list_dir(path: &str, app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
     let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = validate_path_within_workspace(path, &base_dir)?;
+    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::ExistingDir)?;
     let entries = std::fs::read_dir(&safe_path)
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
     Ok(entries)
+}
+
+fn create_workspace_dir(safe_path: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(safe_path).map_err(|e| e.to_string())
+}
+
+fn rename_workspace_path(safe_old: &Path, safe_new: &Path) -> Result<(), String> {
+    std::fs::rename(safe_old, safe_new).map_err(|e| e.to_string())
+}
+
+fn remove_workspace_path(safe_path: &Path, recursive: bool) -> Result<(), String> {
+    if safe_path.is_dir() {
+        if recursive {
+            std::fs::remove_dir_all(safe_path).map_err(|e| e.to_string())
+        } else {
+            std::fs::remove_dir(safe_path).map_err(|e| e.to_string())
+        }
+    } else if safe_path.is_file() {
+        std::fs::remove_file(safe_path).map_err(|e| e.to_string())
+    } else {
+        Err(format!("目标不是文件或目录: {}", safe_path.display()))
+    }
+}
+
+#[tauri::command]
+fn create_dir(path: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::NewDir)?;
+    create_workspace_dir(&safe_path)
+}
+
+#[tauri::command]
+fn rename_path(old_path: &str, new_path: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    // 源路径必须存在
+    let safe_old = resolve_workspace_path(old_path, &base_dir, PathIntent::AnyExisting)?;
+    // 目标路径的父目录必须在 workspace 内
+    let safe_new = resolve_workspace_path(new_path, &base_dir, PathIntent::NewFile)?;
+    rename_workspace_path(&safe_old, &safe_new)
+}
+
+#[tauri::command]
+fn delete_path(path: &str, recursive: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::AnyExisting)?;
+    remove_workspace_path(&safe_path, recursive)
 }
 
 #[tauri::command]
@@ -1503,6 +2095,10 @@ async fn subscribe_agent_trace(
                     | TraceStepType::EditApplied
                     | TraceStepType::EditRejected
             ) {
+                let checkpoint = checkpoint_record_from_trace(&event);
+                if let Err(e) = write_checkpoint_record(&app_clone, &checkpoint) {
+                    eprintln!("checkpoint write failed: {}", e);
+                }
                 let mut hist = history_clone.lock().await;
                 let entry = EditHistoryEntry {
                     id: format!("edit_{}_{}", event.iteration, hist.len()),
@@ -1512,11 +2108,16 @@ async fn subscribe_agent_trace(
                     confidence: event.confidence_score,
                     token_before: None,
                     token_after: None,
-                    checkpoint_id: None,
+                    checkpoint_id: Some(checkpoint.id),
                 };
                 hist.push(entry);
                 if hist.len() > 200 {
                     hist.remove(0);
+                }
+            } else if is_checkpoint_store_trace(&event) {
+                let checkpoint = checkpoint_record_from_trace(&event);
+                if let Err(e) = write_checkpoint_record(&app_clone, &checkpoint) {
+                    eprintln!("checkpoint write failed: {}", e);
                 }
             }
             let _ = on_event.send(event.clone());
@@ -1564,20 +2165,8 @@ fn update_plan(_plan: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn list_checkpoints(state: tauri::State<'_, AppState>) -> Result<Vec<Value>, String> {
-    let hist = state.edit_history.blocking_lock();
-    Ok(hist
-        .iter()
-        .map(|e| {
-            json!({
-                "id": e.id,
-                "timestamp": e.timestamp,
-                "step_type": e.step_type,
-                "summary": e.summary,
-                "confidence": e.confidence,
-            })
-        })
-        .collect())
+fn list_checkpoints(app_handle: tauri::AppHandle) -> Result<Vec<CheckpointRecord>, String> {
+    read_checkpoint_records(&app_handle)
 }
 
 #[tauri::command]
@@ -1586,18 +2175,69 @@ fn get_edit_history(state: tauri::State<'_, AppState>) -> Result<Vec<EditHistory
 }
 
 #[tauri::command]
-fn restore_checkpoint(_id: String) -> Result<(), String> {
-    Ok(())
+fn restore_checkpoint(
+    id: String,
+    confirm_restore: bool,
+    dry_run: Option<bool>,
+    app_handle: tauri::AppHandle,
+) -> Result<RestoreResult, String> {
+    let dry_run = dry_run.unwrap_or(false);
+    validate_restore_confirmation(confirm_restore, dry_run)?;
+
+    let records = read_checkpoint_records(&app_handle)?;
+    let record = find_checkpoint_record(&records, &id)?;
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let backup_dir = restore_backup_dir(&app_handle, &record.id)?;
+    let mut plan = build_restore_plan(&record, &base_dir, &backup_dir)?;
+
+    if dry_run {
+        return Ok(plan);
+    }
+
+    if !plan.warnings.is_empty() {
+        return Err(format!(
+            "restore refused: {}; run dry-run and create content snapshots before write restore",
+            plan.warnings.join("; ")
+        ));
+    }
+
+    backup_restore_targets(&plan, &base_dir, &backup_dir)?;
+    apply_restore_plan(&record, &plan, &base_dir)?;
+    plan.dry_run = false;
+    plan.restored_at = chrono::Utc::now().to_rfc3339();
+    Ok(plan)
 }
 
 #[tauri::command]
-fn compare_checkpoints(_id_a: String, _id_b: String) -> Result<bool, String> {
-    Ok(false)
+fn compare_checkpoints(
+    id_a: String,
+    id_b: String,
+    app_handle: tauri::AppHandle,
+) -> Result<CheckpointCompareResult, String> {
+    let records = read_checkpoint_records(&app_handle)?;
+    let before = find_checkpoint_record(&records, &id_a)?;
+    let after = find_checkpoint_record(&records, &id_b)?;
+    Ok(compare_checkpoint_records(&before, &after))
 }
 
 #[tauri::command]
-fn export_checkpoint(_id: String) -> Result<String, String> {
-    Ok("{}".to_string())
+fn export_checkpoint(id: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+    let records = read_checkpoint_records(&app_handle)?;
+    if id == "all" {
+        let workspace = get_workspace_dir(&app_handle)?;
+        let bundle = CheckpointExportBundle {
+            schema_version: 1,
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            workspace: workspace.to_string_lossy().to_string(),
+            checkpoints: records,
+        };
+        return serde_json::to_string_pretty(&bundle)
+            .map_err(|e| format!("checkpoint export serialize failed: {}", e));
+    }
+
+    let record = find_checkpoint_record(&records, &id)?;
+    serde_json::to_string_pretty(&record)
+        .map_err(|e| format!("checkpoint export serialize failed: {}", e))
 }
 
 #[tauri::command]
@@ -1866,6 +2506,9 @@ fn main() {
             read_file,
             write_file,
             list_dir,
+            create_dir,
+            rename_path,
+            delete_path,
             run_command,
             list_tools,
             execute_tool,
@@ -1921,4 +2564,429 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// 创建临时测试 workspace（使用 std::env::temp_dir）
+    fn setup_test_workspace() -> (PathBuf, PathBuf) {
+        let counter = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "hajimi-test-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            counter
+        ));
+        let workspace = temp.join("test-workspace");
+        let _ = std::fs::remove_dir_all(&temp); // 清理旧数据
+        std::fs::create_dir_all(&workspace).expect("无法创建 workspace");
+        (temp, workspace)
+    }
+
+    fn cleanup_test_workspace(temp: &PathBuf) {
+        let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[cfg(unix)]
+    fn create_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn create_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => Ok(()),
+            Err(primary_error) => {
+                let status = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(link)
+                    .arg(target)
+                    .status();
+                match status {
+                    Ok(status) if status.success() => Ok(()),
+                    _ => Err(primary_error),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_resolve_existing_file() {
+        let (temp, workspace) = setup_test_workspace();
+        let test_file = workspace.join("test.txt");
+        std::fs::write(&test_file, "hello").expect("无法写入测试文件");
+
+        let result = resolve_workspace_path("test.txt", &workspace, PathIntent::ExistingFile);
+        assert!(result.is_ok());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_existing_dir() {
+        let (temp, workspace) = setup_test_workspace();
+        let subdir = workspace.join("subdir");
+        std::fs::create_dir_all(&subdir).expect("无法创建子目录");
+
+        let result = resolve_workspace_path("subdir", &workspace, PathIntent::ExistingDir);
+        assert!(result.is_ok());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_new_file() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result = resolve_workspace_path("newfile.txt", &workspace, PathIntent::NewFile);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().file_name().unwrap(), "newfile.txt");
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_new_dir() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result = resolve_workspace_path("newdir", &workspace, PathIntent::NewDir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().file_name().unwrap(), "newdir");
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_new_file_missing_parent() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result =
+            resolve_workspace_path("nonexistent/newfile.txt", &workspace, PathIntent::NewFile);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("父目录不存在"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_traversal_rejected() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result = resolve_workspace_path("../outside.txt", &workspace, PathIntent::AnyExisting);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("traversal"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_absolute_outside_rejected() {
+        let (temp, workspace) = setup_test_workspace();
+
+        #[cfg(windows)]
+        let outside = "C:\\Windows\\System32\\notepad.exe";
+        #[cfg(not(windows))]
+        let outside = "/etc/passwd";
+
+        let result = resolve_workspace_path(outside, &workspace, PathIntent::ExistingFile);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("越界"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_resolve_new_file_rejects_parent_symlink_escape() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside");
+        std::fs::create_dir_all(&outside).expect("无法创建 outside 目录");
+        let link = workspace.join("outside-link");
+        create_dir_link(&link, &outside).expect("无法创建 workspace 外跳链接");
+
+        let result =
+            resolve_workspace_path("outside-link/newfile.txt", &workspace, PathIntent::NewFile);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("越界"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_create_workspace_dir_creates_directory() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let safe_path = resolve_workspace_path("created", &workspace, PathIntent::NewDir).unwrap();
+        let result = create_workspace_dir(&safe_path);
+
+        assert!(result.is_ok());
+        assert!(workspace.join("created").is_dir());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_rename_workspace_path_renames_file() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(workspace.join("old.txt"), "hello").expect("无法写入测试文件");
+
+        let safe_old =
+            resolve_workspace_path("old.txt", &workspace, PathIntent::AnyExisting).unwrap();
+        let safe_new = resolve_workspace_path("new.txt", &workspace, PathIntent::NewFile).unwrap();
+        let result = rename_workspace_path(&safe_old, &safe_new);
+
+        assert!(result.is_ok());
+        assert!(!workspace.join("old.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("new.txt")).unwrap(),
+            "hello"
+        );
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_remove_workspace_path_removes_file_even_when_recursive_true() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(workspace.join("delete-me.txt"), "hello").expect("无法写入测试文件");
+
+        let safe_path =
+            resolve_workspace_path("delete-me.txt", &workspace, PathIntent::AnyExisting).unwrap();
+        let result = remove_workspace_path(&safe_path, true);
+
+        assert!(result.is_ok());
+        assert!(!workspace.join("delete-me.txt").exists());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_remove_workspace_path_removes_directory_recursive() {
+        let (temp, workspace) = setup_test_workspace();
+        let nested = workspace.join("delete-dir").join("nested");
+        std::fs::create_dir_all(&nested).expect("无法创建测试目录");
+        std::fs::write(nested.join("file.txt"), "hello").expect("无法写入测试文件");
+
+        let safe_path =
+            resolve_workspace_path("delete-dir", &workspace, PathIntent::AnyExisting).unwrap();
+        let result = remove_workspace_path(&safe_path, true);
+
+        assert!(result.is_ok());
+        assert!(!workspace.join("delete-dir").exists());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_remove_workspace_path_rejects_non_empty_directory_without_recursive() {
+        let (temp, workspace) = setup_test_workspace();
+        let nested = workspace.join("non-empty");
+        std::fs::create_dir_all(&nested).expect("无法创建测试目录");
+        std::fs::write(nested.join("file.txt"), "hello").expect("无法写入测试文件");
+
+        let safe_path =
+            resolve_workspace_path("non-empty", &workspace, PathIntent::AnyExisting).unwrap();
+        let result = remove_workspace_path(&safe_path, false);
+
+        assert!(result.is_err());
+        assert!(workspace.join("non-empty").exists());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_checkpoint_detail_matches_agent_loop_lowercase_store_event() {
+        assert!(checkpoint_detail_mentions_checkpoint(
+            "Storing checkpoint for iteration 2"
+        ));
+        assert!(checkpoint_detail_mentions_checkpoint(
+            "Checkpoint abc123 after apply"
+        ));
+        assert!(!checkpoint_detail_mentions_checkpoint(
+            "Stored memory summary without trace anchor"
+        ));
+    }
+
+    fn sample_checkpoint(id: &str, files: Vec<CheckpointFileRef>) -> CheckpointRecord {
+        CheckpointRecord {
+            id: id.to_string(),
+            timestamp: "2026-05-16T00:00:00Z".to_string(),
+            label: id.to_string(),
+            files,
+            diff_summary: CheckpointDiffSummary {
+                files_changed: 0,
+                hunks: None,
+                additions: None,
+                deletions: None,
+                summary: "sample".to_string(),
+            },
+            trace_event_ids: vec![format!("trace_{}", id)],
+            metadata: CheckpointMetadata {
+                source: "test".to_string(),
+                agent_id: Some("agent".to_string()),
+                iteration: 1,
+                step_type: "EditApplied".to_string(),
+                confidence: Some(1.0),
+                schema_version: 1,
+            },
+        }
+    }
+
+    fn sample_file(path: &str, status: &str, hash: &str) -> CheckpointFileRef {
+        CheckpointFileRef {
+            path: path.to_string(),
+            status: status.to_string(),
+            before_hash: None,
+            after_hash: Some(hash.to_string()),
+            content: None,
+            after_content: None,
+        }
+    }
+
+    #[test]
+    fn test_compare_checkpoint_records_classifies_file_changes() {
+        let before = sample_checkpoint(
+            "before",
+            vec![
+                sample_file("removed.txt", "modified", "old"),
+                sample_file("changed.txt", "modified", "old"),
+            ],
+        );
+        let after = sample_checkpoint(
+            "after",
+            vec![
+                sample_file("added.txt", "created", "new"),
+                sample_file("changed.txt", "modified", "new"),
+            ],
+        );
+
+        let result = compare_checkpoint_records(&before, &after);
+
+        assert!(!result.same);
+        assert_eq!(result.files_added[0].path, "added.txt");
+        assert_eq!(result.files_modified[0].path, "changed.txt");
+        assert_eq!(result.files_removed[0].path, "removed.txt");
+        assert_eq!(result.data_source, "checkpoint.files");
+    }
+
+    #[test]
+    fn test_find_checkpoint_record_reports_missing_id() {
+        let records = vec![sample_checkpoint("present", Vec::new())];
+        let result = find_checkpoint_record(&records, "missing");
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("checkpoint not found: missing"));
+    }
+
+    #[test]
+    fn test_restore_plan_rejects_unsafe_path() {
+        let (temp, workspace) = setup_test_workspace();
+        let checkpoint = sample_checkpoint(
+            "unsafe",
+            vec![CheckpointFileRef {
+                path: "../outside.txt".to_string(),
+                status: "modified".to_string(),
+                before_hash: None,
+                after_hash: Some("hash".to_string()),
+                content: Some("content".to_string()),
+                after_content: None,
+            }],
+        );
+        let result = build_restore_plan(&checkpoint, &workspace, &temp.join("backup"));
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("restore path rejected"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_restore_plan_warns_without_content_snapshot() {
+        let (temp, workspace) = setup_test_workspace();
+        let checkpoint = sample_checkpoint(
+            "no-content",
+            vec![sample_file("target.txt", "modified", "hash")],
+        );
+        let result = build_restore_plan(&checkpoint, &workspace, &temp.join("backup")).unwrap();
+
+        assert_eq!(result.files[0].action, "write");
+        assert!(!result.warnings.is_empty());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_apply_restore_plan_backs_up_and_writes_content_snapshot() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(workspace.join("target.txt"), "before").unwrap();
+        let checkpoint = sample_checkpoint(
+            "restore",
+            vec![CheckpointFileRef {
+                path: "target.txt".to_string(),
+                status: "modified".to_string(),
+                before_hash: None,
+                after_hash: Some("after".to_string()),
+                content: Some("after".to_string()),
+                after_content: None,
+            }],
+        );
+        let backup_dir = temp.join("backup");
+        let plan = build_restore_plan(&checkpoint, &workspace, &backup_dir).unwrap();
+
+        backup_restore_targets(&plan, &workspace, &backup_dir).unwrap();
+        apply_restore_plan(&checkpoint, &plan, &workspace).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("target.txt")).unwrap(),
+            "after"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup_dir.join("target.txt")).unwrap(),
+            "before"
+        );
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn test_restore_confirmation_required_for_write_restore() {
+        let result = validate_restore_confirmation(false, false);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("confirmRestore must be true"));
+        assert!(validate_restore_confirmation(false, true).is_ok());
+        assert!(validate_restore_confirmation(true, false).is_ok());
+    }
+
+    #[test]
+    fn test_restore_plan_rejects_missing_parent_before_writes() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(workspace.join("ok.txt"), "before").unwrap();
+        let checkpoint = sample_checkpoint(
+            "rollback",
+            vec![
+                CheckpointFileRef {
+                    path: "ok.txt".to_string(),
+                    status: "modified".to_string(),
+                    before_hash: None,
+                    after_hash: Some("after".to_string()),
+                    content: Some("after".to_string()),
+                    after_content: None,
+                },
+                CheckpointFileRef {
+                    path: "missing-parent/fail.txt".to_string(),
+                    status: "modified".to_string(),
+                    before_hash: None,
+                    after_hash: Some("after".to_string()),
+                    content: Some("after".to_string()),
+                    after_content: None,
+                },
+            ],
+        );
+
+        let backup_dir = temp.join("backup");
+        let plan = build_restore_plan(&checkpoint, &workspace, &backup_dir);
+        assert!(plan.is_err());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("ok.txt")).unwrap(),
+            "before"
+        );
+        cleanup_test_workspace(&temp);
+    }
 }

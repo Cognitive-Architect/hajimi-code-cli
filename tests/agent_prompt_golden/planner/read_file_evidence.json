@@ -1,0 +1,35 @@
+{
+  "id": "planner_read_file_evidence",
+  "title": "Plan reading a known file and citing evidence",
+  "contract_mapping": [
+    "AGENT-PERSONA.md#Evidence Fields",
+    "PLANNER-PROMPT-CONTRACT.md#Evidence Fields"
+  ],
+  "input": {
+    "goal_id": "goal-read-001",
+    "goal_description": "Read planner_dto.rs and summarize PlannerSubgoalPlanV1 fields.",
+    "available_tools": ["read_file"]
+  },
+  "expected": {
+    "schema_version": "PlannerSubgoalPlanV1",
+    "goal_id": "goal-read-001",
+    "summary": "Read the DTO source and report fields with source-path evidence.",
+    "subgoals": [
+      {
+        "id_hint": "read",
+        "description": "Read src/intelligence/agent-core/planner_dto.rs.",
+        "priority": "High",
+        "depends_on": [],
+        "suggested_tools": ["read_file"],
+        "expected_evidence": ["src/intelligence/agent-core/planner_dto.rs", "schema_version field observed"],
+        "validation_intent": "None",
+        "risk_level": "Low",
+        "requires_user_approval": false,
+        "stop_conditions": ["file cannot be read"]
+      }
+    ],
+    "global_risks": [],
+    "notes": ["Evidence must cite the source file path."]
+  },
+  "expected_failure_reason": "Fails if the plan can complete without naming source-path evidence."
+}

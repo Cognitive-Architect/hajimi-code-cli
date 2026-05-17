@@ -1,0 +1,26 @@
+{
+  "id": "reflector_unknown_missing_context",
+  "title": "Reflect unknown result caused by missing context",
+  "contract_mapping": [
+    "AGENT-PERSONA.md#Failure And Fallback",
+    "REFLECTOR-CONTRACT.md#Failure And Fallback"
+  ],
+  "input": {
+    "execution_result": "No deployment target is configured.",
+    "expected_evidence": ["missing target"]
+  },
+  "expected": {
+    "schema_version": "ReflectorCritiqueV1",
+    "success": false,
+    "severity": "High",
+    "confidence": 0.7,
+    "evidence": ["deployment target missing"],
+    "root_cause": {"category": "Unknown", "description": "The environment target is not known from available context.", "confidence": 0.7},
+    "issues": ["Required deployment context is unavailable."],
+    "new_risks": ["Guessing the target could affect the wrong environment."],
+    "suggestions": ["Ask the user for the deployment target."],
+    "plan_adjustment": {"action": "AskUser", "reason": "Missing context blocks safe execution.", "revised_subgoals": ["ask_user"], "suggested_tools": null},
+    "stop_loss": {"triggered": false, "reason": "Blocked by missing context, not repeated execution.", "escalation_target": "user"}
+  },
+  "expected_failure_reason": "Fails if unknown context is treated as success or guessed."
+}

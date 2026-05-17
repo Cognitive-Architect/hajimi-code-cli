@@ -1,0 +1,27 @@
+{
+  "id": "toolcall_safe_read",
+  "title": "safe_read tool call uses object params and low risk",
+  "contract_mapping": [
+    "EXECUTOR-CONTRACT.md#ToolCallV1 Schema",
+    "TOOL-MANIFEST-SCHEMA.md#Evidence Fields"
+  ],
+  "input": {
+    "decision_context": "Read a known source file for evidence.",
+    "available_tools": ["read_file"]
+  },
+  "expected_tool_call": {
+    "schema_version": "ToolCallV1",
+    "action_type": "CallTool",
+    "tool_name": "read_file",
+    "parameters": {"path": "src/intelligence/agent-core/planner_dto.rs"},
+    "reason": "Need source evidence before summarizing the planner schema.",
+    "expected_output": "file contents",
+    "expected_evidence": "PlannerSubgoalPlanV1Dto fields are visible in source",
+    "fallback_tool": null,
+    "governance_required": false,
+    "risk_level": "Low",
+    "idempotency_key": "safe_read_planner_dto",
+    "next_step_hint": "summarize fields with source path"
+  },
+  "expected_failure_reason": "Fails if safe_read uses non-object parameters or elevated risk."
+}

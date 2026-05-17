@@ -1,0 +1,142 @@
+# Day 04 修复与验证 Receipt
+
+**工单编号**: B-04/15
+**任务名称**: ShellTool 用户白名单收紧
+**修改日期**: 2026-05-16
+**修改人**: Engineer
+
+---
+
+## 提交信息
+
+- Commit: `security(engine/tool-system): reject shell interpreters in user allow-list`
+- 分支: `v3.8.0-batch-1`
+- HEAD: `d697414f42584a0d0c9c85346a6a692e691c4dad` (before) → 新 commit 待生成
+- 变更文件:
+  - `src/engine/tool-system/src/shell.rs`
+  - `docs/roadmap/hajimi debtFix/debt/HAJIMI_DEBT_CURRENT_STATUS_2026-05-15.md`（状态同步）
+
+---
+
+## 本轮目标与实际结果
+
+- **目标**: 用户命令拒绝 `bash/sh/pwsh/powershell`
+- **实际完成**:
+  1. 从 `ALLOWED_COMMANDS` 移除 `bash`, `sh`, `pwsh`, `powershell`（shell.rs:20-42）
+  2. 更新 `test_allow_list`：`powershell -Command Get-Process` 改为 `is_err()`
+  3. 更新 `test_allow_list`：`pwsh -Command Write-Host test` 改为 `is_err()`
+  4. 新增 `bash script.sh` 拒绝测试断言
+  5. 新增 `sh script.sh` 拒绝测试断言
+  6. 保留内部 `DefaultShellExecutor::shell()` 外层选择逻辑（仅用于平台 wrapper）
+- **未完成/不在范围**: 结构化 `program+args` 和 sandbox 属中期方案
+
+---
+
+## 自动化质量检查报告
+
+### 1. Rust 编译
+```text
+cargo check -p engine-tool-system
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.24s
+```
+✅ 通过
+
+### 2. Rust 格式
+```text
+cargo fmt -- --check
+(no output)
+```
+✅ 通过
+
+### 3. allow-list 测试
+```text
+cargo test -p engine-tool-system -- test_allow_list
+test shell::tests::test_allow_list ... ok
+test result: ok. 1 passed; 0 failed
+```
+✅ 通过
+
+### 4. 全量测试
+```text
+cargo test -p engine-tool-system
+73 passed; 0 failed; 0 ignored
+```
+✅ 通过
+
+### 5. 白名单验证
+```text
+rg -n "\"bash\"|\"sh\"|\"pwsh\"|\"powershell\"" src/engine/tool-system/src/shell.rs
+```
+输出（非 ALLOWED_COMMANDS）：
+- 65: `("bash", vec!["-c".to_string()])` — 内部 executor
+- 108-111: `which::which("pwsh")` / `detect()` — 平台检测
+- 224, 228: `name()` 返回值 — 工具名称
+- 249: 内部 shell 选择
+- 345, 347: `test_platform` 断言 — 平台名称测试
+
+**ALLOWED_COMMANDS 内容**（确认无 shell 解释器）:
+```
+git, cargo, npm, node, python3, ls, cat, echo, pwd, which, forge, cast, anvil,
+slither, rustc, clippy-driver, curl, wget, tar, unzip, make
+```
+✅ 通过
+
+---
+
+## 债务声明
+
+- **SHELL-FEATURE-DEBT-002**: 复杂 shell 功能（管道、重定向、子 shell）继续受限，属安全设计，不在本日恢复
+
+---
+
+## 风险与回滚点
+
+### 主要风险
+- 用户体验下降，部分脚本命令不能直接跑（如 `bash deploy.sh`）
+- 文档需说明 shell 工具仅支持低风险命令
+
+### 回滚方式
+安全修复不建议回滚；紧急回滚用：
+```bash
+git revert <commit>
+```
+并重新打开 P0 债务 CS-HAJIMI-001。
+
+---
+
+## 债务状态迁移
+
+- `CS-HAJIMI-001`: `OPEN` → `VERIFY`
+- 迁移理由: 功能代码已修复，73 测试全部通过；实机 Tauri dev 验收待后续补充
+
+---
+
+## 收卷格式
+
+```markdown
+## 工单 B-04/15 完成并提交
+
+### 提交信息
+- Commit: `security(engine/tool-system): reject shell interpreters in user allow-list`
+- 分支: `v3.8.0-batch-1`
+- 变更文件:
+  - `src/engine/tool-system/src/shell.rs`
+
+### 本轮目标与实际结果
+- 目标: 用户命令拒绝 `bash/sh/pwsh/powershell`
+- 实际完成: allow-list 移除 + 5 个拒绝测试
+- 未完成/不在范围: 结构化 program+args 和 sandbox 属中期方案
+
+### 自动化质量检查报告
+- `cargo test -p engine-tool-system -- test_allow_list`: ✅ ok
+- `cargo test -p engine-tool-system`: ✅ 73 passed
+- `cargo check -p engine-tool-system`: ✅ 通过
+- `cargo check --workspace`: ✅ 通过（或非本次错误）
+
+### 债务声明
+- `SHELL-FEATURE-DEBT-002`: 复杂 shell 功能继续受限，属安全设计
+
+### 风险与回滚点
+- 主要风险: 用户体验下降，部分脚本命令不能直接跑
+- 回滚方式: 安全修复不建议回滚；紧急回滚用 `git revert <commit>`
+```

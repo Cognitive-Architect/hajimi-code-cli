@@ -16,6 +16,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 const DEFAULT_TIMEOUT: u64 = 30;
+const FORBIDDEN_METACHARS: &[char] = &[';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>'];
 
 const ALLOWED_COMMANDS: &[&str] = &[
     "git",
@@ -34,10 +35,6 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "slither",
     "rustc",
     "clippy-driver",
-    "bash",
-    "sh",
-    "pwsh",
-    "powershell",
     "curl",
     "wget",
     "tar",
@@ -96,7 +93,7 @@ impl ShellExecutor for BashExecutor {
         // Reject dangerous metacharacters (prevent RCE even on allowed base cmd)
         // NOTE: echo exemption removed per B-04/02 security review — echo with metachars
         // can be used for staged injection (e.g. `echo ; rm -rf /`)
-        if trimmed.contains([';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>']) {
+        if trimmed.contains(FORBIDDEN_METACHARS) {
             return Err(ToolError {
                 message: "Metacharacters (; & | ` $ etc.) not permitted for security. Use parameterized args where possible.".to_string(),
                 kind: ToolErrorKind::PermissionDenied,
@@ -155,10 +152,9 @@ impl ShellExecutor for PowerShellExecutor {
                 kind: ToolErrorKind::PermissionDenied,
             });
         }
-        // PowerShell specific metachar checks (less aggressive as -Command is used)
-        if trimmed.contains(['&', ';', '`']) {
+        if trimmed.contains(FORBIDDEN_METACHARS) {
             return Err(ToolError {
-                message: "Dangerous PowerShell metacharacters not permitted.".to_string(),
+                message: "Metacharacters (; & | ` $ etc.) not permitted for security. Use parameterized args where possible.".to_string(),
                 kind: ToolErrorKind::PermissionDenied,
             });
         }
@@ -325,10 +321,19 @@ mod tests {
         assert!(b.check_allow_list("rm -rf /").is_err()); // Not in allow list
         assert!(b.check_allow_list("echo ; rm -rf /").is_err()); // metachar
         let ps = PowerShellExecutor;
+        assert!(ps.check_allow_list("git status").is_ok());
         assert!(ps
             .check_allow_list("powershell -Command Get-Process")
-            .is_ok());
-        assert!(ps.check_allow_list("pwsh -Command Write-Host test").is_ok());
+            .is_err());
+        assert!(ps
+            .check_allow_list("pwsh -Command Write-Host test")
+            .is_err());
+        // 新增 shell 解释器拒绝测试
+        assert!(b.check_allow_list("bash script.sh").is_err());
+        assert!(b.check_allow_list("sh script.sh").is_err());
+        assert!(ps.check_allow_list("git status | Get-Process").is_err());
+        assert!(ps.check_allow_list("git status > out.txt").is_err());
+        assert!(ps.check_allow_list("echo $(Get-Process)").is_err());
     }
     #[test]
     fn test_powershell_args() {

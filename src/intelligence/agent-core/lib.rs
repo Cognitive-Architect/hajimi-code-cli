@@ -65,6 +65,8 @@ pub use swarm::{
 
 #[cfg(test)]
 mod agent_loop_tests;
+#[cfg(test)]
+mod prompt_golden_tests;
 pub use degrade::degrade_warn;
 pub use ports::{AgentError, AgentResult};
 
