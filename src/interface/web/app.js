@@ -18,6 +18,7 @@ window.app = {
   fileTree: null,
   commandHistory: [],
   commandHistoryIndex: -1,
+  slashPalette: null,
   settings: {
     theme: 'dark',
     fontSize: 14,
@@ -2239,16 +2240,48 @@ window.app = {
   setupChat() {
     const chatInput = document.getElementById('aiChatInput');
     const chatSendBtn = document.getElementById('aiChatSendBtn');
+    const slashPaletteContainer = document.getElementById('slashPalette');
+    const slashPaletteEnabled = window.__HAJIMI_FLAGS__?.slashPaletteEnabled !== false;
+
+    if (slashPaletteEnabled && window.HajimiSlashPalette && chatInput && slashPaletteContainer) {
+      this.slashPalette = window.HajimiSlashPalette.createSlashPalette({
+        inputEl: chatInput,
+        containerEl: slashPaletteContainer,
+        getCommands: () => this.getSlashCommands(),
+        onSelect: (item) => {
+          if (item.disabled || item.enabled === false) return;
+          chatInput.value = item.insertText || item.trigger || '';
+          chatInput.focus();
+          chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+          if (item.executeMode === 'direct' && item.riskLevel === 'low') {
+            this.sendChatMessage();
+          }
+        },
+      });
+    }
 
     chatInput.addEventListener('input', () => {
       chatInput.style.height = 'auto';
       chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+      if (this.slashPalette) {
+        this.slashPalette.handleInput();
+      }
     });
 
     chatInput.addEventListener('keydown', (e) => {
+      if (this.slashPalette?.isOpen() && this.slashPalette.handleKeyDown(e)) {
+        return;
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendChatMessage();
+      }
+    });
+
+    chatInput.addEventListener('blur', () => {
+      if (this.slashPalette?.isOpen()) {
+        this.slashPalette.close('blur');
       }
     });
 
@@ -2283,6 +2316,20 @@ window.app = {
     }
 
     this.updateTokenDisplay();
+  },
+
+  getSlashCommands() {
+    return [
+      { id: 'tools', trigger: '/tools', title: 'List tools', description: 'Show available backend tools', category: 'tool', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['list', 'backend'] },
+      { id: 'providers', trigger: '/providers', title: 'List providers', description: 'Show configured model providers', category: 'model', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['models'] },
+      { id: 'tool', trigger: '/tool', title: 'Run tool', description: 'Fill /tool <name> {json_args}', category: 'tool', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/tool ' },
+      { id: 'chat', trigger: '/chat', title: 'Chat with provider', description: 'Fill /chat <provider> <prompt>', category: 'model', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/chat ' },
+      { id: 'mcp', trigger: '/mcp', title: 'MCP command', description: 'Fill /mcp list/init/invoke', category: 'mcp', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/mcp ' },
+      { id: 'search', trigger: '/search', title: 'Search workspace', description: 'Fill /search <pattern>', category: 'search', riskLevel: 'low', enabled: true, executeMode: 'fill', insertText: '/search ' },
+      { id: 'git', trigger: '/git', title: 'Git helper', description: 'Fill /git status/diff/commit', category: 'git', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/git ' },
+      { id: 'extensions', trigger: '/extensions', title: 'List extensions', description: 'Show available extensions', category: 'extension', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['plugins'] },
+      { id: 'compact', trigger: '/compact', title: 'Compact context', description: 'Fill compact command for explicit submit', category: 'context', riskLevel: 'medium', enabled: true, executeMode: 'fill' },
+    ];
   },
 
   async sendChatMessage() {

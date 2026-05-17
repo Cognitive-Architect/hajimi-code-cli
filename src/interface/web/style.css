@@ -351,6 +351,7 @@ body {
 /* Composer */
 .composer {
   padding: var(--space-2) var(--space-3);
+  position: relative;
 }
 
 .composer-attachments {
@@ -409,6 +410,122 @@ body {
 
 .composer-send:hover {
   opacity: 0.85;
+}
+
+.slash-palette {
+  position: absolute;
+  left: var(--space-3);
+  right: 52px;
+  bottom: calc(100% - var(--space-2));
+  z-index: 40;
+  max-height: 260px;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+}
+
+.slash-palette.hidden {
+  display: none;
+}
+
+.slash-palette-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.slash-palette-item {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 2px var(--space-2);
+  align-items: center;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slash-palette-item:hover,
+.slash-palette-item.active {
+  background: var(--bg-muted);
+  border-color: var(--border-muted);
+}
+
+.slash-palette-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.slash-palette-main {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.slash-palette-trigger {
+  flex: 0 0 auto;
+  color: var(--fg-magenta);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.slash-palette-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-default);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-palette-description {
+  grid-column: 1 / 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-palette-meta {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.slash-palette-category,
+.slash-palette-risk {
+  max-width: 72px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-palette-empty {
+  padding: var(--space-3);
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 .composer-toolbar {

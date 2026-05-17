@@ -1,0 +1,27 @@
+[
+  {
+    "path": "src/interface/web/app.js",
+    "pattern": "innerHTML",
+    "reason": "Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only."
+  },
+  {
+    "path": "src/interface/web/modules/security-dom.js",
+    "pattern": "innerHTML",
+    "reason": "Security helper intentionally uses a detached element to escape text; tracked as known implementation detail."
+  },
+  {
+    "path": "src/interface/web/modules/sessions.js",
+    "pattern": "innerHTML",
+    "reason": "Legacy session rendering remains out of B16 Day 5 scope and is tracked as warning."
+  },
+  {
+    "path": "src/interface/web/modules/workspace.js",
+    "pattern": "innerHTML",
+    "reason": "Legacy workspace tree rendering remains out of B16 Day 5 scope and is tracked as warning."
+  },
+  {
+    "path": "src/interface/web/modules/thinking-ui.js",
+    "pattern": "innerHTML",
+    "reason": "Legacy thinking/checkpoint rendering remains out of B16 Day 5 scope and is tracked as warning."
+  }
+]
