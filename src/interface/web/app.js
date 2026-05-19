@@ -49,6 +49,7 @@ window.app = {
   installedExtensions: [],
 
   init() {
+    this.setupDialogTrace();
     this.setupActivityBar();
     this.setupChat();
     this.setupCommandPalette();
@@ -80,6 +81,9 @@ window.app = {
     this.setupInspector();
     this.setupSettingsTabs();
     this.setupMoreMenus();
+    this.setupLiveShellControls();
+    this.renderLiveShellState('就绪');
+    this.updateGitBranch();
 
     // Build command list
     this.commands = [
@@ -110,6 +114,209 @@ window.app = {
     ];
   },
 
+  setupDialogTrace() {
+    if (this._dialogTraceInstalled || window.__HAJIMI_DEBUG_DIALOG_TRACE__ !== true) return;
+    this._dialogTraceInstalled = true;
+    const originals = window.__HAJIMI_DIALOG_TRACE_ORIGINALS__ || {};
+    window.__HAJIMI_DIALOG_TRACE_ORIGINALS__ = originals;
+    const trace = (type, args) => {
+      console.warn(`[dialog-trace] ${type}`, Array.from(args), new Error(`[dialog-trace] ${type}`).stack);
+    };
+    ['alert', 'confirm', 'prompt'].forEach((type) => {
+      if (typeof window[type] !== 'function' || originals[type]) return;
+      originals[type] = window[type];
+      window[type] = function tracedDialog() {
+        trace(type, arguments);
+        return originals[type].apply(window, arguments);
+      };
+    });
+    if (typeof this.showErrorToast === 'function' && !originals.showErrorToast) {
+      originals.showErrorToast = this.showErrorToast;
+      this.showErrorToast = function tracedShowErrorToast() {
+        trace('showErrorToast', arguments);
+        return originals.showErrorToast.apply(this, arguments);
+      };
+    }
+  },
+
+  // ============================================================
+  // Live Shell State
+  // ============================================================
+  setupLiveShellControls() {
+    document.getElementById('sidebarModelShortcut')?.addEventListener('click', () => this.openModelPicker());
+    document.getElementById('topBarSearchBtn')?.addEventListener('click', () => this.showCommandPalette());
+    document.getElementById('topBarSettingsBtn')?.addEventListener('click', () => {
+      this.showSidebar('settings');
+      this.switchSettingsTab('general');
+    });
+  },
+
+  getActiveSession() {
+    return this.chatSessions.find(s => s.id === this.activeSessionId) || null;
+  },
+
+  getDisplaySessionTitle() {
+    const session = this.getActiveSession();
+    const firstUser = this.chatMessages.find(m => m.role === 'user');
+    const firstAssistant = this.chatMessages.find(m => m.role === 'assistant' || m.role === 'ai');
+    return (session?.title || firstUser?.content || firstAssistant?.content || '新会话').slice(0, 30);
+  },
+
+  renderLiveShellState(statusText) {
+    this.renderTopBarWorkspace();
+    this.renderChatShellStatus(statusText);
+    this.renderSidebarFileSummary();
+    this.renderSidebarModelSummary();
+    this.renderSidebarMcpSummary();
+    this.renderInspectorTaskStatus(statusText);
+    this.renderInspectorSessionStats();
+  },
+
+  renderTopBarWorkspace() {
+    const projectEl = document.getElementById('topBarProject');
+    if (!projectEl) return;
+    if (!this.currentWorkspace) {
+      projectEl.textContent = 'hajimi-code-cli';
+      projectEl.title = '';
+      return;
+    }
+    const normalized = String(this.currentWorkspace).replace(/[\\/]+$/, '');
+    projectEl.textContent = normalized.split(/[\\/]/).pop() || normalized || 'workspace';
+    projectEl.title = this.currentWorkspace;
+  },
+
+  renderChatShellStatus(statusText) {
+    const titleEl = document.getElementById('chatHeaderTitle');
+    if (titleEl) titleEl.textContent = this.getDisplaySessionTitle();
+
+    const statusEl = document.getElementById('chatRunStatus');
+    if (!statusEl) return;
+    const text = statusText || (this.isProcessing ? '处理中...' : '就绪');
+    statusEl.textContent = text;
+    const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
+    statusEl.className = `run-status ${busy ? 'active' : 'idle'}`;
+  },
+
+  renderInspectorTaskStatus(statusText) {
+    const statusEl = document.getElementById('inspectorTaskStatus');
+    if (!statusEl) return;
+    const text = statusText || (this.isProcessing ? '处理中...' : '就绪');
+    const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
+    statusEl.innerHTML = `
+      <div class="inspector-task-title">
+        ${this.escapeHtml(this.getDisplaySessionTitle())}
+        <span class="run-status small ${busy ? 'active' : 'idle'}">${this.escapeHtml(text)}</span>
+      </div>
+      <div class="inspector-key-values">
+        <span>上下文文件</span><strong>${this.chatContextFiles.length}</strong>
+        <span>消息数</span><strong>${this.chatMessages.length}</strong>
+        <span>Trace 事件</span><strong>${this.traceEvents.length}</strong>
+      </div>
+    `;
+  },
+
+  renderSidebarFileSummary() {
+    const container = document.getElementById('sidebarFileSummary');
+    if (!container) return;
+    if (!this.fileTree) {
+      container.innerHTML = '<div class="sidebar-live-empty">加载文件中...</div>';
+      return;
+    }
+
+    const rows = [];
+    const pushNode = (node, depth) => {
+      if (!node || rows.length >= 10) return;
+      rows.push({ node, depth });
+      if (node.type === 'folder' && depth < 2 && Array.isArray(node.children)) {
+        node.children.slice(0, 4).forEach(child => pushNode(child, depth + 1));
+      }
+    };
+
+    const children = Array.isArray(this.fileTree.children) ? this.fileTree.children : [];
+    children.slice(0, 8).forEach(node => pushNode(node, 0));
+    if (rows.length === 0) {
+      container.innerHTML = '<div class="sidebar-live-empty">当前工作区暂无可显示文件</div>';
+      return;
+    }
+
+    const fileClass = (name) => {
+      const lower = String(name || '').toLowerCase();
+      if (lower.endsWith('.html')) return 'html';
+      if (lower.endsWith('.css')) return 'css';
+      if (lower.endsWith('.js') || lower.endsWith('.ts')) return 'js';
+      if (lower.endsWith('.json') || lower.endsWith('.toml') || lower.endsWith('.lock')) return 'config';
+      return '';
+    };
+
+    container.innerHTML = rows.map(({ node, depth }) => {
+      const safeDepth = Math.min(depth, 3);
+      const label = node.type === 'folder' ? `⌄ ${node.name}/` : node.name;
+      const classes = node.type === 'folder'
+        ? `tree-row depth-${safeDepth} expanded`
+        : `tree-row depth-${safeDepth} file ${fileClass(node.name)}`;
+      const fileAttr = node.type === 'file' ? ` data-file="${this.escapeAttr(node.path)}"` : '';
+      return `<div class="${classes}"${fileAttr}>${this.escapeHtml(label)}</div>`;
+    }).join('');
+
+    container.querySelectorAll('[data-file]').forEach(row => {
+      row.addEventListener('click', () => this.openFile(row.dataset.file));
+    });
+  },
+
+  renderSidebarModelSummary() {
+    const active = this.providerConfigs.find(c => c.id === this.activeProviderId);
+    const modelNameEl = document.getElementById('sidebarModelName');
+    const providerMetaEl = document.getElementById('sidebarProviderMeta');
+    const displayName = active ? (active.name || active.model || active.id) : '选择模型';
+    if (modelNameEl) modelNameEl.textContent = displayName;
+    if (providerMetaEl) {
+      if (active) {
+        const meta = [active.providerType || 'provider', active.model].filter(Boolean).join(' · ');
+        providerMetaEl.innerHTML = `${this.escapeHtml(meta)} <span class="online-dot"></span>`;
+      } else if (this.providerConfigs.length > 0) {
+        providerMetaEl.textContent = `${this.providerConfigs.length} 个模型已配置`;
+      } else {
+        providerMetaEl.textContent = '未选择模型';
+      }
+    }
+  },
+
+  renderSidebarMcpSummary() {
+    const summaryEl = document.getElementById('sidebarMcpSummary');
+    if (!summaryEl) return;
+    if (!this.mcpServers.length) {
+      summaryEl.textContent = '暂无 MCP 服务器';
+      return;
+    }
+    const toolCount = this.mcpServers.reduce((sum, server) => sum + ((server.tools || []).length), 0);
+    summaryEl.innerHTML = `${this.mcpServers.length} 个服务已记录 · ${toolCount} 个工具 <span class="online-dot"></span>`;
+  },
+
+  renderInspectorSessionStats() {
+    const el = document.getElementById('inspectorTaskSteps');
+    if (!el) return;
+    const totalMessages = this.chatMessages.length;
+    if (totalMessages === 0) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">暂无会话统计</span>';
+      return;
+    }
+    const userMessages = this.chatMessages.filter(m => m.role === 'user').length;
+    const assistantMessages = this.chatMessages.filter(m => m.role === 'assistant' || m.role === 'ai').length;
+    const estimated = this.chatMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
+    const promptTokens = this.tokenStats.promptTokens || Math.floor(estimated * 0.35);
+    const completionTokens = this.tokenStats.completionTokens || Math.ceil(estimated * 0.65);
+    const requestCount = this.cumulativeStats.requestCount || userMessages;
+    el.innerHTML = `
+      <div class="inspector-key-values">
+        <span>消息数</span><strong>${totalMessages}</strong>
+        <span>用户消息</span><strong>${userMessages}</strong>
+        <span>助手消息</span><strong>${assistantMessages}</strong>
+        <span>Tokens 估算</span><strong>${promptTokens + completionTokens}</strong>
+        <span>请求轮次</span><strong>${requestCount}</strong>
+      </div>
+    `;
+  },
+
   // ============================================================
   // Activity Bar
   // ============================================================
@@ -117,6 +324,7 @@ window.app = {
     document.querySelectorAll('.activity-item').forEach(item => {
       item.addEventListener('click', () => {
         const view = item.dataset.view;
+        if (!view) return;
         this.showSidebar(view);
       });
     });
@@ -266,31 +474,14 @@ window.app = {
   },
 
   updateTaskDetails(statusText) {
-    const statusEl = document.getElementById('inspectorTaskStatus');
-    if (statusEl) {
-      statusEl.innerHTML = `<span style="color:var(--fg-dim);">${this.escapeHtml(statusText || '就绪')}</span>`;
-    }
-    this.renderTaskSteps();
+    const text = statusText || (this.isProcessing ? '处理中...' : '就绪');
+    this.renderInspectorTaskStatus(text);
+    this.renderChatShellStatus(text);
+    this.renderInspectorSessionStats();
   },
 
   renderTaskSteps() {
-    const el = document.getElementById('inspectorTaskSteps');
-    if (!el) return;
-    if (!this.traceEvents || this.traceEvents.length === 0) {
-      el.innerHTML = '<span style="color:var(--fg-dim);">等待任务开始...</span>';
-      return;
-    }
-    const steps = this.traceEvents.filter(ev => ev.step_type === 'Act' || ev.step_type === 'Plan');
-    if (steps.length === 0) {
-      el.innerHTML = '<span style="color:var(--fg-dim);">尚无执行步骤</span>';
-      return;
-    }
-    el.innerHTML = steps.slice(-3).map(s => `
-      <div style="font-size:11px;margin-bottom:2px;display:flex;gap:4px;overflow:hidden;">
-        <span style="color:var(--fg-cyan); font-weight:bold;flex-shrink:0;">${this.escapeHtml(s.step || s.step_type || '')}</span>
-        <span style="color:var(--fg-default);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;">${this.escapeHtml(s.details)}</span>
-      </div>
-    `).join('');
+    this.renderInspectorSessionStats();
   },
 
   renderEditSummary() {
@@ -681,6 +872,11 @@ window.app = {
         if (statusBranch && branch) {
           statusBranch.innerHTML = `🌿 ${this.escapeHtml(branch)}`;
         }
+        const topBarBranch = document.getElementById('topBarBranch');
+        if (topBarBranch && branch) topBarBranch.textContent = branch;
+        const sidebarGitBranch = document.getElementById('sidebarGitBranch');
+        if (sidebarGitBranch && branch) sidebarGitBranch.textContent = branch;
+        this.renderLiveShellState();
       })
       .catch(() => {
         // Keep existing branch name on error
@@ -691,7 +887,9 @@ window.app = {
   // File Tree
   // ============================================================
   async loadFileTree(path) {
-    return window.HajimiWorkspace.loadFileTree(this, path);
+    const result = await window.HajimiWorkspace.loadFileTree(this, path);
+    this.renderLiveShellState();
+    return result;
   },
 
   async buildTreeFromEntries(dirPath, entries) {
@@ -700,11 +898,12 @@ window.app = {
 
   setupFileTreeToolbar() {
     const newFileBtn = document.getElementById('newFileBtn');
-    if (newFileBtn) newFileBtn.addEventListener('click', () => this.createNewFile());
+    if (newFileBtn) newFileBtn.addEventListener('click', () => this.createNewFolder());
 
     const explorerMoreBtn = document.getElementById('explorerMoreBtn');
     if (explorerMoreBtn) {
       explorerMoreBtn.addEventListener('click', (e) => this.showDropdownMenu(e, [
+        { label: '新建文件', action: () => this.createNewFile() },
         { label: '新建文件夹', action: () => this.createNewFolder() },
         { label: '刷新', action: () => this.loadFileTree() },
         { label: '全部折叠', action: () => this.collapseAllFolders() }
@@ -2033,12 +2232,14 @@ window.app = {
     this.chatContextFiles.push(path);
     this.renderChatContext();
     this.safeRenderContextFiles();
+    this.renderLiveShellState();
   },
 
   removeChatContextFile(path) {
     this.chatContextFiles = this.chatContextFiles.filter(p => p !== path);
     this.renderChatContext();
     this.safeRenderContextFiles();
+    this.renderLiveShellState();
   },
 
   clearChatContext() {
@@ -2052,6 +2253,7 @@ window.app = {
     const chatMsgContainer = document.getElementById('aiChatMessages');
     if (chatMsgContainer) chatMsgContainer.innerHTML = '';
     this.updateTokenDisplay();
+    this.renderLiveShellState('就绪');
   },
 
   renderChatContext() {
@@ -2141,6 +2343,7 @@ window.app = {
     if (!statusEl) return;
     if (this.chatMessages.length === 0) {
       statusEl.textContent = '';
+      this.renderInspectorSessionStats();
       return;
     }
     const cfg = this.getActiveProviderConfig();
@@ -2163,6 +2366,7 @@ window.app = {
       text += ` | 累计: ↑ ${c.promptTokens} ↓ ${c.completionTokens} (${c.requestCount}轮)`;
     }
     statusEl.textContent = text;
+    this.renderInspectorSessionStats();
   },
 
   getActiveProviderConfig() {
@@ -2358,6 +2562,7 @@ window.app = {
     chatSendBtn.disabled = true;
     this.showStatusIndicator('working');
     this.safeUpdateTaskDetails('处理中...');
+    this.renderLiveShellState('处理中...');
     this.safeRenderContextFiles();
     this.safeRenderModelInfo();
 
@@ -2372,22 +2577,26 @@ window.app = {
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
         this.safeUpdateTaskDetails('就绪');
+        this.renderLiveShellState('就绪');
         this.saveChatSessions();
         this.renderSessionList();
       }
       return;
     }
 
-    const thinkingId = this.addThinking();
-
     // Check if a provider is selected
     if (!this.activeProviderId) {
-      this.removeThinking(thinkingId);
-      this.addChatMessage('ai', '**未选择模型。** 请点击右上角「选择模型」按钮配置并选择一个模型。');
+      const noProviderMessage = '**未选择模型。** 请点击右上角「选择模型」按钮配置并选择一个模型。';
+      this.addChatMessage('ai', noProviderMessage);
+      this.chatMessages.push({ role: 'assistant', content: noProviderMessage, timestamp: Date.now() });
       this.isProcessing = false;
       chatSendBtn.disabled = false;
       this.hideStatusIndicator();
       this.safeUpdateTaskDetails('就绪');
+      this.renderLiveShellState('就绪');
+      this.updateTokenDisplay();
+      this.saveChatSessions();
+      this.renderSessionList();
       return;
     }
 
@@ -2408,20 +2617,26 @@ window.app = {
 
       try {
         const response = await this.streamChat(provider, text, config, this.chatMessages);
-        this.removeThinking(thinkingId);
-        this.chatMessages.push({ role: 'assistant', content: response, timestamp: Date.now() });
+        this.chatMessages.push(this.createAssistantSessionMessage(response));
       } catch (err) {
         console.error('stream_chat error:', err);
-        this.removeThinking(thinkingId);
-        this.addChatMessage('ai', `**错误：** ${err.message || err}\n\n已回退到本地回复。`);
-        const demoResponse = this.generateDemoResponse(text);
-        this.addChatMessage('ai', demoResponse);
-        this.chatMessages.push({ role: 'assistant', content: demoResponse, timestamp: Date.now() });
+        const errorContent = `**错误：** ${err.message || err}`;
+        const lastResponse = document.querySelector('.assistant-turn:last-child .assistant-response-content');
+        if (!lastResponse || !lastResponse.classList.contains('is-error')) {
+          const errorTurn = this.createAssistantTurn();
+          if (errorTurn) {
+            this.updateTurnResponse(errorTurn, { state: 'error', error: err.message || err });
+          } else {
+            this.addChatMessage('ai', errorContent);
+          }
+        }
+        this.chatMessages.push(this.createAssistantSessionMessage(errorContent));
       } finally {
         this.isProcessing = false;
         chatSendBtn.disabled = false;
         this.hideStatusIndicator();
         this.safeUpdateTaskDetails('就绪');
+        this.renderLiveShellState('就绪');
         this.updateTokenDisplay();
         this.saveCumulativeToLocalStorage();
         this.checkAutoCompact();
@@ -2430,21 +2645,24 @@ window.app = {
       }
     } else {
       // Fallback to local demo
-      setTimeout(() => {
-        this.removeThinking(thinkingId);
-        const demoResponse = this.generateDemoResponse(text);
+      const demoResponse = this.generateDemoResponse(text);
+      const demoTurn = this.createAssistantTurn();
+      if (demoTurn) {
+        this.updateTurnResponse(demoTurn, { state: 'done', content: demoResponse });
+      } else {
         this.addChatMessage('ai', demoResponse);
-        this.chatMessages.push({ role: 'assistant', content: demoResponse, timestamp: Date.now() });
-        this.isProcessing = false;
-        chatSendBtn.disabled = false;
-        this.hideStatusIndicator();
-        this.safeUpdateTaskDetails('就绪');
-        this.updateTokenDisplay();
-        this.saveCumulativeToLocalStorage();
-        this.checkAutoCompact();
-        this.saveChatSessions();
-        this.renderSessionList();
-      }, 1200);
+      }
+      this.chatMessages.push(this.createAssistantSessionMessage(demoResponse, demoTurn));
+      this.isProcessing = false;
+      chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      this.safeUpdateTaskDetails('就绪');
+      this.renderLiveShellState('就绪');
+      this.updateTokenDisplay();
+      this.saveCumulativeToLocalStorage();
+      this.checkAutoCompact();
+      this.saveChatSessions();
+      this.renderSessionList();
     }
   },
 
@@ -2521,12 +2739,9 @@ window.app = {
         };
       }
 
-      const thinkingId = this.addThinking();
       try {
         await this.streamChat(provider, prompt, config);
-        this.removeThinking(thinkingId);
       } catch (e) {
-        this.removeThinking(thinkingId);
         this.addChatMessage('ai', `**错误：** ${e.message || e}`);
       }
       return;
@@ -2718,9 +2933,207 @@ window.app = {
     return window.HajimiThinkingUI.parseThinkingStream(buffer);
   },
 
+  /// Parse one stream event into explicit thinking/response/error/done fields.
+  parseStreamEvent(buffer, event) {
+    return window.HajimiThinkingUI.parseStreamEvent(buffer, event);
+  },
+
   /// Schedule DOM update via requestAnimationFrame for non-blocking rendering (B-09/12).
   scheduleDomUpdate(fn) {
     return window.HajimiThinkingUI.scheduleDomUpdate(this, fn);
+  },
+
+  createAssistantTurn() {
+    const container = document.getElementById('aiChatMessages');
+    if (!container) return null;
+    const id = 'turn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const root = document.createElement('article');
+    root.className = 'assistant-turn agent-card';
+    root.dataset.turnId = id;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'assistant-turn-avatar';
+    avatar.textContent = 'H';
+
+    const body = document.createElement('div');
+    body.className = 'assistant-turn-body message-card';
+
+    const thinkingPanelHandle = window.HajimiThinkingUI.createThinkingPanel(this, {
+      state: 'empty',
+      collapsed: true,
+    });
+    const thinkingPanel = thinkingPanelHandle.root;
+
+    const responseSection = document.createElement('section');
+    responseSection.className = 'assistant-response';
+    const responseEl = document.createElement('div');
+    responseEl.className = 'assistant-response-content stream-pending';
+    responseSection.appendChild(responseEl);
+
+    body.appendChild(thinkingPanel);
+    body.appendChild(responseSection);
+    root.appendChild(avatar);
+    root.appendChild(body);
+    container.appendChild(root);
+    container.scrollTop = container.scrollHeight;
+
+    return {
+      id,
+      root,
+      thinkingPanel,
+      thinkingPanelHandle,
+      thinkingContent: thinkingPanelHandle.content,
+      responseEl,
+      state: {
+        id,
+        role: 'assistant',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        thinking: {
+          state: 'empty',
+          content: '',
+          startedAt: null,
+          completedAt: null,
+          elapsedMs: 0,
+          collapsed: true,
+          height: null,
+        },
+        response: {
+          state: 'pending',
+          content: '',
+          error: null,
+        },
+      },
+    };
+  },
+
+  hasSessionThinking(msg) {
+    if (!msg || (msg.role !== 'assistant' && msg.role !== 'ai')) return false;
+    return Object.prototype.hasOwnProperty.call(msg, 'thinkingContent')
+      || Object.prototype.hasOwnProperty.call(msg, 'thinkingState')
+      || Object.prototype.hasOwnProperty.call(msg, 'thinkingElapsedMs');
+  },
+
+  snapshotAssistantTurn(turn) {
+    if (!turn || !turn.state) return null;
+    const thinking = turn.state.thinking || {};
+    const response = turn.state.response || {};
+    return {
+      thinkingContent: this.safeText(thinking.content || ''),
+      thinkingState: thinking.state || 'empty',
+      thinkingElapsedMs: Number.isFinite(thinking.elapsedMs) ? thinking.elapsedMs : 0,
+      responseState: response.state || 'done',
+      responseError: response.error || null,
+    };
+  },
+
+  createAssistantSessionMessage(content, turn = null) {
+    const snapshot = this.snapshotAssistantTurn(turn || this._lastAssistantTurn);
+    const message = {
+      role: 'assistant',
+      content: this.safeText(content || ''),
+      timestamp: Date.now(),
+    };
+    if (!snapshot) return message;
+    return {
+      ...message,
+      thinkingContent: snapshot.thinkingContent,
+      thinkingState: snapshot.thinkingState,
+      thinkingElapsedMs: snapshot.thinkingElapsedMs,
+      responseState: snapshot.responseState,
+      responseError: snapshot.responseError,
+    };
+  },
+
+  renderChatMessageFromSession(msg) {
+    if (!this.hasSessionThinking(msg)) {
+      this.addChatMessage(msg.role, msg.content, false);
+      return;
+    }
+
+    const turn = this.createAssistantTurn();
+    if (!turn) {
+      this.addChatMessage(msg.role, msg.content, false);
+      return;
+    }
+
+    const thinkingState = msg.thinkingState || (msg.thinkingContent ? 'done' : 'empty');
+    turn.state.thinking.content = this.safeText(msg.thinkingContent || '');
+    turn.state.thinking.state = thinkingState;
+    turn.state.thinking.elapsedMs = Number.isFinite(msg.thinkingElapsedMs) ? msg.thinkingElapsedMs : 0;
+    if (turn.state.thinking.content) {
+      window.HajimiThinkingUI.setThinkingContent(turn.thinkingPanelHandle, turn.state.thinking.content);
+    }
+    window.HajimiThinkingUI.setThinkingState(turn.thinkingPanelHandle, thinkingState, {
+      elapsedMs: turn.state.thinking.elapsedMs,
+    });
+
+    const responseState = msg.responseState || 'done';
+    this.updateTurnResponse(turn, {
+      state: responseState,
+      content: msg.content || '',
+      error: msg.responseError || null,
+    });
+  },
+
+  updateTurnThinking(turn, patch = {}) {
+    if (!turn || !turn.thinkingPanelHandle) return;
+    const thinking = turn.state.thinking;
+    const now = Date.now();
+    if (Object.prototype.hasOwnProperty.call(patch, 'content')) {
+      thinking.content = this.safeText(patch.content || '');
+      window.HajimiThinkingUI.setThinkingContent(turn.thinkingPanelHandle, thinking.content);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'error')) {
+      thinking.content = this.safeText(patch.error || '');
+    }
+    const nextState = patch.state || thinking.state;
+    if (nextState === 'thinking' && !thinking.startedAt) {
+      thinking.startedAt = now;
+    }
+    if ((nextState === 'done' || nextState === 'empty' || nextState === 'error') && !thinking.completedAt) {
+      thinking.completedAt = now;
+    }
+    thinking.state = nextState;
+    thinking.elapsedMs = thinking.startedAt ? now - thinking.startedAt : 0;
+    turn.state.updatedAt = now;
+
+    if (nextState === 'error' && thinking.content && !patch.content) {
+      window.HajimiThinkingUI.setThinkingContent(turn.thinkingPanelHandle, thinking.content);
+    }
+    window.HajimiThinkingUI.setThinkingState(turn.thinkingPanelHandle, nextState, {
+      elapsedMs: thinking.elapsedMs,
+    });
+  },
+
+  updateTurnResponse(turn, patch = {}) {
+    if (!turn || !turn.responseEl) return;
+    const nextState = patch.state || turn.state.response.state;
+    const hasContent = Object.prototype.hasOwnProperty.call(patch, 'content');
+    if (hasContent) {
+      turn.state.response.content = this.safeText(patch.content);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'error')) {
+      turn.state.response.error = patch.error ? this.safeText(patch.error) : null;
+    }
+    turn.state.response.state = nextState;
+    turn.state.updatedAt = Date.now();
+    turn.responseEl.classList.toggle('stream-pending', nextState === 'pending');
+    turn.responseEl.classList.toggle('is-error', nextState === 'error');
+    turn.responseEl.classList.toggle('assistant-inline-error', nextState === 'error');
+
+    if (nextState === 'pending' && !turn.state.response.content) {
+      turn.responseEl.textContent = patch.pendingText || '正在等待回复...';
+      return;
+    }
+
+    if (nextState === 'error') {
+      const err = turn.state.response.error || turn.state.response.content || '未知错误';
+      turn.responseEl.innerHTML = this.formatText(`**模型返回错误：** ${err}`);
+      return;
+    }
+
+    turn.responseEl.innerHTML = this.formatText(turn.state.response.content);
   },
 
   async streamChat(provider, prompt, config, messages) {
@@ -2731,61 +3144,73 @@ window.app = {
     const Channel = tauri.core?.Channel;
 
     const msgContainer = document.getElementById('aiChatMessages');
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'chat-message ai agent-card';
-    msgDiv.innerHTML = '<div class="chat-message-avatar">H</div><div class="chat-message-body message-card"></div>';
-    const body = msgDiv.querySelector('.chat-message-body');
-    msgContainer.appendChild(msgDiv);
+    const turn = this.createAssistantTurn();
+    if (!turn) throw new Error('Chat message container not found');
+    this._lastAssistantTurn = null;
     msgContainer.scrollTop = msgContainer.scrollHeight;
+    this.updateTurnResponse(turn, { state: 'pending', pendingText: '正在等待回复...' });
 
-    // Create thinking block and response container for streaming (B-09/12)
-    const thinkingBlock = this.createThinkingBlock();
-    thinkingBlock.style.display = 'none';
-    body.appendChild(thinkingBlock);
-    const responseDiv = document.createElement('div');
-    responseDiv.className = 'chat-response-body';
-    body.appendChild(responseDiv);
+    let visibleResponse = '';
+    let pending = true;
+    let streamError = null;
+
+    const renderResponse = (text) => {
+      visibleResponse = text || '';
+      if (pending) {
+        pending = false;
+      }
+      this.updateTurnResponse(turn, { state: 'streaming', content: visibleResponse });
+    };
+
+    const renderThinking = (text) => {
+      const content = (text || '').trim();
+      if (!content) {
+        this.updateTurnThinking(turn, { state: 'empty', content: '' });
+        return;
+      }
+      this.updateTurnThinking(turn, { state: 'thinking', content });
+    };
 
     if (!Channel) {
-      // Fallback: simulate streaming with local response
       const demoText = this.generateDemoResponse(prompt);
-      let fullText = '';
-      const chars = demoText.split('');
-      for (let i = 0; i < chars.length; i++) {
-        fullText += chars[i];
-        responseDiv.innerHTML = this.formatText(fullText);
-        msgContainer.scrollTop = msgContainer.scrollHeight;
-        await new Promise(r => setTimeout(r, 10));
-      }
-      return fullText;
+      visibleResponse = demoText;
+      this.updateTurnThinking(turn, { state: 'empty' });
+      this.updateTurnResponse(turn, { state: 'done', content: demoText });
+      this._lastAssistantTurn = turn;
+      msgContainer.scrollTop = msgContainer.scrollHeight;
+      return demoText;
     }
 
     const channel = new Channel();
     let buffer = '';
 
     channel.onmessage = (event) => {
-      if (event.chunk) {
-        buffer += event.chunk;
+      const result = this.parseStreamEvent(buffer, event || {});
+      buffer = result.buffer;
+
+      if (result.error) {
+        streamError = result.error;
+        console.warn('stream_chat event error:', streamError);
+        pending = false;
+        this.updateTurnResponse(turn, { state: 'error', error: streamError });
+        msgContainer.scrollTop = msgContainer.scrollHeight;
+        return;
+      }
+
+      if (event.chunk || Object.prototype.hasOwnProperty.call(event, 'thinking_content')) {
         this.scheduleDomUpdate(() => {
-          const result = this.parseThinkingStream(buffer);
           if (result.state === 'idle') {
-            responseDiv.innerHTML = this.formatText(result.response);
+            renderThinking('');
+            renderResponse(result.response);
           } else if (result.state === 'thinking') {
-            thinkingBlock.style.display = 'block';
-            const md = thinkingBlock.querySelector('.thinking-block-markdown');
-            if (md) md.innerHTML = this.renderMarkdown(result.thinking);
+            renderThinking(result.thinking);
+            if (result.response) renderResponse(result.response);
           } else if (result.state === 'response') {
-            thinkingBlock.style.display = 'block';
-            const md = thinkingBlock.querySelector('.thinking-block-markdown');
-            if (md) md.innerHTML = this.renderMarkdown(result.thinking);
-            responseDiv.innerHTML = this.formatText(result.response);
+            renderThinking(result.thinking);
+            renderResponse(result.response);
           }
           msgContainer.scrollTop = msgContainer.scrollHeight;
         });
-      }
-      if (event.error) {
-        this.showErrorToast(event.error);
-        responseDiv.innerHTML = this.formatText(`**错误：** ${event.error}`);
       }
       if (event.done) {
         // Capture precise token usage from backend
@@ -2803,9 +3228,33 @@ window.app = {
       }
     };
 
-    await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
+    try {
+      await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
+    } catch (err) {
+      if (turn.state.thinking.content) {
+        this.updateTurnThinking(turn, { state: 'done' });
+      } else {
+        this.updateTurnThinking(turn, { state: 'error', error: err.message || err });
+      }
+      this.updateTurnResponse(turn, { state: 'error', error: err.message || err });
+      this._lastAssistantTurn = turn;
+      throw err;
+    }
 
-    return buffer;
+    this.updateTurnThinking(turn, {
+      state: turn.state.thinking.content ? 'done' : 'empty',
+    });
+
+    if (streamError) {
+      this.updateTurnResponse(turn, { state: 'error', error: streamError });
+    } else if (pending) {
+      this.updateTurnResponse(turn, { state: 'done', content: '模型没有返回内容。' });
+    } else {
+      this.updateTurnResponse(turn, { state: 'done', content: visibleResponse });
+    }
+
+    this._lastAssistantTurn = turn;
+    return visibleResponse || buffer;
   },
 
   generateDemoResponse(text) {
@@ -2845,6 +3294,7 @@ window.app = {
 
   addChatMessage(role, text) {
     const container = document.getElementById('aiChatMessages');
+    if (!container) return;
     const div = document.createElement('div');
     div.className = `chat-message ${role}${role === 'ai' || role === 'assistant' ? ' agent-card' : ''}`;
     const avatar = role === 'user' ? 'You' : 'H';
@@ -2971,6 +3421,7 @@ window.app = {
       this.renderModelButton();
       this.renderProviderList();
       this.safeRenderModelInfo();
+      this.renderLiveShellState();
     } catch (e) {
       console.error('loadProviders error:', e);
     }
@@ -2981,6 +3432,7 @@ window.app = {
     if (!btn) return;
     const active = this.providerConfigs.find(c => c.id === this.activeProviderId);
     btn.textContent = active ? (active.name || active.model || '选择模型') : '选择模型';
+    this.renderSidebarModelSummary();
   },
 
   // ============================================================
@@ -3069,6 +3521,7 @@ window.app = {
     const statusModel = document.getElementById('statusModel');
     if (statusModel) statusModel.textContent = displayName;
     this.safeRenderModelInfo();
+    this.renderLiveShellState();
     console.log(`Switched to model: ${displayName}`);
   },
 
@@ -3524,6 +3977,7 @@ window.app = {
     if (!list) return;
     if (!this.mcpServers.length) {
       list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务器</div>';
+      this.renderSidebarMcpSummary();
       return;
     }
     list.innerHTML = this.mcpServers.map((s, i) => `
@@ -3544,6 +3998,7 @@ window.app = {
         this.renderMcpServers();
       });
     });
+    this.renderSidebarMcpSummary();
   },
 
   saveMcpServers() {
@@ -3560,6 +4015,8 @@ window.app = {
       if (raw) {
         this.mcpServers = JSON.parse(raw);
         this.renderMcpServers();
+      } else {
+        this.renderSidebarMcpSummary();
       }
     } catch (e) {
       console.error('loadMcpServers error:', e);
@@ -4521,23 +4978,17 @@ window.app = {
 
   showStatusIndicator(header = 'working') {
     const indicator = document.getElementById('statusIndicatorRow');
-    const spinner = document.getElementById('statusSpinner');
+    if (indicator) indicator.classList.add('hidden');
+    this._statusIndicatorStart = null;
+    if (this._statusIndicatorTimer) {
+      clearInterval(this._statusIndicatorTimer);
+      this._statusIndicatorTimer = null;
+    }
     const headerEl = document.getElementById('statusHeader');
-    if (!indicator) return;
-    indicator.classList.remove('hidden');
     if (headerEl) {
       headerEl.textContent = header;
-      this.setShimmer(headerEl, true);
+      this.setShimmer(headerEl, false);
     }
-    if (spinner) this.startSpinner(spinner);
-    this._statusIndicatorStart = Date.now();
-    this._statusIndicatorTimer = setInterval(() => {
-      const elapsed = document.getElementById('statusElapsed');
-      if (elapsed && this._statusIndicatorStart) {
-        const secs = Math.floor((Date.now() - this._statusIndicatorStart) / 1000);
-        elapsed.textContent = `(${this.fmtElapsedCompact(secs)} · esc to interrupt)`;
-      }
-    }, 1000);
   },
 
   hideStatusIndicator() {

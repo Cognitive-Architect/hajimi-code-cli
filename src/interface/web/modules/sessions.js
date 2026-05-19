@@ -11,7 +11,7 @@
     if (!app.activeSessionId) return;
     const session = app.chatSessions.find(s => s.id === app.activeSessionId);
     if (!session) return;
-    session.messages = [...app.chatMessages];
+    session.messages = app.chatMessages.map(msg => ({ ...msg }));
     session.updatedAt = Date.now();
 
     const firstUser = app.chatMessages.find(m => m.role === 'user');
@@ -50,6 +50,7 @@
     });
     app.saveChatSessions();
     app.renderSessionList();
+    app.renderLiveShellState?.('就绪');
   }
 
   function loadChatSessions(app) {
@@ -70,6 +71,7 @@
       app.chatMessages = latest.messages || [];
       app.renderChatMessages();
       app.renderSessionList();
+      app.renderLiveShellState?.('就绪');
     } catch (e) {
       console.error('loadChatSessions error:', e);
       app.newChatSession();
@@ -96,6 +98,7 @@
     app.updateTokenDisplay();
     app.renderSessionList();
     app.saveChatSessions();
+    app.renderLiveShellState?.('就绪');
   }
 
   function renderChatMessages(app) {
@@ -103,17 +106,43 @@
     if (!container) return;
     container.innerHTML = '';
     for (const msg of app.chatMessages) {
-      app.addChatMessage(msg.role, msg.content, false);
+      if (app.renderChatMessageFromSession) {
+        app.renderChatMessageFromSession(msg);
+      } else {
+        app.addChatMessage(msg.role, msg.content, false);
+      }
     }
+  }
+
+  function formatSessionTime(value) {
+    const time = value ? new Date(value) : new Date();
+    const now = new Date();
+    if (time.toDateString() === now.toDateString()) {
+      return time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (time.toDateString() === yesterday.toDateString()) {
+      return '昨天';
+    }
+    return `${time.getMonth() + 1}月${time.getDate()}日`;
   }
 
   function renderSessionList(app) {
     const list = document.getElementById('sessionList');
     if (!list) return;
+    if (!app.chatSessions.length) {
+      list.innerHTML = '<div class="session-empty">暂无会话</div>';
+      app.renderLiveShellState?.();
+      return;
+    }
     list.innerHTML = app.chatSessions.map(s => `
       <div class="session-item ${s.id === app.activeSessionId ? 'active' : ''}" data-session="${app.escapeAttr(s.id)}">
-        <div class="session-title">${app.escapeHtml(s.title || '会话')}</div>
-        <div class="session-preview">${app.escapeHtml(s.preview || '')}</div>
+        <div class="session-item-main">
+          <div class="session-title">${app.escapeHtml(s.title || '会话')}</div>
+          <div class="session-preview">${app.escapeHtml(s.preview || '')}</div>
+        </div>
+        <span class="session-time">${app.escapeHtml(formatSessionTime(s.updatedAt || s.createdAt))}</span>
       </div>
     `).join('');
 
@@ -125,6 +154,7 @@
         }
       });
     });
+    app.renderLiveShellState?.();
   }
 
   global.HajimiSessions = {

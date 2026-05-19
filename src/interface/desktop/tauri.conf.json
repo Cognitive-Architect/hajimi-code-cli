@@ -7,7 +7,7 @@
     "frontendDist": "../web/dist/dist",
     "devUrl": "http://localhost:3456",
     "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "node ../../scripts/sync-web-dist.js"
   },
   "app": {
     "withGlobalTauri": true,

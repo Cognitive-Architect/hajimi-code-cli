@@ -276,6 +276,7 @@ function createApp() {
     sidebarView: 'agent-trace',
     replayEvents: [],
     replayIndex: -1,
+    renderedMessages: [],
     currentDiffFile: null,
     safeText(value) {
       return context.HajimiSecurityDom.safeText(value);
@@ -290,12 +291,24 @@ function createApp() {
       return this.escapeHtml(value);
     },
     addChatMessage(role, content) {
+      this.renderedMessages.push({ role, content, legacy: true });
       const container = document.getElementById('aiChatMessages');
       const message = document.createElement('div');
       message.className = `chat-message ${role === 'ai' || role === 'assistant' ? 'ai' : role}`;
       message.innerHTML = `<div class="chat-message-body">${this.escapeHtml(content)}</div>`;
       container.appendChild(message);
       return message;
+    },
+    renderChatMessageFromSession(msg) {
+      this.renderedMessages.push({
+        role: msg.role,
+        content: msg.content,
+        restoredThinking: Object.prototype.hasOwnProperty.call(msg, 'thinkingContent'),
+        thinkingContent: msg.thinkingContent || '',
+        thinkingState: msg.thinkingState || '',
+        thinkingElapsedMs: msg.thinkingElapsedMs || 0,
+      });
+      return this.addChatMessage(msg.role, msg.content);
     },
     updateTokenDisplay() {},
     safeRenderTraceInspector() {},
@@ -381,10 +394,73 @@ context.HajimiSessions.loadChatSessions(restored);
 assert(restored.activeSessionId, 'loadChatSessions should restore an active session');
 assert(localStorage.getItem('hajimi_chat_sessions'), 'legacy localStorage key should be used');
 
+app.chatMessages = [{
+  role: 'assistant',
+  content: 'answer with restored thinking',
+  thinkingContent: 'restored plan',
+  thinkingState: 'done',
+  thinkingElapsedMs: 2100,
+  responseState: 'done',
+}];
+context.HajimiSessions.saveChatSessions(app);
+const savedSession = JSON.parse(localStorage.getItem('hajimi_chat_sessions'))
+  .find(session => session.id === app.activeSessionId);
+assert(savedSession.messages[0].thinkingContent === 'restored plan', 'new assistant messages should persist thinkingContent');
+assert(savedSession.messages[0].thinkingState === 'done', 'new assistant messages should persist thinkingState');
+assert(savedSession.messages[0].thinkingElapsedMs === 2100, 'new assistant messages should persist thinkingElapsedMs');
+
+localStorage.setItem('hajimi_chat_sessions', JSON.stringify([{
+  id: 'compat-session',
+  title: 'compat',
+  preview: 'old',
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  messages: [
+    { role: 'user', content: 'old user message', timestamp: Date.now() },
+    { role: 'assistant', content: 'old assistant message', timestamp: Date.now() },
+    {
+      role: 'assistant',
+      content: 'new assistant message',
+      timestamp: Date.now(),
+      thinkingContent: 'new thinking',
+      thinkingState: 'done',
+      thinkingElapsedMs: 1200,
+      responseState: 'done',
+    },
+  ],
+}]));
+const compat = createApp();
+context.HajimiSessions.loadChatSessions(compat);
+assert.strictEqual(compat.activeSessionId, 'compat-session', 'compat session should load');
+const restoredUser = compat.renderedMessages.find(msg => msg.content === 'old user message');
+const restoredOldAssistant = compat.renderedMessages.find(msg => msg.content === 'old assistant message' && !msg.restoredThinking);
+const restoredNewAssistant = compat.renderedMessages.find(msg => msg.content === 'new assistant message' && msg.restoredThinking);
+assert(restoredUser, 'old user message should render');
+assert(restoredOldAssistant, 'old assistant message without thinking fields should render as legacy');
+assert(restoredNewAssistant, 'new assistant message with thinking fields should use restore branch');
+assert.strictEqual(restoredNewAssistant.thinkingContent, 'new thinking', 'restored thinkingContent should be preserved');
+
 const parsed = context.HajimiThinkingUI.parseThinkingStream('<thinking>plan</thinking><response>done</response>');
 assert.strictEqual(parsed.thinking, 'plan');
 assert.strictEqual(parsed.response, 'done');
 assert.strictEqual(parsed.state, 'response');
+
+const thinkingPanel = context.HajimiThinkingUI.createThinkingPanel(app, { state: 'empty', collapsed: true });
+assert.strictEqual(thinkingPanel.root.dataset.state, 'empty', 'thinking panel should start in empty state');
+assert.strictEqual(thinkingPanel.root.dataset.collapsed, 'true', 'thinking panel should start collapsed');
+assert.strictEqual(thinkingPanel.title.textContent, '未返回显式思考过程', 'empty state should be explicit');
+thinkingPanel.header.click();
+assert.strictEqual(thinkingPanel.root.dataset.collapsed, 'false', 'thinking panel header should expand panel');
+context.HajimiThinkingUI.setThinkingContent(thinkingPanel, '<img src=x onerror=alert(1)>');
+assert.strictEqual(thinkingPanel.root.dataset.state, 'thinking', 'content should move panel to thinking state');
+assert(thinkingPanel.content.innerHTML.includes('&lt;img'), 'thinking content should be escaped');
+assert(!thinkingPanel.content.innerHTML.includes('<img'), 'thinking content must not render raw image tags');
+assert(!thinkingPanel.content.innerHTML.includes('onerror=alert(1)>'), 'thinking content must not render raw event attributes');
+context.HajimiThinkingUI.setThinkingState(thinkingPanel, 'done', { elapsedMs: 2100 });
+assert.strictEqual(thinkingPanel.root.dataset.state, 'done', 'thinking panel should support done state');
+assert.strictEqual(thinkingPanel.title.textContent, '已思考');
+context.HajimiThinkingUI.setThinkingState(thinkingPanel, 'error');
+assert.strictEqual(thinkingPanel.root.dataset.state, 'error', 'thinking panel should support error state');
 
 app.traceEvents = [{
   step_type: 'Plan',

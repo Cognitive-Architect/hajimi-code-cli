@@ -1,32 +1,89 @@
 (function (global) {
   'use strict';
 
+  function getThinkingTag(buffer) {
+    const tags = [
+      { open: '<thinking>', close: '</thinking>' },
+      { open: '<think>', close: '</think>' },
+    ];
+    return tags
+      .map(tag => ({ ...tag, index: buffer.indexOf(tag.open) }))
+      .filter(tag => tag.index !== -1)
+      .sort((a, b) => a.index - b.index)[0] || null;
+  }
+
   function parseThinkingStream(buffer) {
-    const thinkOpen = '<thinking>';
-    const thinkClose = '</thinking>';
+    const text = String(buffer || '');
     const respOpen = '<response>';
     const respClose = '</response>';
-    const tStart = buffer.indexOf(thinkOpen);
-    if (tStart === -1) {
-      return { thinking: null, response: buffer, state: 'idle' };
+    const tag = getThinkingTag(text);
+    if (!tag) {
+      return { thinking: null, response: text, state: 'idle' };
     }
-    const tEnd = buffer.indexOf(thinkClose, tStart);
+    const tStart = tag.index;
+    const beforeThinking = text.slice(0, tStart);
+    const tEnd = text.indexOf(tag.close, tStart + tag.open.length);
     if (tEnd === -1) {
-      const thinking = buffer.slice(tStart + thinkOpen.length);
-      return { thinking, response: null, state: 'thinking' };
+      const thinking = text.slice(tStart + tag.open.length);
+      return { thinking, response: beforeThinking || null, state: 'thinking' };
     }
-    const thinking = buffer.slice(tStart + thinkOpen.length, tEnd).trim();
+    const thinking = text.slice(tStart + tag.open.length, tEnd).trim();
     let response = '';
-    const rStart = buffer.indexOf(respOpen, tEnd);
+    const rStart = text.indexOf(respOpen, tEnd);
     if (rStart !== -1) {
-      const rEnd = buffer.indexOf(respClose, rStart);
+      const rEnd = text.indexOf(respClose, rStart);
       response = rEnd !== -1
-        ? buffer.slice(rStart + respOpen.length, rEnd)
-        : buffer.slice(rStart + respOpen.length);
+        ? text.slice(rStart + respOpen.length, rEnd)
+        : text.slice(rStart + respOpen.length);
     } else {
-      response = buffer.slice(tEnd + thinkClose.length);
+      response = beforeThinking + text.slice(tEnd + tag.close.length);
     }
     return { thinking, response, state: 'response' };
+  }
+
+  function parseStreamEvent(buffer, event = {}) {
+    const current = String(buffer || '');
+    const chunk = event && Object.prototype.hasOwnProperty.call(event, 'chunk')
+      ? String(event.chunk || '')
+      : '';
+    const nextBuffer = chunk ? current + chunk : current;
+    const done = Boolean(event && event.done);
+
+    if (event && event.error) {
+      return {
+        buffer: nextBuffer,
+        type: 'error',
+        state: 'error',
+        thinking: null,
+        response: null,
+        error: String(event.chunk || event.error),
+        done,
+      };
+    }
+
+    if (event && Object.prototype.hasOwnProperty.call(event, 'thinking_content')) {
+      return {
+        buffer: nextBuffer,
+        type: 'thinking',
+        state: 'thinking',
+        thinking: String(event.thinking_content || ''),
+        response: null,
+        error: null,
+        done,
+      };
+    }
+
+    const parsed = parseThinkingStream(nextBuffer);
+    const type = parsed.state === 'thinking' ? 'thinking' : 'response';
+    return {
+      buffer: nextBuffer,
+      type,
+      state: parsed.state,
+      thinking: parsed.thinking,
+      response: parsed.response,
+      error: null,
+      done,
+    };
   }
 
   function scheduleDomUpdate(app, fn) {
@@ -74,6 +131,12 @@
   }
 
   function updateActiveThinking(app, content) {
+    const activePanel = document.querySelector('.assistant-turn:last-child .thinking-panel');
+    if (activePanel) {
+      setThinkingContent(activePanel, content);
+      setThinkingState(activePanel, 'thinking');
+      return;
+    }
     const activeThinking = document.querySelector('.chat-message.ai .thinking-block');
     if (!activeThinking) return;
     activeThinking.style.display = 'block';
@@ -127,6 +190,179 @@
     }
   }
 
+  function getAssistantTurnContract() {
+    return {
+      root: 'article.assistant-turn[data-turn-id]',
+      body: '.assistant-turn-body',
+      thinking: {
+        root: '.thinking-panel[data-state][data-collapsed]',
+        states: ['thinking', 'done', 'empty', 'error'],
+        content: '.thinking-content',
+        resizeHandle: '.thinking-resize-handle',
+      },
+      response: {
+        root: '.assistant-response',
+        content: '.assistant-response-content',
+        states: ['pending', 'streaming', 'done', 'error'],
+      },
+      stateFields: [
+        'id',
+        'role',
+        'createdAt',
+        'updatedAt',
+        'thinking.state',
+        'thinking.content',
+        'thinking.startedAt',
+        'thinking.completedAt',
+        'thinking.elapsedMs',
+        'thinking.collapsed',
+        'thinking.height',
+        'response.state',
+        'response.content',
+        'response.error',
+      ],
+    };
+  }
+
+  const THINKING_STATES = new Set(['thinking', 'done', 'empty', 'error']);
+
+  function unwrapThinkingPanel(panel) {
+    if (!panel) return null;
+    if (panel.root) return panel;
+    if (panel._thinkingPanel) return panel._thinkingPanel;
+    return { root: panel };
+  }
+
+  function setHeaderExpanded(header, expanded) {
+    if (!header) return;
+    if (typeof header.setAttribute === 'function') {
+      header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    } else {
+      header.ariaExpanded = expanded ? 'true' : 'false';
+    }
+  }
+
+  function createThinkingPanel(app, options = {}) {
+    const root = document.createElement('section');
+    root.className = 'thinking-panel';
+    root.dataset.state = 'empty';
+    root.dataset.collapsed = options.collapsed === false ? 'false' : 'true';
+
+    const header = document.createElement('button');
+    header.className = 'thinking-panel-header';
+    header.type = 'button';
+    setHeaderExpanded(header, root.dataset.collapsed === 'false');
+
+    const icon = document.createElement('span');
+    icon.className = 'thinking-icon';
+    const title = document.createElement('span');
+    title.className = 'thinking-title';
+    const meta = document.createElement('span');
+    meta.className = 'thinking-meta';
+    const toggle = document.createElement('span');
+    toggle.className = 'thinking-toggle';
+    header.appendChild(icon);
+    header.appendChild(title);
+    header.appendChild(meta);
+    header.appendChild(toggle);
+
+    const body = document.createElement('div');
+    body.className = 'thinking-panel-body';
+    const content = document.createElement('div');
+    content.className = 'thinking-content';
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'thinking-resize-handle';
+    body.appendChild(content);
+    body.appendChild(resizeHandle);
+    root.appendChild(header);
+    root.appendChild(body);
+
+    const panel = { root, header, icon, title, meta, toggle, body, content, resizeHandle, app };
+    root._thinkingPanel = panel;
+    header.addEventListener('click', () => toggleThinkingPanel(panel));
+    setThinkingState(panel, options.state || 'empty', options);
+    if (options.content) setThinkingContent(panel, options.content);
+    bindThinkingResize(panel);
+    return panel;
+  }
+
+  function setThinkingState(panel, state, patch = {}) {
+    const handle = unwrapThinkingPanel(panel);
+    if (!handle || !handle.root) return null;
+    const nextState = THINKING_STATES.has(state) ? state : 'empty';
+    handle.root.dataset.state = nextState;
+
+    const collapsed = handle.root.dataset.collapsed !== 'false';
+    setHeaderExpanded(handle.header, !collapsed);
+    if (handle.toggle) handle.toggle.textContent = collapsed ? '▾' : '▴';
+
+    const elapsedMs = patch.elapsedMs;
+    const elapsed = typeof elapsedMs === 'number' && elapsedMs >= 1000
+      ? `用时 ${Math.max(1, Math.round(elapsedMs / 1000))} 秒`
+      : '';
+
+    if (handle.icon) {
+      handle.icon.textContent = nextState === 'thinking' ? '...' : nextState === 'error' ? '!' : 'i';
+    }
+    if (handle.title) {
+      if (nextState === 'thinking') handle.title.textContent = '正在思考...';
+      else if (nextState === 'done') handle.title.textContent = '已思考';
+      else if (nextState === 'error') handle.title.textContent = '思考过程出错';
+      else handle.title.textContent = '未返回显式思考过程';
+    }
+    if (handle.meta) {
+      if (nextState === 'thinking') handle.meta.textContent = elapsed || '等待模型返回思考内容';
+      else if (nextState === 'done') handle.meta.textContent = elapsed || '可展开查看';
+      else if (nextState === 'error') handle.meta.textContent = '查看错误详情';
+      else handle.meta.textContent = '面板保留为空状态';
+    }
+    if (handle.content && !handle.content.textContent && !handle.content.innerHTML) {
+      if (nextState === 'empty') handle.content.textContent = '未返回显式思考过程';
+      else if (nextState === 'thinking') handle.content.textContent = '正在思考...';
+      else if (nextState === 'error') handle.content.textContent = '思考过程出错';
+    }
+    return handle;
+  }
+
+  function setThinkingContent(panel, content) {
+    const handle = unwrapThinkingPanel(panel);
+    if (!handle || !handle.content) return null;
+    const safeContent = handle.app && handle.app.safeText
+      ? handle.app.safeText(content || '')
+      : String(content || '');
+    if (!safeContent.trim()) {
+      handle.content.textContent = '';
+      setThinkingState(handle, 'empty');
+      return handle;
+    }
+    if (handle.app && handle.app.renderMarkdown) {
+      handle.content.innerHTML = handle.app.renderMarkdown(safeContent);
+    } else {
+      handle.content.textContent = safeContent;
+    }
+    setThinkingState(handle, 'thinking');
+    return handle;
+  }
+
+  function toggleThinkingPanel(panel) {
+    const handle = unwrapThinkingPanel(panel);
+    if (!handle || !handle.root) return null;
+    const nextCollapsed = handle.root.dataset.collapsed === 'false';
+    handle.root.dataset.collapsed = nextCollapsed ? 'true' : 'false';
+    setHeaderExpanded(handle.header, !nextCollapsed);
+    if (handle.toggle) handle.toggle.textContent = nextCollapsed ? '▾' : '▴';
+    return handle;
+  }
+
+  function bindThinkingResize(panel) {
+    const handle = unwrapThinkingPanel(panel);
+    if (!handle || !handle.root) return null;
+    handle.root.dataset.resize = 'deferred';
+    return handle;
+  }
+
+  // Legacy processing card. Keep this for /compact, auto compact, and non-chat
+  // task progress only; the normal chat stream must move to assistant-turn v2.
   function addThinking(app) {
     const id = 't-' + Date.now();
     const container = document.getElementById('aiChatMessages');
@@ -137,6 +373,7 @@
       <div class="chat-message-avatar">H</div>
       <div class="chat-message-body message-card">
         <div class="thinking-indicator">
+          <span class="thinking-status-text">正在处理...</span>
           <div class="thinking-dot"></div>
           <div class="thinking-dot"></div>
           <div class="thinking-dot"></div>
@@ -432,11 +669,18 @@
 
   global.HajimiThinkingUI = {
     parseThinkingStream,
+    parseStreamEvent,
     scheduleDomUpdate,
     startTraceSubscription,
     renderTraceCards,
     clearTraceCards,
     toggleTracePause,
+    getAssistantTurnContract,
+    createThinkingPanel,
+    setThinkingState,
+    setThinkingContent,
+    toggleThinkingPanel,
+    bindThinkingResize,
     addThinking,
     removeThinking,
     createThinkingBlock,
