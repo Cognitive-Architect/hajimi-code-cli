@@ -3625,7 +3625,7 @@ window.app = {
           if (reserveOutputField) reserveOutputField.value = 512;
           if (safetyMarginField) safetyMarginField.value = 256;
           if (retrievalBudgetField) retrievalBudgetField.value = 2048;
-          if (longContextModeField) longContextModeField.checked = true;
+          if (longContextModeField) longContextModeField.checked = false;
         } else if (val === 'pro_200k') {
           if (maxContextField) maxContextField.value = 200000;
           if (maxOutputField) maxOutputField.value = 8192;
@@ -3635,7 +3635,7 @@ window.app = {
           if (longContextModeField) longContextModeField.checked = true;
         } else if (val === 'long_1m') {
           if (maxContextField) maxContextField.value = 1000000;
-          if (maxOutputField) maxOutputField.value = 8192;
+          if (maxOutputField) maxOutputField.value = 16384;
           if (reserveOutputField) reserveOutputField.value = 1024;
           if (safetyMarginField) safetyMarginField.value = 512;
           if (retrievalBudgetField) retrievalBudgetField.value = 4096;
