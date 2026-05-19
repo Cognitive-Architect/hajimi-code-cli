@@ -139,25 +139,35 @@ window.app = {
     }
   },
 
+  getTauriBridge() {
+    const bridge = window.HajimiTauri;
+    if (!bridge?.isAvailable?.()) throw new Error('Tauri 不可用');
+    return bridge;
+  },
+
+  isTauriAvailable() {
+    return Boolean(window.HajimiTauri?.isAvailable?.());
+  },
+
   getTauriInvoke() {
-    const tauri = window.__TAURI__;
-    if (!tauri) throw new Error('Tauri 不可用');
-    return tauri.core?.invoke || tauri.invoke;
+    return this.getTauriBridge().invoke;
+  },
+
+  async invokeTauri(command, args = {}) {
+    return this.getTauriInvoke()(command, args);
+  },
+
+  getTauriChannel() {
+    return this.getTauriBridge().Channel;
   },
 
   isToolConfirmationError(error) {
     return String(error?.message || error || '').includes('requires confirmation');
   },
 
-  async executeTool(name, args = {}, options = {}) {
+  async executeTool(name, args = {}) {
     const invoke = this.getTauriInvoke();
-    const payload = { name, args };
-    if (options.confirmMessage) {
-      const confirmed = confirm(options.confirmMessage);
-      if (!confirmed) throw new Error('用户取消执行');
-      payload.confirmationToken = await invoke('create_tool_confirmation_token', { name, args });
-    }
-    return invoke('execute_tool', payload);
+    return invoke('execute_tool', { name, args });
   },
 
   async executeToolWithConfirmationRetry(name, args = {}, confirmMessage = '') {
@@ -165,10 +175,27 @@ window.app = {
       return await this.executeTool(name, args);
     } catch (error) {
       if (!this.isToolConfirmationError(error)) throw error;
-      return this.executeTool(name, args, {
-        confirmMessage: confirmMessage || `工具 ${name} 需要确认，是否继续？`,
-      });
+      throw new Error(confirmMessage || `工具 ${name} 需要后端确认后才能继续`);
     }
+  },
+
+  getShellToolName() {
+    return navigator.userAgent.includes('Windows') ? 'powershell' : 'bash';
+  },
+
+  quoteShellArg(arg) {
+    const value = String(arg);
+    if (!value || /\s/.test(value)) return `"${value.replace(/"/g, '\\"')}"`;
+    return value;
+  },
+
+  async runShellCommand(command, args = []) {
+    const line = [command, ...args].map((part) => this.quoteShellArg(part)).join(' ');
+    const result = await this.executeTool(this.getShellToolName(), { command: line, cwd: this.currentWorkspace || '.' });
+    if (result.exit_code != null && result.exit_code !== 0) {
+      throw new Error(result.stderr || result.stdout || `exit code ${result.exit_code}`);
+    }
+    return result.stdout || result.stderr || '';
   },
 
   // ============================================================
@@ -679,12 +706,10 @@ window.app = {
 
     searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">搜索中...</div>';
 
-    const tauri = window.__TAURI__;
-    if (!tauri) {
+    if (!this.isTauriAvailable()) {
       searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);">Tauri 不可用</div>';
       return;
     }
-    const invoke = tauri.core?.invoke || tauri.invoke;
 
     const caseSensitive = document.getElementById('searchCaseSensitive')?.checked || false;
     const regex = document.getElementById('searchRegex')?.checked || false;
@@ -778,9 +803,7 @@ window.app = {
   },
 
   async loadGitStatus() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
       const result = await this.executeTool('git_status', {});
       const output = result.stdout || result.result || '';
@@ -836,9 +859,7 @@ window.app = {
   },
 
   async showGitDiff(file) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
       const result = await this.executeTool('git_diff', { file });
       const diff = result.stdout || result.result || '';
@@ -874,13 +895,9 @@ window.app = {
       this.showErrorToast('请输入提交信息');
       return;
     }
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
-      await this.executeTool('git_commit', { message }, {
-        confirmMessage: `确定要提交当前 Git 更改吗？\n\n${message}`,
-      });
+      await this.executeTool('git_commit', { message });
       commitInput.value = '';
       this.loadGitStatus();
       this.showErrorToast('提交成功');
@@ -892,11 +909,9 @@ window.app = {
   updateGitBranch(gitStatusOutput) {
     // Try to extract branch name from git status output
     // Format usually includes "On branch xxx" or is part of porcelain output
-    // Fallback: try run_command to get current branch
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    invoke('run_command', { cmd: 'git', args: ['branch', '--show-current'] })
+    // Fallback: query current branch through the governed shell tool.
+    if (!this.isTauriAvailable()) return;
+    this.runShellCommand('git', ['branch', '--show-current'])
       .then(result => {
         const branch = (result.stdout || result).trim();
         const statusBranch = document.getElementById('statusBranch');
@@ -947,11 +962,9 @@ window.app = {
     if (!name) return;
     const basePath = this.currentWorkspace || '.';
     const path = basePath + '/' + name;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
-      await invoke('write_file', { path, content: '' });
+      await this.invokeTauri('write_file', { path, content: '' });
       this.loadFileTree();
       this.openFile(path);
     } catch (e) {
@@ -1532,12 +1545,10 @@ window.app = {
   },
 
   async openFile(path) {
-    const tauri = window.__TAURI__;
     let content = '';
-    if (tauri) {
-      const invoke = tauri.core?.invoke || tauri.invoke;
+    if (this.isTauriAvailable()) {
       try {
-        content = await invoke('read_file', { path });
+        content = await this.invokeTauri('read_file', { path });
       } catch (e) {
         this.showErrorToast('读取文件失败: ' + (e.message || e));
         return;
@@ -1614,11 +1625,9 @@ window.app = {
     const rejectBtn = div.querySelector('.diff-reject-btn');
 
     applyBtn.addEventListener('click', async () => {
-      const tauri = window.__TAURI__;
-      if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-      const invoke = tauri.core?.invoke || tauri.invoke;
+      if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
       try {
-        await invoke('apply_edits', {
+        await this.invokeTauri('apply_edits', {
           edits: [{
             path: filePath,
             old_string: oldLines.join('\n'),
@@ -1708,12 +1717,10 @@ window.app = {
   async cloneRepo() {
     const url = prompt('输入仓库 URL:');
     if (!url) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
       this.addTerminalOutput(`$ git clone ${url}`, 'cmd');
-      const result = await invoke('run_command', { cmd: 'git', args: ['clone', url] });
+      const result = await this.runShellCommand('git', ['clone', url]);
       this.addTerminalOutput(result, 'output');
       this.loadFileTree();
     } catch (e) {
@@ -1856,14 +1863,11 @@ window.app = {
     cmdLine.innerHTML = `<span class="terminal-prompt">$ </span><span class="terminal-cmd">${this.escapeHtml(cmd)}</span>`;
     terminalContent.appendChild(cmdLine);
 
-    const tauri = window.__TAURI__;
-    if (!tauri) {
+    if (!this.isTauriAvailable()) {
       this.addTerminalOutput('Tauri 不可用 — 无法执行命令', 'error');
       this.appendTerminalPrompt();
       return;
     }
-
-    const invoke = tauri.core?.invoke || tauri.invoke;
 
     // Simple command parsing: first word = cmd, rest = args
     const parts = cmd.split(/\s+/);
@@ -1871,7 +1875,7 @@ window.app = {
     const args = parts.slice(1);
 
     try {
-      const result = await invoke('run_command', { cmd: command, args });
+      const result = await this.runShellCommand(command, args);
       if (result) {
         this.addTerminalOutput(result, 'output');
         // Also send to output panel for build/test commands
@@ -1907,19 +1911,16 @@ window.app = {
     if (!problemsContent) return;
     problemsContent.innerHTML = '<div class="problems-empty">扫描中...</div>';
 
-    const tauri = window.__TAURI__;
-    if (!tauri) {
+    if (!this.isTauriAvailable()) {
       problemsContent.innerHTML = '<div class="problems-empty">Tauri 不可用</div>';
       return;
     }
-    const invoke = tauri.core?.invoke || tauri.invoke;
 
     try {
-      // Try cargo check first, fallback to run_command
+      // Try cargo check first, fallback to surfaced shell error text.
       let output = '';
       try {
-        const result = await invoke('run_command', { cmd: 'cargo', args: ['check'] });
-        output = result.stdout || result;
+        output = await this.runShellCommand('cargo', ['check']);
       } catch (e) {
         // If cargo check fails, try a simpler approach
         output = (e.message || e).toString();
@@ -2322,13 +2323,11 @@ window.app = {
 
   async loadCumulativeFromBackend() {
     try {
-      const tauri = window.__TAURI__;
-      const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
-      if (!invoke) {
+      if (!this.isTauriAvailable()) {
         this.loadCumulativeFromLocalStorage();
         return;
       }
-      const stats = await invoke('get_cumulative_stats');
+      const stats = await this.invokeTauri('get_cumulative_stats');
       if (stats && stats.total) {
         this.cumulativeStats = {
           promptTokens: stats.total.prompt_tokens || 0,
@@ -2427,14 +2426,12 @@ window.app = {
   async autoCompactContext() {
     if (this.isAutoCompacting) return;
     this.isAutoCompacting = true;
-    const tauri = window.__TAURI__;
-    const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
-    if (!invoke) { this.isAutoCompacting = false; return; }
+    if (!this.isTauriAvailable()) { this.isAutoCompacting = false; return; }
     const provider = this.activeProviderId;
     const config = this.getActiveProviderConfig();
     const thinkingId = this.addThinking();
     try {
-      const summary = await invoke('optimize_context', { messages: this.chatMessages, provider, config });
+      const summary = await this.invokeTauri('optimize_context', { messages: this.chatMessages, provider, config });
       this.removeThinking(thinkingId);
       const kept = this.chatMessages.slice(-2);
       this.chatMessages = [
@@ -2453,14 +2450,12 @@ window.app = {
 
   async buildContextPrompt() {
     if (!this.chatContextFiles.length) return '';
-    const tauri = window.__TAURI__;
-    if (!tauri) return '';
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return '';
 
     const parts = [];
     for (const path of this.chatContextFiles) {
       try {
-        const content = await invoke('read_file', { path });
+        const content = await this.invokeTauri('read_file', { path });
         parts.push(`--- 文件: ${path} ---\n${content}`);
       } catch (e) {
         parts.push(`--- 文件: ${path} ---\n[读取失败: ${e.message || e}]`);
@@ -2632,8 +2627,7 @@ window.app = {
     }
 
     // Try real backend first
-    const tauri = window.__TAURI__;
-    if (tauri) {
+    if (this.isTauriAvailable()) {
       const cfg = this.providerConfigs.find(c => c.id === this.activeProviderId);
       const provider = this.activeProviderId;
       const config = cfg ? {
@@ -2698,13 +2692,10 @@ window.app = {
   },
 
   async handleChatCommand(text) {
-    const tauri = window.__TAURI__;
-    const invoke = tauri ? (tauri.core?.invoke || tauri.invoke) : null;
-
     if (text === '/tools') {
-      if (!invoke) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
+      if (!this.isTauriAvailable()) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
       try {
-        const tools = await invoke('list_tools');
+        const tools = await this.invokeTauri('list_tools');
         const list = tools.map(t => `- \`${t.name}\` — ${t.description || '无描述'}`).join('\n');
         this.addChatMessage('ai', `**可用工具 (${tools.length}个)：**\n\n${list}`);
       } catch (e) {
@@ -2722,7 +2713,7 @@ window.app = {
     }
 
     if (text.startsWith('/tool ')) {
-      if (!invoke) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
+      if (!this.isTauriAvailable()) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
       // Parse: /tool <name> <json_args>
       const rest = text.slice(6).trim();
       const spaceIdx = rest.indexOf(' ');
@@ -3171,11 +3162,10 @@ window.app = {
   },
 
   async streamChat(provider, prompt, config, messages) {
-    const tauri = window.__TAURI__;
-    if (!tauri) throw new Error('Tauri not available');
+    if (!this.isTauriAvailable()) throw new Error('Tauri not available');
 
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    const Channel = tauri.core?.Channel;
+    const invoke = this.getTauriInvoke();
+    const Channel = this.getTauriChannel();
 
     const msgContainer = document.getElementById('aiChatMessages');
     const turn = this.createAssistantTurn();
@@ -3321,7 +3311,7 @@ window.app = {
       return 'Hajimi 是用 Rust 构建的！工作区包含 22 个 crate，包括 `engine-llm-core`、`engine-tool-system` 和 `agent-core`。您可以在编辑器中打开任意 `.rs` 文件来浏览代码库。';
     }
     if (lower.startsWith('/tools')) {
-      return '**可用工具 (38个)：**\n\n- `read_file` — 读取文件内容\n- `write_file` — 写入文件\n- `list_dir` — 列出目录内容\n- `run_command` — 执行 shell 命令\n- `search_code` — 搜索代码库\n- `git_status` — Git 状态\n- `git_diff` — Git 差异\n\n... 以及 31 个更多工具。使用 `/tool <名称> <参数>` 来执行。';
+      return '**可用工具 (38个)：**\n\n- `read_file` — 读取文件内容\n- `write_file` — 写入文件\n- `list_dir` — 列出目录内容\n- `powershell` / `bash` — 通过权限治理执行白名单命令\n- `search_code` — 搜索代码库\n- `git_status` — Git 状态\n- `git_diff` — Git 差异\n\n... 以及 31 个更多工具。使用 `/tool <名称> <参数>` 来执行。';
     }
     return `我收到了：**"${text}"**\n\n（这是本地回复 — 后端尚未连接。尝试询问 \`help\`、\`rust\`，或使用 \`/tools\`。）`;
   },
@@ -3445,12 +3435,10 @@ window.app = {
   // Provider Management
   // ============================================================
   async loadProviders() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
 
     try {
-      const custom = await invoke('get_provider_configs', { workspacePath: this.currentWorkspace });
+      const custom = await this.invokeTauri('get_provider_configs', { workspacePath: this.currentWorkspace });
       this.providerConfigs = custom || [];
       this.renderModelButton();
       this.renderProviderList();
@@ -3713,11 +3701,9 @@ window.app = {
   },
 
   async exportProviderBackup(password) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
-      const path = await invoke('export_provider_backup', { password, workspacePath: this.currentWorkspace });
+      const path = await this.invokeTauri('export_provider_backup', { password, workspacePath: this.currentWorkspace });
       this.showErrorToast('备份已导出: ' + path);
     } catch (e) {
       this.showErrorToast('导出失败: ' + (e.message || e));
@@ -3725,11 +3711,9 @@ window.app = {
   },
 
   async importProviderBackup(password, filePath) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
-      const count = await invoke('import_provider_backup', { password, filePath });
+      const count = await this.invokeTauri('import_provider_backup', { password, filePath });
       this.showErrorToast('成功导入 ' + count + ' 个 Provider');
       await this.loadProviders();
     } catch (e) {
@@ -3762,14 +3746,12 @@ window.app = {
       apiKey,
       model
     };
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
 
     try {
       const saveTarget = document.getElementById('providerSaveTarget')?.value || 'global';
       const command = this.editingProviderId ? 'update_provider_config' : 'add_provider_config';
-      await invoke(command, { config: config, workspacePath: this.currentWorkspace, saveTarget: saveTarget });
+      await this.invokeTauri(command, { config: config, workspacePath: this.currentWorkspace, saveTarget: saveTarget });
       // Clear sensitive field after save (P0-3)
       document.getElementById('providerApiKey').value = '';
       await this.loadProviders();
@@ -3788,11 +3770,9 @@ window.app = {
 
   async deleteProviderConfig(id) {
     if (!confirm('确定要删除此模型配置吗？')) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
-      await invoke('delete_provider_config', { id: id, workspacePath: this.currentWorkspace, deleteTarget: 'global' });
+      await this.invokeTauri('delete_provider_config', { id: id, workspacePath: this.currentWorkspace, deleteTarget: 'global' });
       await this.loadProviders();
     } catch (e) {
       this.showErrorToast('删除失败: ' + (e.message || e));
@@ -3803,12 +3783,10 @@ window.app = {
   // Profile Management (B-05/01)
   // ============================================================
   async loadProfiles() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
-      const profiles = await invoke('list_profiles');
-      const active = await invoke('get_active_profile');
+      const profiles = await this.invokeTauri('list_profiles');
+      const active = await this.invokeTauri('get_active_profile');
       const select = document.getElementById('profileSelect');
       if (!select) return;
       let html = '<option value="">default</option>';
@@ -3827,12 +3805,10 @@ window.app = {
     const deleteBtn = document.getElementById('deleteProfileBtn');
     if (select) {
       select.addEventListener('change', async () => {
-        const tauri = window.__TAURI__;
-        if (!tauri) return;
-        const invoke = tauri.core?.invoke || tauri.invoke;
+        if (!this.isTauriAvailable()) return;
         const name = select.value || null;
         try {
-          await invoke('set_active_profile', { name });
+          await this.invokeTauri('set_active_profile', { name });
           await this.loadProviders();
           this.showErrorToast('已切换至 Profile: ' + (name || 'default'));
         } catch (e) {
@@ -3844,11 +3820,9 @@ window.app = {
       createBtn.addEventListener('click', async () => {
         const name = prompt('输入新 Profile 名称:');
         if (!name) return;
-        const tauri = window.__TAURI__;
-        if (!tauri) return;
-        const invoke = tauri.core?.invoke || tauri.invoke;
+        if (!this.isTauriAvailable()) return;
         try {
-          await invoke('create_profile', { name });
+          await this.invokeTauri('create_profile', { name });
           await this.loadProfiles();
           this.showErrorToast('Profile 创建成功: ' + name);
         } catch (e) {
@@ -3862,11 +3836,9 @@ window.app = {
         const name = select?.value;
         if (!name) { this.showErrorToast('不能删除 default profile'); return; }
         if (!confirm('确定要删除 Profile "' + name + '" 吗？相关密钥将一并清理。')) return;
-        const tauri = window.__TAURI__;
-        if (!tauri) return;
-        const invoke = tauri.core?.invoke || tauri.invoke;
+        if (!this.isTauriAvailable()) return;
         try {
-          await invoke('delete_profile', { name });
+          await this.invokeTauri('delete_profile', { name });
           await this.loadProfiles();
           await this.loadProviders();
           this.showErrorToast('Profile 已删除: ' + name);
@@ -3881,11 +3853,9 @@ window.app = {
   // Agent Provider Binding (B-05/02)
   // ============================================================
   async loadAgentProviders() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
-      const map = await invoke('get_agent_providers');
+      const map = await this.invokeTauri('get_agent_providers');
       const list = document.getElementById('agentProviderListTab');
       const select = document.getElementById('agentBindProviderTab');
       if (!list) return;
@@ -3921,11 +3891,9 @@ window.app = {
         const agentId = document.getElementById('agentBindIdTab')?.value.trim();
         const providerId = document.getElementById('agentBindProviderTab')?.value || null;
         if (!agentId) { this.showErrorToast('请输入 Agent ID'); return; }
-        const tauri = window.__TAURI__;
-        if (!tauri) return;
-        const invoke = tauri.core?.invoke || tauri.invoke;
+        if (!this.isTauriAvailable()) return;
         try {
-          await invoke('set_agent_provider', { agentId, providerId });
+          await this.invokeTauri('set_agent_provider', { agentId, providerId });
           await this.loadAgentProviders();
           document.getElementById('agentBindIdTab').value = '';
         } catch (e) {
@@ -3939,11 +3907,9 @@ window.app = {
   },
 
   async unbindAgentProvider(agentId) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
-      await invoke('set_agent_provider', { agentId, providerId: null });
+      await this.invokeTauri('set_agent_provider', { agentId, providerId: null });
       await this.loadAgentProviders();
     } catch (e) {
       this.showErrorToast('解绑失败: ' + (e.message || e));
@@ -4147,9 +4113,7 @@ window.app = {
   },
 
   async lspDefinition(filePath) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     const sel = window.getSelection();
     if (!sel.rangeCount) return;
     // Simple position estimation: line 0, char 0 for now
@@ -4172,9 +4136,7 @@ window.app = {
   },
 
   async lspReferences(filePath) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     const line = 0;
     const character = 0;
     try {
@@ -4200,9 +4162,7 @@ window.app = {
   },
 
   async lspHover(filePath, rect) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     const line = 0;
     const character = 0;
     try {
@@ -4242,11 +4202,9 @@ window.app = {
   // Audit Log (B-05/03)
   // ============================================================
   async loadAuditLogs() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) return;
     try {
-      const logs = await invoke('get_audit_logs', { limit: 100, offset: 0 });
+      const logs = await this.invokeTauri('get_audit_logs', { limit: 100, offset: 0 });
       const tbody = document.getElementById('auditLogBodyTab');
       if (!tbody) return;
       if (!logs || !logs.length) {
@@ -4295,10 +4253,9 @@ window.app = {
   },
 
   async invokeGovernance(cmd, args = {}) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Desktop 未连接'); return; }
+    if (!this.isTauriAvailable()) { this.showErrorToast('Desktop 未连接'); return; }
     try {
-      await tauri.core.invoke(cmd, args);
+      await this.invokeTauri(cmd, args);
       this.showToast('操作成功');
     } catch (e) {
       this.showErrorToast(`操作失败: ${e}`);
@@ -4314,10 +4271,9 @@ window.app = {
   async loadCheckpoints() {
     const list = document.getElementById('checkpointListTab');
     if (!list) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
+    if (!this.isTauriAvailable()) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
     try {
-      const checkpoints = await tauri.core.invoke('list_checkpoints');
+      const checkpoints = await this.invokeTauri('list_checkpoints');
       this.checkpoints = checkpoints || [];
       if (!checkpoints || checkpoints.length === 0) {
         list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>';
@@ -4364,10 +4320,9 @@ window.app = {
   },
 
   async restoreCheckpoint(id) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
+    if (!this.isTauriAvailable()) return;
     try {
-      const plan = await tauri.core.invoke('restore_checkpoint', { id, confirmRestore: false, dryRun: true });
+      const plan = await this.invokeTauri('restore_checkpoint', { id, confirmRestore: false, dryRun: true });
       const files = plan.files || [];
       const warnings = plan.warnings || [];
       const risk = [
@@ -4377,7 +4332,7 @@ window.app = {
         '确认后才会执行写入。'
       ].join('\n');
       if (!confirm(risk)) return;
-      const result = await tauri.core.invoke('restore_checkpoint', { id, confirmRestore: true, dryRun: false });
+      const result = await this.invokeTauri('restore_checkpoint', { id, confirmRestore: true, dryRun: false });
       this.showToast(`恢复完成，backup: ${result.backup_dir || '-'}`);
       await this.loadCheckpoints();
     }
@@ -4385,10 +4340,9 @@ window.app = {
   },
 
   async exportCheckpoint(id) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
+    if (!this.isTauriAvailable()) return;
     try {
-      const json = await tauri.core.invoke('export_checkpoint', { id });
+      const json = await this.invokeTauri('export_checkpoint', { id });
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `checkpoint_${id}.json`; a.click(); URL.revokeObjectURL(url);
@@ -4396,11 +4350,10 @@ window.app = {
   },
 
   async compareCheckpoints(idA, idB) {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
+    if (!this.isTauriAvailable()) return;
     const target = document.getElementById('checkpointCompareResultTab');
     try {
-      const result = await tauri.core.invoke('compare_checkpoints', { idA, idB });
+      const result = await this.invokeTauri('compare_checkpoints', { idA, idB });
       const added = result.files_added?.length || 0;
       const modified = result.files_modified?.length || 0;
       const removed = result.files_removed?.length || 0;
@@ -4449,10 +4402,9 @@ window.app = {
   },
 
   async exportAllCheckpoints() {
-    const tauri = window.__TAURI__;
-    if (!tauri) return;
+    if (!this.isTauriAvailable()) return;
     try {
-      const json = await tauri.core.invoke('export_checkpoint', { id: 'all' });
+      const json = await this.invokeTauri('export_checkpoint', { id: 'all' });
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'checkpoints_all.json'; a.click(); URL.revokeObjectURL(url);
@@ -4760,9 +4712,7 @@ window.app = {
   },
 
   async acceptAllEdits() {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
-    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     const checked = document.querySelectorAll('.hunk-select:checked');
     if (!checked.length || !this.currentEditPayload || typeof this.currentEditPayload.hunks === 'number') {
       this.hideEditPanel();
@@ -4780,7 +4730,7 @@ window.app = {
     const confirmed = confirm(`确定要应用 ${edits.length} 个选中的修改片段吗？`);
     if (!confirmed) return;
     try {
-      await invoke('apply_edits', { edits });
+      await this.invokeTauri('apply_edits', { edits });
       this.showErrorToast('修改已应用');
       this.hideEditPanel();
       // Refresh open file if affected
@@ -4821,10 +4771,9 @@ window.app = {
   },
 
   async runAgentCommand(cmd) {
-    const tauri = window.__TAURI__;
-    if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
+    if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
     try {
-      const result = await tauri.core.invoke('run_agent_command', { cmd });
+      const result = await this.invokeTauri('run_agent_command', { cmd });
       this.showErrorToast(result);
     } catch (e) {
       this.showErrorToast('命令失败: ' + (e.message || e));
@@ -4840,13 +4789,12 @@ window.app = {
   async loadEditHistory() {
     const panel = document.getElementById('editHistoryPanel');
     if (!panel) return;
-    const tauri = window.__TAURI__;
-    if (!tauri) {
+    if (!this.isTauriAvailable()) {
       panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">Tauri 不可用</div>';
       return;
     }
     try {
-      const entries = await tauri.core.invoke('get_edit_history');
+      const entries = await this.invokeTauri('get_edit_history');
       this.renderEditHistory(entries);
     } catch (e) {
       panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">加载失败</div>';
@@ -4920,19 +4868,18 @@ window.app = {
   },
 
   async updateMetrics() {
-    const tauri = window.__TAURI__;
     const setMetric = (id, value) => {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
     };
-    if (!tauri) {
+    if (!this.isTauriAvailable()) {
       setMetric('metricIterationTab', 'N/A');
       setMetric('metricBlackboardTab', 'N/A');
       setMetric('metricEditCountTab', 'N/A');
       return;
     }
     try {
-      const m = await tauri.core.invoke('get_resource_metrics');
+      const m = await this.invokeTauri('get_resource_metrics');
       setMetric('metricIterationTab', m.iteration_count != null ? m.iteration_count : 'N/A');
       setMetric('metricBlackboardTab', m.blackboard_size != null ? m.blackboard_size : 'N/A');
       setMetric('metricEditCountTab', m.edit_count != null ? m.edit_count : '0');
@@ -5042,10 +4989,8 @@ window.app = {
         const apiKey = document.getElementById('providerApiKey').value.trim();
         if (!name) { if (app.showErrorToast) app.showErrorToast('Provider name required'); return; }
         const config = { id, name, providerType, baseUrl, apiKey, model };
-        const tauri = window.__TAURI__;
-        if (!tauri) { if (app.showErrorToast) app.showErrorToast('Tauri not available'); return; }
-        const invoke = tauri.core?.invoke || tauri.invoke;
-        const result = await invoke('validate_provider', { config });
+        if (!app.isTauriAvailable()) { if (app.showErrorToast) app.showErrorToast('Tauri not available'); return; }
+        const result = await app.invokeTauri('validate_provider', { config });
         if (app.showErrorToast) app.showErrorToast(result);
       } catch (e) {
         if (app.showErrorToast) app.showErrorToast('Provider validation failed: ' + (e.message || e));

@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::process::Command;
 use std::sync::Arc;
 
 use aes_gcm::aead::{Aead, KeyInit};
@@ -16,19 +15,18 @@ use engine_llm_core::{
 use engine_tool_system::lsp_integration::ASTContextProvider;
 use engine_tool_system::PermissionLevel;
 use engine_tool_system::{
-    AnalyzeTool, BashTool, BenchmarkTool, CargoBuildTool, CmakeTool, CoverageReportTool,
-    DeleteFileTool, EditFileTool, FetchUrlTool, FindTool, GenerateDocsTool,
-    GeneratePrDescriptionTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool,
-    GraphTool, GrepTool, JsBundleAnalyzerTool, ListDirectoryTool, LsTool, LspDefinitionTool,
-    LspHoverTool, LspInitTool, LspReferencesTool, MakeTool, McpInitTool, McpInvokeTool, NpmRunTool,
-    PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, RustDocGeneratorTool,
-    SecurityAuditTool, SmartCommitTool, ToolOutput, ToolPermissions, ToolRegistry,
-    UpdateReadmeTool, ViewImageTool, WebSearchTool, WriteFileTool,
+    AnalyzeTool, BenchmarkTool, CargoBuildTool, CmakeTool, CoverageReportTool, DeleteFileTool,
+    EditFileTool, FetchUrlTool, FindTool, GenerateDocsTool, GeneratePrDescriptionTool,
+    GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool, GraphTool, GrepTool,
+    JsBundleAnalyzerTool, ListDirectoryTool, LsTool, LspDefinitionTool, LspHoverTool, LspInitTool,
+    LspReferencesTool, MakeTool, McpInitTool, McpInvokeTool, NpmRunTool, PowerShellTool,
+    ReadFileTool, RefactorCodeTool, RunTestsTool, RustDocGeneratorTool, SecurityAuditTool,
+    SmartCommitTool, ToolOutput, ToolPermissions, ToolRegistry, UpdateReadmeTool, ViewImageTool,
+    WebSearchTool, WriteFileTool,
 };
 use keyring::Entry;
 use memory::memory_gateway::MemoryGateway as AgentMemoryGateway;
 use pbkdf2::pbkdf2_hmac;
-use rand::RngCore;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -36,6 +34,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 mod audit;
 
@@ -154,7 +153,6 @@ struct AppState {
     trace_tx: std::sync::Mutex<Option<tokio::sync::broadcast::Sender<TraceEvent>>>,
     paused: std::sync::Mutex<bool>,
     approval_level: std::sync::Mutex<String>,
-    tool_confirmation_tokens: std::sync::Mutex<HashMap<String, (String, String)>>,
     edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
     memory_gateway: Arc<MemoryGateway>,
     token_tracker: Arc<TokenUsageTracker>,
@@ -173,7 +171,9 @@ fn build_registry(workspace_root: &Path) -> ToolRegistry {
     let mut r = ToolRegistry::new();
     let workspace_paths = vec![workspace_root.to_path_buf()];
     r.register(Arc::new(AnalyzeTool::new()));
-    r.register(Arc::new(BashTool::new()));
+    r.register(Arc::new(PowerShellTool::with_paths(Some(
+        workspace_paths.clone(),
+    ))));
     r.register(Arc::new(CargoBuildTool::new()));
     r.register(Arc::new(CmakeTool::new()));
     r.register(Arc::new(DeleteFileTool::with_allowed_paths(
@@ -209,7 +209,6 @@ fn build_registry(workspace_root: &Path) -> ToolRegistry {
     r.register(Arc::new(CoverageReportTool::new()));
     r.register(Arc::new(BenchmarkTool::new()));
     r.register(Arc::new(NpmRunTool::new()));
-    r.register(Arc::new(PowerShellTool::new()));
     r.register(Arc::new(ReadFileTool::with_allowed_paths(
         workspace_paths.clone(),
     )));
@@ -227,19 +226,6 @@ fn build_registry(workspace_root: &Path) -> ToolRegistry {
 // ------------------------------------------------------------------
 // Security constants (B-01/04, B-02/04)
 // ------------------------------------------------------------------
-const ALLOWED_COMMANDS: &[&str] = &[
-    "git",
-    "cargo",
-    "npm",
-    "node",
-    "rustc",
-    "rustfmt",
-    "clippy-driver",
-    "python",
-    "python3",
-];
-
-const FORBIDDEN_CHARS: &[char] = &[';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>'];
 const PREVIEW_EDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 // ------------------------------------------------------------------
@@ -824,36 +810,6 @@ fn delete_path(path: &str, recursive: bool, app_handle: tauri::AppHandle) -> Res
     remove_workspace_path(&safe_path, recursive)
 }
 
-#[tauri::command]
-fn run_command(cmd: &str, args: Vec<String>) -> Result<String, String> {
-    // 1. 命令白名单校验
-    if !ALLOWED_COMMANDS.contains(&cmd) {
-        return Err(format!("命令 '{}' 不在白名单中", cmd));
-    }
-
-    // 2. 参数元字符过滤
-    for arg in &args {
-        if arg.contains("..") || arg.contains(FORBIDDEN_CHARS) {
-            return Err(format!("参数包含非法字符: {}", arg));
-        }
-    }
-
-    let output = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    if !output.status.success() {
-        return Err(format!(
-            "exit code {:?}\nstderr: {}",
-            output.status.code(),
-            stderr
-        ));
-    }
-    Ok(stdout)
-}
-
 // ------------------------------------------------------------------
 // Tool-system commands
 // ------------------------------------------------------------------
@@ -888,82 +844,59 @@ fn canonical_tool_args(args: &Value) -> String {
     serde_json::to_string(args).unwrap_or_else(|_| "null".to_string())
 }
 
-fn validate_and_consume_confirmation_token(
-    tokens: &mut HashMap<String, (String, String)>,
-    tool_name: &str,
-    args: &Value,
-    confirmation_token: Option<&str>,
-) -> Result<(), String> {
-    let token = confirmation_token
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| format!("tool '{}' requires confirmation", tool_name))?;
-    let Some((confirmed_tool, confirmed_args)) = tokens.remove(token) else {
-        return Err(format!(
-            "tool '{}' confirmation token is invalid",
-            tool_name
-        ));
-    };
-    if confirmed_tool != tool_name || confirmed_args != canonical_tool_args(args) {
-        return Err(format!(
-            "tool '{}' confirmation token does not match this request",
-            tool_name
-        ));
+fn summarize_tool_args(args: &Value) -> String {
+    const MAX_SUMMARY_CHARS: usize = 1400;
+    let raw = canonical_tool_args(args);
+    if raw.chars().count() <= MAX_SUMMARY_CHARS {
+        return raw;
     }
-    Ok(())
+    let mut summary = raw.chars().take(MAX_SUMMARY_CHARS).collect::<String>();
+    summary.push_str("...");
+    summary
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ToolAuthorization {
+    Allow,
+    RequireNativeConfirmation,
 }
 
 fn enforce_tool_permissions(
     permissions: &ToolPermissions,
     tool_name: &str,
-    args: &Value,
-    confirmation_token: Option<&str>,
-    tokens: &std::sync::Mutex<HashMap<String, (String, String)>>,
-) -> Result<(), String> {
+    _args: &Value,
+) -> Result<ToolAuthorization, String> {
     match permissions.default_level {
         PermissionLevel::Deny => Err(format!("tool '{}' is denied by policy", tool_name)),
-        PermissionLevel::Allow if !permissions.requires_confirmation => Ok(()),
+        PermissionLevel::Allow if !tool_requires_confirmation(permissions) => {
+            Ok(ToolAuthorization::Allow)
+        }
         PermissionLevel::Allow | PermissionLevel::Ask => {
-            let mut guard = tokens.lock().unwrap_or_else(|e| e.into_inner());
-            validate_and_consume_confirmation_token(&mut guard, tool_name, args, confirmation_token)
+            Ok(ToolAuthorization::RequireNativeConfirmation)
         }
     }
 }
 
-fn random_confirmation_token(tool_name: &str) -> String {
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    let suffix = bytes
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect::<String>();
-    format!("{}:{}", tool_name, suffix)
-}
-
-#[tauri::command]
-fn create_tool_confirmation_token(
-    state: tauri::State<'_, AppState>,
-    name: String,
-    args: Value,
-) -> Result<String, String> {
-    let tool = state
-        .registry
-        .get(&name)
-        .ok_or_else(|| format!("tool '{}' not found", name))?;
-    let permissions = tool.permissions();
-    if permissions.default_level == PermissionLevel::Deny {
-        return Err(format!("tool '{}' is denied by policy", name));
-    }
-    if !tool_requires_confirmation(&permissions) {
-        return Ok(String::new());
-    }
-
-    let token = random_confirmation_token(&name);
-    state
-        .tool_confirmation_tokens
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(token.clone(), (name.clone(), canonical_tool_args(&args)));
-    Ok(token)
+fn confirm_tool_native(
+    app_handle: &tauri::AppHandle,
+    tool_name: &str,
+    args: &Value,
+) -> Result<bool, String> {
+    let message = format!(
+        "工具 '{}' 需要执行权限确认。\n\n参数摘要:\n{}\n\n是否允许执行？",
+        tool_name,
+        summarize_tool_args(args)
+    );
+    let approved = app_handle
+        .dialog()
+        .message(message)
+        .title("Hajimi 工具执行确认")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "允许执行".to_string(),
+            "取消".to_string(),
+        ))
+        .blocking_show();
+    Ok(approved)
 }
 
 #[tauri::command]
@@ -984,22 +917,23 @@ fn list_tools(state: tauri::State<'_, AppState>) -> Vec<ToolInfo> {
 #[tauri::command]
 async fn execute_tool(
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     name: String,
     args: Value,
-    confirmation_token: Option<String>,
 ) -> Result<ToolResult, String> {
     let tool = state
         .registry
         .get(&name)
         .ok_or_else(|| format!("tool '{}' not found", name))?;
     let permissions = tool.permissions();
-    enforce_tool_permissions(
-        &permissions,
-        &name,
-        &args,
-        confirmation_token.as_deref(),
-        &state.tool_confirmation_tokens,
-    )?;
+    if enforce_tool_permissions(&permissions, &name, &args)?
+        == ToolAuthorization::RequireNativeConfirmation
+    {
+        let approved = confirm_tool_native(&app_handle, &name, &args)?;
+        if !approved {
+            return Err(format!("tool '{}' denied by user", name));
+        }
+    }
     let output = tool.execute(args).await.map_err(|e| e.message)?;
     Ok(output.into())
 }
@@ -2649,6 +2583,7 @@ fn main() {
     let agent_loop_for_setup = Arc::new(agent_loop);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
             let workspace_root = get_workspace_dir(app.handle())
@@ -2660,7 +2595,6 @@ fn main() {
                 trace_tx: std::sync::Mutex::new(None),
                 paused: std::sync::Mutex::new(false),
                 approval_level: std::sync::Mutex::new("Auto".to_string()),
-                tool_confirmation_tokens: std::sync::Mutex::new(HashMap::new()),
                 edit_history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
                 memory_gateway: Arc::new(MemoryGateway::with_budget(TokenBudget {
                     focus_limit: 8000,
@@ -2687,9 +2621,7 @@ fn main() {
             create_dir,
             rename_path,
             delete_path,
-            run_command,
             list_tools,
-            create_tool_confirmation_token,
             execute_tool,
             get_providers,
             get_provider_configs,
@@ -2777,79 +2709,58 @@ mod tests {
     }
 
     #[test]
-    fn execute_tool_denies_requires_confirmation_without_token() {
+    fn execute_tool_requires_native_confirmation_for_ask_policy() {
         let permissions = ToolPermissions {
             default_level: PermissionLevel::Ask,
             requires_confirmation: true,
             allowed_paths: None,
         };
         let args = json!({"path": "a.txt"});
-        let tokens = std::sync::Mutex::new(HashMap::new());
 
-        let result = enforce_tool_permissions(&permissions, "write_file", &args, None, &tokens);
+        let result = enforce_tool_permissions(&permissions, "write_file", &args);
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("requires confirmation"));
+        assert_eq!(
+            result.unwrap(),
+            ToolAuthorization::RequireNativeConfirmation
+        );
     }
 
     #[test]
-    fn execute_tool_consumes_confirmation_token_once() {
+    fn execute_tool_allows_low_risk_tool_without_confirmation() {
         let permissions = ToolPermissions {
-            default_level: PermissionLevel::Ask,
-            requires_confirmation: true,
+            default_level: PermissionLevel::Allow,
+            requires_confirmation: false,
             allowed_paths: None,
         };
         let args = json!({"message": "test"});
-        let tokens = std::sync::Mutex::new(HashMap::from([(
-            String::from("git_commit:test"),
-            (String::from("git_commit"), canonical_tool_args(&args)),
-        )]));
 
-        assert!(enforce_tool_permissions(
-            &permissions,
-            "git_commit",
-            &args,
-            Some("git_commit:test"),
-            &tokens
-        )
-        .is_ok());
-        assert!(enforce_tool_permissions(
-            &permissions,
-            "git_commit",
-            &args,
-            Some("git_commit:test"),
-            &tokens
-        )
-        .is_err());
+        let result = enforce_tool_permissions(&permissions, "lsp_hover", &args);
+
+        assert_eq!(result.unwrap(), ToolAuthorization::Allow);
     }
 
     #[test]
-    fn execute_tool_rejects_confirmation_token_for_different_args() {
+    fn execute_tool_denies_policy_deny() {
         let permissions = ToolPermissions {
-            default_level: PermissionLevel::Ask,
+            default_level: PermissionLevel::Deny,
             requires_confirmation: true,
             allowed_paths: None,
         };
-        let confirmed_args = json!({"message": "safe"});
-        let requested_args = json!({"message": "different"});
-        let tokens = std::sync::Mutex::new(HashMap::from([(
-            String::from("git_commit:test"),
-            (
-                String::from("git_commit"),
-                canonical_tool_args(&confirmed_args),
-            ),
-        )]));
+        let args = json!({"message": "different"});
 
-        let result = enforce_tool_permissions(
-            &permissions,
-            "git_commit",
-            &requested_args,
-            Some("git_commit:test"),
-            &tokens,
-        );
+        let result = enforce_tool_permissions(&permissions, "git_commit", &args);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not match"));
+        assert!(result.unwrap_err().contains("denied by policy"));
+    }
+
+    #[test]
+    fn tool_arg_summary_is_bounded_for_native_dialog() {
+        let args = json!({"payload": "x".repeat(5000)});
+        let summary = summarize_tool_args(&args);
+
+        assert!(summary.len() < 1500);
+        assert!(summary.ends_with("..."));
     }
 
     #[test]

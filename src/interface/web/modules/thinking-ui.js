@@ -95,16 +95,15 @@
   }
 
   function startTraceSubscription(app) {
-    const tauri = global.__TAURI__;
-    if (!tauri || !tauri.core || !tauri.core.Channel) {
+    if (!global.HajimiTauri?.isAvailable?.()) {
       app.traceEvents = [];
       app.renderTraceCards();
       console.warn('Agent trace channel unavailable; no fallback trace data inserted.');
       return;
     }
-    const invoke = tauri.core.invoke;
     try {
-      const Channel = tauri.core.Channel;
+      const invoke = global.HajimiTauri.invoke;
+      const Channel = global.HajimiTauri.Channel;
       const channel = new Channel();
       channel.onmessage = (event) => {
         if (app.tracePaused) return;

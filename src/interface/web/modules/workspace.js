@@ -2,9 +2,8 @@
   'use strict';
 
   function getInvoke() {
-    const tauri = global.__TAURI__;
-    if (!tauri) return null;
-    return tauri.core?.invoke || tauri.invoke;
+    if (!global.HajimiTauri?.isAvailable?.()) return null;
+    return global.HajimiTauri.invoke;
   }
 
   async function initWorkspace(app) {

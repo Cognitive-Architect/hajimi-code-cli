@@ -67,7 +67,7 @@ function scanTauriConfig() {
     addFailure('tauri-csp-null', tauriConfigPath, findLine(raw, '"csp"'), 'Tauri CSP must not be null');
   }
   if (config.app?.withGlobalTauri === true) {
-    addWarning('tauri-global-api', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri remains AD-002 debt and is warning-only in Gate V1');
+    addFailure('tauri-global-api-fail', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri=true is forbidden after B-18 security closure');
   }
 }
 
@@ -126,7 +126,6 @@ function scanDesktopCommandAllowList() {
   const raw = readText(desktopMainPath);
   const block = raw.match(/const\s+ALLOWED_COMMANDS:[\s\S]*?=\s*&\[(?<body>[\s\S]*?)\];/);
   if (!block) {
-    addFailure('desktop-run-command-allow-list-missing', desktopMainPath, findLine(raw, 'ALLOWED_COMMANDS'), 'desktop run_command allow-list block not found');
     return;
   }
 
@@ -136,6 +135,46 @@ function scanDesktopCommandAllowList() {
     if (commands.includes(command)) {
       addFailure('desktop-run-command-high-capability', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
     }
+  }
+}
+
+function scanRunCommandExposure() {
+  const raw = readText(desktopMainPath);
+  if (/fn\s+run_command\s*\(/.test(raw)) {
+    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command');
+  }
+  if (/generate_handler!\[[\s\S]*\brun_command\s*,/.test(raw)) {
+    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'run_command,'), 'run_command must not appear in the Tauri invoke_handler');
+  }
+}
+
+function scanConfirmationTokenNotPublicMint() {
+  const desktopRaw = readText(desktopMainPath);
+  if (desktopRaw.includes('create_tool_confirmation_token')) {
+    addFailure('confirmation-token-not-public-mint', desktopMainPath, findLine(desktopRaw, 'create_tool_confirmation_token'), 'frontend-mintable confirmation token command must not exist');
+  }
+
+  const webFiles = walkFiles(path.join(repoRoot, webRoot));
+  for (const fullPath of webFiles) {
+    const file = toRepoPath(fullPath);
+    const raw = fs.readFileSync(fullPath, 'utf8');
+    if (raw.includes('create_tool_confirmation_token')) {
+      addFailure('confirmation-token-not-public-mint', file, findLine(raw, 'create_tool_confirmation_token'), 'frontend must not request executable confirmation tokens');
+    }
+  }
+}
+
+function scanTauriGlobalApiUsage(files) {
+  const directGlobalPattern = /(window\.__TAURI__|tauri\.core|tauri\.invoke)/;
+  for (const fullPath of files) {
+    const file = toRepoPath(fullPath);
+    if (file === 'src/interface/web/modules/tauri-bridge.js') continue;
+    const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (directGlobalPattern.test(line)) {
+        addFailure('tauri-global-api-usage', file, index + 1, 'frontend code must use HajimiTauri adapter instead of direct global Tauri access');
+      }
+    });
   }
 }
 
@@ -236,8 +275,11 @@ function main() {
   scanTauriConfig();
   scanInlineHandlers(webFiles);
   scanDangerousHtmlApi(webFiles, allowlist);
+  scanTauriGlobalApiUsage(webFiles);
   scanShellAllowList();
   scanDesktopCommandAllowList();
+  scanRunCommandExposure();
+  scanConfirmationTokenNotPublicMint();
   scanDesktopToolGate();
   scanWorkspaceBoundFileTools();
   scanInlineEditWorkspaceResolver();

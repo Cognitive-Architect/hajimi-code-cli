@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run Hajimi security gate
+        run: npm run test:security-gate
+
       - name: Run npm audit (P0 requirement)
         run: |
           echo "Running npm audit..."
