@@ -3602,10 +3602,52 @@ window.app = {
     if (exportBtn) exportBtn.addEventListener('click', () => this.openBackupModal('export'));
     if (importBtn) importBtn.addEventListener('click', () => this.openBackupModal('import'));
 
-    if (preset && baseUrl) {
+     if (preset && baseUrl) {
       preset.addEventListener('change', () => {
         if (preset.value !== 'custom') baseUrl.value = preset.value;
       });
+    }
+
+    const presetLC = document.getElementById('providerLongContextPreset');
+    const maxContextField = document.getElementById('providerMaxContext');
+    const maxOutputField = document.getElementById('providerMaxOutput');
+    const reserveOutputField = document.getElementById('providerReserveOutput');
+    const safetyMarginField = document.getElementById('providerSafetyMargin');
+    const retrievalBudgetField = document.getElementById('providerRetrievalBudget');
+    const longContextModeField = document.getElementById('providerLongContextMode');
+
+    if (presetLC) {
+      presetLC.addEventListener('change', () => {
+        const val = presetLC.value;
+        if (val === 'fast_128k') {
+          if (maxContextField) maxContextField.value = 128000;
+          if (maxOutputField) maxOutputField.value = 4000;
+          if (reserveOutputField) reserveOutputField.value = 512;
+          if (safetyMarginField) safetyMarginField.value = 256;
+          if (retrievalBudgetField) retrievalBudgetField.value = 2048;
+          if (longContextModeField) longContextModeField.checked = true;
+        } else if (val === 'pro_200k') {
+          if (maxContextField) maxContextField.value = 200000;
+          if (maxOutputField) maxOutputField.value = 8192;
+          if (reserveOutputField) reserveOutputField.value = 1024;
+          if (safetyMarginField) safetyMarginField.value = 512;
+          if (retrievalBudgetField) retrievalBudgetField.value = 4096;
+          if (longContextModeField) longContextModeField.checked = true;
+        } else if (val === 'long_1m') {
+          if (maxContextField) maxContextField.value = 1000000;
+          if (maxOutputField) maxOutputField.value = 8192;
+          if (reserveOutputField) reserveOutputField.value = 1024;
+          if (safetyMarginField) safetyMarginField.value = 512;
+          if (retrievalBudgetField) retrievalBudgetField.value = 4096;
+          if (longContextModeField) longContextModeField.checked = true;
+        }
+      });
+
+      const setCustom = () => { presetLC.value = 'custom'; };
+      [maxContextField, maxOutputField, reserveOutputField, safetyMarginField, retrievalBudgetField].forEach(el => {
+        if (el) el.addEventListener('input', setCustom);
+      });
+      if (longContextModeField) longContextModeField.addEventListener('change', setCustom);
     }
 
     if (toggleKey && apiKey) {
@@ -3657,6 +3699,54 @@ window.app = {
     if (config && !config.apiKey) {
       keyInput.placeholder = 'sk-•••••••• (re-enter to update)';
     }
+
+    // Map capability fields safely (FUNC-004 & CONST-001/004)
+    let maxContext = '';
+    if (config) {
+      maxContext = config.maxContextTokens || config.max_context_tokens || config.contextThreshold || config.context_threshold || '';
+    }
+    document.getElementById('providerMaxContext').value = maxContext;
+    document.getElementById('providerMaxOutput').value = config ? (config.maxOutputTokens || config.max_output_tokens || '') : '';
+    document.getElementById('providerReserveOutput').value = config ? (config.reserveOutputTokens || config.reserve_output_tokens || '') : '';
+    document.getElementById('providerSafetyMargin').value = config ? (config.safetyMarginTokens || config.safety_margin_tokens || '') : '';
+    document.getElementById('providerRetrievalBudget').value = config ? (config.retrievalBudgetTokens || config.retrieval_budget_tokens || '') : '';
+    document.getElementById('providerLongContextMode').checked = config ? (!!(config.longContextMode || config.long_context_mode)) : false;
+
+    // Set Capability Status (UX-001)
+    let statusText = 'Declared / Not Verified';
+    if (config) {
+      if (config.capabilityStatus === 'Verified' || config.capability_status === 'Verified') {
+        statusText = 'Verified';
+      } else if (config.capabilityStatus === 'Fallback' || config.capability_status === 'Fallback') {
+        statusText = 'Fallback';
+      } else if (config.capabilityStatus === 'Stale' || config.capability_status === 'Stale') {
+        statusText = 'Declared / Stale';
+      }
+    }
+    const statusDiv = document.getElementById('providerCapabilityStatus');
+    if (statusDiv) {
+      statusDiv.textContent = statusText;
+      if (statusText === 'Verified') {
+        statusDiv.style.color = 'var(--fg-green, #10b981)';
+      } else if (statusText === 'Fallback') {
+        statusDiv.style.color = 'var(--fg-orange, #f59e0b)';
+      } else if (statusText.includes('Stale')) {
+        statusDiv.style.color = 'var(--fg-red, #ef4444)';
+      } else {
+        statusDiv.style.color = 'var(--fg-dim)';
+      }
+    }
+
+    // Set preset dropdown according to current values
+    const presetLC = document.getElementById('providerLongContextPreset');
+    if (presetLC) {
+      const mc = parseInt(maxContext);
+      if (mc === 128000) presetLC.value = 'fast_128k';
+      else if (mc === 200000) presetLC.value = 'pro_200k';
+      else if (mc === 1000000) presetLC.value = 'long_1m';
+      else presetLC.value = 'custom';
+    }
+
     modal.classList.add('active');
   },
 
@@ -3738,6 +3828,13 @@ window.app = {
       return;
     }
 
+    const maxContextTokens = document.getElementById('providerMaxContext').value ? parseInt(document.getElementById('providerMaxContext').value) : null;
+    const maxOutputTokens = document.getElementById('providerMaxOutput').value ? parseInt(document.getElementById('providerMaxOutput').value) : null;
+    const reserveOutputTokens = document.getElementById('providerReserveOutput').value ? parseInt(document.getElementById('providerReserveOutput').value) : null;
+    const safetyMarginTokens = document.getElementById('providerSafetyMargin').value ? parseInt(document.getElementById('providerSafetyMargin').value) : null;
+    const retrievalBudgetTokens = document.getElementById('providerRetrievalBudget').value ? parseInt(document.getElementById('providerRetrievalBudget').value) : null;
+    const longContextMode = document.getElementById('providerLongContextMode').checked;
+
     const config = {
       id,
       name,
@@ -3746,6 +3843,14 @@ window.app = {
       apiKey,
       model
     };
+
+    if (maxContextTokens !== null) config.maxContextTokens = maxContextTokens;
+    if (maxOutputTokens !== null) config.maxOutputTokens = maxOutputTokens;
+    if (reserveOutputTokens !== null) config.reserveOutputTokens = reserveOutputTokens;
+    if (safetyMarginTokens !== null) config.safetyMarginTokens = safetyMarginTokens;
+    if (retrievalBudgetTokens !== null) config.retrievalBudgetTokens = retrievalBudgetTokens;
+    config.longContextMode = longContextMode;
+
     if (!this.isTauriAvailable()) { this.showErrorToast('Tauri 不可用'); return; }
 
     try {
@@ -4988,7 +5093,22 @@ window.app = {
         const model = document.getElementById('providerModel').value.trim();
         const apiKey = document.getElementById('providerApiKey').value.trim();
         if (!name) { if (app.showErrorToast) app.showErrorToast('Provider name required'); return; }
+
+        const maxContextTokens = document.getElementById('providerMaxContext').value ? parseInt(document.getElementById('providerMaxContext').value) : null;
+        const maxOutputTokens = document.getElementById('providerMaxOutput').value ? parseInt(document.getElementById('providerMaxOutput').value) : null;
+        const reserveOutputTokens = document.getElementById('providerReserveOutput').value ? parseInt(document.getElementById('providerReserveOutput').value) : null;
+        const safetyMarginTokens = document.getElementById('providerSafetyMargin').value ? parseInt(document.getElementById('providerSafetyMargin').value) : null;
+        const retrievalBudgetTokens = document.getElementById('providerRetrievalBudget').value ? parseInt(document.getElementById('providerRetrievalBudget').value) : null;
+        const longContextMode = document.getElementById('providerLongContextMode').checked;
+
         const config = { id, name, providerType, baseUrl, apiKey, model };
+        if (maxContextTokens !== null) config.maxContextTokens = maxContextTokens;
+        if (maxOutputTokens !== null) config.maxOutputTokens = maxOutputTokens;
+        if (reserveOutputTokens !== null) config.reserveOutputTokens = reserveOutputTokens;
+        if (safetyMarginTokens !== null) config.safetyMarginTokens = safetyMarginTokens;
+        if (retrievalBudgetTokens !== null) config.retrievalBudgetTokens = retrievalBudgetTokens;
+        config.longContextMode = longContextMode;
+
         if (!app.isTauriAvailable()) { if (app.showErrorToast) app.showErrorToast('Tauri not available'); return; }
         const result = await app.invokeTauri('validate_provider', { config });
         if (app.showErrorToast) app.showErrorToast(result);

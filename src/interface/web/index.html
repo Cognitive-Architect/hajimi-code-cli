@@ -510,6 +510,49 @@
             <option value="workspace">当前项目 (workspace)</option>
           </select>
         </div>
+        <div class="modal-field">
+          <label>长上下文模式 (Presets)</label>
+          <select id="providerLongContextPreset">
+            <option value="custom">-- 自定义 --</option>
+            <option value="fast_128k">Fast 128K (128K Context / 4K Output)</option>
+            <option value="pro_200k">Pro 200K (200K Context / 8K Output)</option>
+            <option value="long_1m">Long 1M (1M Context / 16K Output)</option>
+          </select>
+        </div>
+        <div class="modal-field-row" style="display: flex; gap: 10px;">
+          <div class="modal-field" style="flex: 1;">
+            <label>Max Context (tokens)</label>
+            <input type="number" id="providerMaxContext" placeholder="如：128000">
+          </div>
+          <div class="modal-field" style="flex: 1;">
+            <label>Max Output (tokens)</label>
+            <input type="number" id="providerMaxOutput" placeholder="如：4096">
+          </div>
+        </div>
+        <div class="modal-field-row" style="display: flex; gap: 10px;">
+          <div class="modal-field" style="flex: 1;">
+            <label>Reserve Output (tokens)</label>
+            <input type="number" id="providerReserveOutput" placeholder="如：1024">
+          </div>
+          <div class="modal-field" style="flex: 1;">
+            <label>Safety Margin (tokens)</label>
+            <input type="number" id="providerSafetyMargin" placeholder="如：1024">
+          </div>
+        </div>
+        <div class="modal-field-row" style="display: flex; gap: 10px;">
+          <div class="modal-field" style="flex: 1;">
+            <label>Retrieval Budget (tokens)</label>
+            <input type="number" id="providerRetrievalBudget" placeholder="如：4096">
+          </div>
+          <div class="modal-field" style="flex: 1; display: flex; align-items: center; gap: 6px; margin-top: 18px;">
+            <input type="checkbox" id="providerLongContextMode" style="width: auto; margin: 0;">
+            <label for="providerLongContextMode" style="margin: 0; cursor: pointer; font-size: 12px;">启用 Long Context Mode</label>
+          </div>
+        </div>
+        <div class="modal-field">
+          <label>验证状态 (Capability Status)</label>
+          <div id="providerCapabilityStatus" style="font-size: 12px; color: var(--fg-dim); padding: 4px 0;">Declared / Not Verified</div>
+        </div>
       </form>
       <div class="modal-footer">
         <button class="modal-btn secondary btn-secondary" id="cancelProvider">取消</button>
