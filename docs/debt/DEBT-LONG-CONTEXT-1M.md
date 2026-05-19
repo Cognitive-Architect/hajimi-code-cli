@@ -199,4 +199,4 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 
 ## Baseline Verdict
 
-Long Context 1M support is now formally registered as an active debt item. The current baseline remains constrained by 8K bridge assembly and undercounted system prompt tokens. Provider and memory capability models need explicit Day 2-13 remediation before 1M can move from `Declared / Target` to `Verified`.
+Long Context 1M support is now formally registered as an active debt item. The bridge-level debt cleared in Day 04-05，剩余工作是 provider capability、LongContextPack、memory retrieval budget、probe、receipt. Provider and memory capability models need explicit remediation before 1M can move from `Declared / Target` to `Verified`.

@@ -197,9 +197,10 @@ impl PlannerLlmBridge {
             match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
                 Ok((messages, estimated_input, omitted_count)) => {
                     tracing::info!(
-                        "Planner budget stats: provider={}, model={}, input_budget={}, estimated_input={}, omitted_count={}",
+                        "Planner budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
                         budget.provider_id,
                         budget.model,
+                        budget.max_context_tokens,
                         budget.input_budget,
                         estimated_input,
                         omitted_count
@@ -375,9 +376,10 @@ impl ReflectorLlmBridge {
             match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
                 Ok((messages, estimated_input, omitted_count)) => {
                     tracing::info!(
-                        "Reflector budget stats: provider={}, model={}, input_budget={}, estimated_input={}, omitted_count={}",
+                        "Reflector budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
                         budget.provider_id,
                         budget.model,
+                        budget.max_context_tokens,
                         budget.input_budget,
                         estimated_input,
                         omitted_count
