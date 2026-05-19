@@ -1843,13 +1843,13 @@ fn export_provider_backup(
             "model": cfg.model,
             "api_key": key,
             "system_prompt": cfg.system_prompt,
-            "context_threshold": cfg.context_threshold,
-            "max_context_tokens": cfg.max_context_tokens,
-            "max_output_tokens": cfg.max_output_tokens,
-            "reserve_output_tokens": cfg.reserve_output_tokens,
-            "safety_margin_tokens": cfg.safety_margin_tokens,
-            "retrieval_budget_tokens": cfg.retrieval_budget_tokens,
-            "long_context_mode": cfg.long_context_mode,
+            "contextThreshold": cfg.context_threshold,
+            "maxContextTokens": cfg.max_context_tokens,
+            "maxOutputTokens": cfg.max_output_tokens,
+            "reserveOutputTokens": cfg.reserve_output_tokens,
+            "safetyMarginTokens": cfg.safety_margin_tokens,
+            "retrievalBudgetTokens": cfg.retrieval_budget_tokens,
+            "longContextMode": cfg.long_context_mode,
         }));
     }
     let plaintext = serde_json::to_string(&export_data).map_err(|e| e.to_string())?;
@@ -2053,21 +2053,49 @@ fn get_agent_providers(
 }
 
 #[tauri::command]
-fn set_agent_provider(
+async fn set_agent_provider(
     agent_id: String,
     provider_id: Option<String>,
     state: tauri::State<'_, AppState>,
+    agent_loop: tauri::State<'_, std::sync::Arc<agent_core::agent_loop::AgentLoop>>,
 ) -> Result<(), String> {
-    // SAFETY: Mutex held only for HashMap insert/remove; poison unlikely in single-threaded Tauri command context
-    let mut map = state
-        .agent_providers
+    let profile = state
+        .active_profile
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if let Some(pid) = provider_id {
-        map.insert(agent_id, pid);
-    } else {
-        map.remove(&agent_id);
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
+
+    // Update agent provider map
+    {
+        let mut map = state
+            .agent_providers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(ref pid) = provider_id {
+            map.insert(agent_id.clone(), pid.clone());
+        } else {
+            map.remove(&agent_id);
+        }
     }
+
+    // Load provider config for custom providers
+    let config = if provider == "ollama" || provider == "anthropic" || provider == "openai" {
+        None
+    } else {
+        let configs = read_merged_configs(None, profile.as_deref());
+        configs.into_iter().find(|c| c.id == provider)
+    };
+
+    // Write capability fields to blackboard for context budget resolution
+    write_provider_caps_to_blackboard(
+        agent_loop.blackboard(),
+        &agent_id,
+        &provider,
+        config.as_ref(),
+    )
+    .await;
+
     Ok(())
 }
 
@@ -3337,5 +3365,302 @@ mod tests {
         );
         assert_eq!(legacy_config.max_context_tokens, None);
         assert_eq!(legacy_config.long_context_mode, None);
+    }
+
+    #[test]
+    fn test_provider_backup_camelcase_serialization_and_deserialization() {
+        // 1. Simulate export json format
+        let cfg = ProviderConfig {
+            id: "test-id".to_string(),
+            name: "Test Name".to_string(),
+            provider_type: "openai-compatible".to_string(),
+            base_url: "http://test.url".to_string(),
+            model: "test-model".to_string(),
+            api_key: "test-key".to_string(),
+            system_prompt: Some("test prompt".to_string()),
+            context_threshold: Some(4096),
+            max_context_tokens: Some(100000),
+            max_output_tokens: Some(4000),
+            reserve_output_tokens: Some(512),
+            safety_margin_tokens: Some(256),
+            retrieval_budget_tokens: Some(2048),
+            long_context_mode: Some(true),
+        };
+
+        let exported_json = json!({
+            "id": cfg.id,
+            "name": cfg.name,
+            "provider_type": cfg.provider_type,
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "api_key": cfg.api_key,
+            "system_prompt": cfg.system_prompt,
+            "contextThreshold": cfg.context_threshold,
+            "maxContextTokens": cfg.max_context_tokens,
+            "maxOutputTokens": cfg.max_output_tokens,
+            "reserveOutputTokens": cfg.reserve_output_tokens,
+            "safetyMarginTokens": cfg.safety_margin_tokens,
+            "retrievalBudgetTokens": cfg.retrieval_budget_tokens,
+            "longContextMode": cfg.long_context_mode,
+        });
+
+        // Verify keys in export format are camelCase for capability fields
+        assert_eq!(
+            exported_json
+                .get("contextThreshold")
+                .and_then(|v| v.as_u64()),
+            Some(4096)
+        );
+        assert_eq!(
+            exported_json
+                .get("maxContextTokens")
+                .and_then(|v| v.as_u64()),
+            Some(100000)
+        );
+        assert_eq!(
+            exported_json
+                .get("reserveOutputTokens")
+                .and_then(|v| v.as_u64()),
+            Some(512)
+        );
+        assert_eq!(
+            exported_json
+                .get("longContextMode")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+
+        // 2. Simulate import deserialization with camelCase (the exported JSON)
+        let imported_cfg_camel = ProviderConfig {
+            id: exported_json["id"].as_str().unwrap_or("").to_string(),
+            name: exported_json["name"].as_str().unwrap_or("").to_string(),
+            provider_type: exported_json["provider_type"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            base_url: exported_json["base_url"].as_str().unwrap_or("").to_string(),
+            model: exported_json["model"].as_str().unwrap_or("").to_string(),
+            api_key: exported_json["api_key"].as_str().unwrap_or("").to_string(),
+            system_prompt: exported_json
+                .get("system_prompt")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            context_threshold: exported_json
+                .get("context_threshold")
+                .or_else(|| exported_json.get("contextThreshold"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            max_context_tokens: exported_json
+                .get("max_context_tokens")
+                .or_else(|| exported_json.get("maxContextTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            max_output_tokens: exported_json
+                .get("max_output_tokens")
+                .or_else(|| exported_json.get("maxOutputTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            reserve_output_tokens: exported_json
+                .get("reserve_output_tokens")
+                .or_else(|| exported_json.get("reserveOutputTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            safety_margin_tokens: exported_json
+                .get("safety_margin_tokens")
+                .or_else(|| exported_json.get("safetyMarginTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            retrieval_budget_tokens: exported_json
+                .get("retrieval_budget_tokens")
+                .or_else(|| exported_json.get("retrievalBudgetTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            long_context_mode: exported_json
+                .get("long_context_mode")
+                .or_else(|| exported_json.get("longContextMode"))
+                .and_then(|v| v.as_bool()),
+        };
+
+        assert_eq!(imported_cfg_camel.context_threshold, Some(4096));
+        assert_eq!(imported_cfg_camel.max_context_tokens, Some(100000));
+        assert_eq!(imported_cfg_camel.reserve_output_tokens, Some(512));
+        assert_eq!(imported_cfg_camel.long_context_mode, Some(true));
+
+        // 3. Simulate import deserialization with snake_case (legacy backups)
+        let legacy_exported_json = json!({
+            "id": cfg.id,
+            "name": cfg.name,
+            "provider_type": cfg.provider_type,
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "api_key": cfg.api_key,
+            "system_prompt": cfg.system_prompt,
+            "context_threshold": cfg.context_threshold,
+            "max_context_tokens": cfg.max_context_tokens,
+            "max_output_tokens": cfg.max_output_tokens,
+            "reserve_output_tokens": cfg.reserve_output_tokens,
+            "safety_margin_tokens": cfg.safety_margin_tokens,
+            "retrieval_budget_tokens": cfg.retrieval_budget_tokens,
+            "long_context_mode": cfg.long_context_mode,
+        });
+
+        let imported_cfg_snake = ProviderConfig {
+            id: legacy_exported_json["id"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            name: legacy_exported_json["name"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            provider_type: legacy_exported_json["provider_type"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            base_url: legacy_exported_json["base_url"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            model: legacy_exported_json["model"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            api_key: legacy_exported_json["api_key"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            system_prompt: legacy_exported_json
+                .get("system_prompt")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            context_threshold: legacy_exported_json
+                .get("context_threshold")
+                .or_else(|| legacy_exported_json.get("contextThreshold"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            max_context_tokens: legacy_exported_json
+                .get("max_context_tokens")
+                .or_else(|| legacy_exported_json.get("maxContextTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            max_output_tokens: legacy_exported_json
+                .get("max_output_tokens")
+                .or_else(|| legacy_exported_json.get("maxOutputTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            reserve_output_tokens: legacy_exported_json
+                .get("reserve_output_tokens")
+                .or_else(|| legacy_exported_json.get("reserveOutputTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            safety_margin_tokens: legacy_exported_json
+                .get("safety_margin_tokens")
+                .or_else(|| legacy_exported_json.get("safetyMarginTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            retrieval_budget_tokens: legacy_exported_json
+                .get("retrieval_budget_tokens")
+                .or_else(|| legacy_exported_json.get("retrievalBudgetTokens"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            long_context_mode: legacy_exported_json
+                .get("long_context_mode")
+                .or_else(|| legacy_exported_json.get("longContextMode"))
+                .and_then(|v| v.as_bool()),
+        };
+
+        assert_eq!(imported_cfg_snake.context_threshold, Some(4096));
+        assert_eq!(imported_cfg_snake.max_context_tokens, Some(100000));
+        assert_eq!(imported_cfg_snake.reserve_output_tokens, Some(512));
+        assert_eq!(imported_cfg_snake.long_context_mode, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_write_provider_caps_to_blackboard_and_leak_prevention() {
+        let bb = agent_core::blackboard::Blackboard::new();
+        let agent_id = "test-agent-123";
+
+        // 1. Custom provider configuration
+        let cfg = ProviderConfig {
+            id: "custom-id".to_string(),
+            name: "Custom Name".to_string(),
+            provider_type: "openai-compatible".to_string(),
+            base_url: "http://custom.url".to_string(),
+            model: "custom-model".to_string(),
+            api_key: "".to_string(),
+            system_prompt: None,
+            context_threshold: Some(4096),
+            max_context_tokens: Some(128000),
+            max_output_tokens: Some(4000),
+            reserve_output_tokens: Some(512),
+            safety_margin_tokens: Some(256),
+            retrieval_budget_tokens: Some(2048),
+            long_context_mode: Some(true),
+        };
+
+        write_provider_caps_to_blackboard(&bb, agent_id, "custom-id", Some(&cfg)).await;
+
+        // Verify custom values are written to the blackboard
+        assert_eq!(
+            bb.read("__hajimi_provider_id").await.map(|e| e.value),
+            Some("custom-id".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_model").await.map(|e| e.value),
+            Some("custom-model".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_max_context_tokens")
+                .await
+                .map(|e| e.value),
+            Some("128000".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_reserve_output_tokens")
+                .await
+                .map(|e| e.value),
+            Some("512".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_long_context_mode").await.map(|e| e.value),
+            Some("true".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_context_threshold").await.map(|e| e.value),
+            Some("4096".to_string())
+        );
+
+        // 2. Built-in provider (clears capabilities to prevent stale leak)
+        write_provider_caps_to_blackboard(&bb, agent_id, "openai", None).await;
+
+        // Verify they are cleared
+        assert_eq!(
+            bb.read("__hajimi_provider_id").await.map(|e| e.value),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_model").await.map(|e| e.value),
+            Some("".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_max_context_tokens")
+                .await
+                .map(|e| e.value),
+            Some("".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_reserve_output_tokens")
+                .await
+                .map(|e| e.value),
+            Some("".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_long_context_mode").await.map(|e| e.value),
+            Some("".to_string())
+        );
+        assert_eq!(
+            bb.read("__hajimi_context_threshold").await.map(|e| e.value),
+            Some("".to_string())
+        );
     }
 }
