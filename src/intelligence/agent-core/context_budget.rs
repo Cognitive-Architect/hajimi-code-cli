@@ -292,7 +292,7 @@ pub fn resolve_context_budget(input: BudgetResolveInput) -> ContextBudget {
         fallback.model = model.clone();
         fallback
     } else {
-        let mut fallback = ModelContextCaps::fast_128k();
+        let mut fallback = ModelContextCaps::legacy_8k();
         fallback.provider_id = provider_id.clone();
         fallback.model = model.clone();
         fallback
@@ -341,7 +341,7 @@ pub fn known_model_caps(provider_id: &str, model: &str) -> Option<ModelContextCa
 
 /// Safe default for unknown provider/model inputs.
 pub fn unknown_model_budget(provider_id: &str, model: &str) -> ContextBudget {
-    let mut caps = ModelContextCaps::fast_128k();
+    let mut caps = ModelContextCaps::legacy_8k();
     caps.provider_id = provider_id.to_string();
     caps.model = model.to_string();
     calculate_budget(&caps, ContextBudgetOverrides::default())
@@ -670,14 +670,14 @@ mod tests {
     }
 
     #[test]
-    fn context_budget_unknown_model_uses_fast_safe_default() {
+    fn context_budget_unknown_model_uses_legacy_fallback() {
         let budget = unknown_model_budget("custom", "unknown-model");
 
-        assert_eq!(budget.mode, ContextBudgetMode::Fast128K);
+        assert_eq!(budget.mode, ContextBudgetMode::Legacy8K);
         assert_eq!(budget.provider_id, "custom");
         assert_eq!(budget.model, "unknown-model");
-        assert_eq!(budget.input_budget, 110_592);
-        assert_eq!(budget.fallback_reason, None);
+        assert_eq!(budget.input_budget, 5_632);
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Fallback);
     }
 
     #[test]
@@ -820,8 +820,8 @@ mod tests {
             ..BudgetResolveInput::default()
         });
 
-        assert_eq!(budget.mode, ContextBudgetMode::Fast128K);
-        assert_eq!(budget.input_budget, 110_592);
+        assert_eq!(budget.mode, ContextBudgetMode::Legacy8K);
+        assert_eq!(budget.input_budget, 5_632);
         assert_eq!(budget.fallback_reason, None);
         clear_context_env();
     }

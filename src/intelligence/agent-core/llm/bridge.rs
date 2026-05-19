@@ -211,33 +211,14 @@ impl PlannerLlmBridge {
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "ContextWindow assembly failed: {}. P0 overflow occurred with input_budget: {}! falling back to legacy simple path without omitted blocks",
+                        "ContextWindow assembly failed: {}. P0 overflow occurred with input_budget: {}!",
                         e,
                         budget.input_budget
                     );
-                    if crate::prompts::is_persona_enabled() {
-                        let messages = vec![
-                            engine_llm_core::ChatMessage {
-                                role: "system".into(),
-                                content: crate::prompts::load_agent_persona().into(),
-                                timestamp: None,
-                            },
-                            engine_llm_core::ChatMessage {
-                                role: "user".into(),
-                                content: prompt.clone(),
-                                timestamp: None,
-                            },
-                        ];
-                        client
-                            .stream_chat_with_context(messages, None)
-                            .await
-                            .map_err(|e| ReplError::Session(e.to_string()))?
-                    } else {
-                        client
-                            .stream_chat(prompt.clone())
-                            .await
-                            .map_err(|e| ReplError::Session(e.to_string()))?
-                    }
+                    return Err(ReplError::Session(format!(
+                        "Context window assembly failed (P0 overflow) with input_budget: {}: {}",
+                        budget.input_budget, e
+                    )));
                 }
             }
         } else {
