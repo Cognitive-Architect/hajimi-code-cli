@@ -37,23 +37,11 @@ Status: Cleared in Day 04 and Day 05.
 
 Undercounting is fully resolved by passing `estimate_tokens(&sys_content)` inside the dynamic budget assembly helper instead of utilizing `token_estimate: 0`.
 
-### P1: Provider capacity has only the legacy threshold field in interface
+### [CLEARED] P1: Provider capacity has only the legacy threshold field in interface
 
-Command:
+Status: Cleared in Day 06.
 
-```text
-rg "context_threshold" src/interface
-```
-
-Output summary:
-
-```text
-src/interface\desktop\src\main.rs:    context_threshold: Option<usize>,
-src/interface\desktop\src\main.rs:            context_threshold: item
-src/interface\desktop\src\main.rs:                .get("context_threshold")
-```
-
-Impact: provider configuration has an existing compatibility entry, but it is not yet a complete model capability contract such as `maxContextTokens`, `reserveOutputTokens`, `safetyMarginTokens`, `retrievalBudgetTokens`, or `longContextMode`.
+We have successfully extended the `ProviderConfig` backend struct to natively support modern camelCase capability fields (`maxContextTokens`, `maxOutputTokens`, `reserveOutputTokens`, `safetyMarginTokens`, `retrievalBudgetTokens`, `longContextMode`) while fully maintaining backward compatibility with the legacy `contextThreshold` (`context_threshold`) field. These capability fields are dynamically injected into the Blackboard and resolved by the pure `agent-core` budget resolution engine without layer violation.
 
 ### P1: Memory and working budget terms conflict
 
@@ -182,7 +170,7 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 - Day 2: created `src/intelligence/agent-core/context_budget.rs` with `ContextBudget`, `ModelContextCaps`, and default windows. Status: implemented, not wired to bridge.
 - Day 3: added `resolve_context_budget`, `known_model_caps`, neutral `ProviderContextCaps` / `BudgetResolveInput`, env overrides, old `context_threshold` / `contextThreshold` compatibility, and `HAJIMI_LONG_CONTEXT_ENABLED` gate. Status: implemented, not wired to bridge.
 - Day 4-5: [CLEARED] replace bridge 8K hardcoding and fix system prompt token accounting. Status: Implemented for both Planner and Reflector with dynamic context budget resolving and robust P0 overflow gating.
-- Day 6-7: upgrade provider capability fields while retaining old `contextThreshold` / `context_threshold` compatibility.
+- Day 6-7: [CLEARED] upgrade provider capability fields while retaining old `contextThreshold` / `context_threshold` compatibility. Status: Implemented in Day 06 with full blackboard neutral capability injection and automated unit/E2E test suite.
 - Day 8-9: add `LongContextPackBuilder` and integrate included / omitted context blocks.
 - Day 10: make Memory retrieval budget derive from current `ContextBudget`.
 - Day 11-12: add provider probe result model, TTL, cancellation, and fallback semantics.

@@ -304,6 +304,10 @@ impl AgentLoop {
         Ok(outcome)
     }
 
+    pub fn blackboard(&self) -> &std::sync::Arc<Blackboard> {
+        &self.blackboard
+    }
+
     pub async fn execute_goal(
         &self,
         agent_id: AgentId,

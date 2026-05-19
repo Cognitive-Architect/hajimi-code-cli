@@ -185,6 +185,57 @@ impl PlannerLlmBridge {
                 if let Some(entry) = bb.read("__hajimi_model").await {
                     resolve_input.model = Some(entry.value.clone());
                 }
+
+                let mut caps = crate::context_budget::ProviderContextCaps::default();
+                caps.provider_id = resolve_input.provider_id.clone();
+                caps.model = resolve_input.model.clone();
+
+                let mut has_caps = false;
+                if let Some(entry) = bb.read("__hajimi_max_context_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.max_context_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_max_output_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.max_output_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_reserve_output_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.reserve_output_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_safety_margin_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.safety_margin_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_retrieval_budget_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.retrieval_budget_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_long_context_mode").await {
+                    if let Ok(val) = entry.value.parse::<bool>() {
+                        caps.long_context_mode = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_context_threshold").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.context_threshold = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if has_caps {
+                    resolve_input.provider_caps = Some(caps);
+                }
             }
             let budget = crate::context_budget::resolve_context_budget(resolve_input);
 
@@ -363,6 +414,57 @@ impl ReflectorLlmBridge {
                 }
                 if let Some(entry) = bb.read("__hajimi_model").await {
                     resolve_input.model = Some(entry.value.clone());
+                }
+
+                let mut caps = crate::context_budget::ProviderContextCaps::default();
+                caps.provider_id = resolve_input.provider_id.clone();
+                caps.model = resolve_input.model.clone();
+
+                let mut has_caps = false;
+                if let Some(entry) = bb.read("__hajimi_max_context_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.max_context_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_max_output_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.max_output_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_reserve_output_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.reserve_output_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_safety_margin_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.safety_margin_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_retrieval_budget_tokens").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.retrieval_budget_tokens = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_long_context_mode").await {
+                    if let Ok(val) = entry.value.parse::<bool>() {
+                        caps.long_context_mode = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if let Some(entry) = bb.read("__hajimi_context_threshold").await {
+                    if let Ok(val) = entry.value.parse::<usize>() {
+                        caps.context_threshold = Some(val);
+                        has_caps = true;
+                    }
+                }
+                if has_caps {
+                    resolve_input.provider_caps = Some(caps);
                 }
             }
             let budget = crate::context_budget::resolve_context_budget(resolve_input);
