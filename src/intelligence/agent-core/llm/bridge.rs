@@ -355,46 +355,33 @@ impl ReflectorLlmBridge {
 
         // Phase 4 Day 12: ContextWindowManager integration with feature-gate
         let mut stream = if crate::prompts::is_context_window_enabled() {
-            let mgr = crate::context_window_manager::ContextWindowManager::new(8000); // max_tokens limit
+            let mut resolve_input = crate::context_budget::BudgetResolveInput::default();
+            if let Some(ref bb) = self.blackboard {
+                if let Some(entry) = bb.read("__hajimi_provider_id").await {
+                    resolve_input.provider_id = Some(entry.value.clone());
+                }
+                if let Some(entry) = bb.read("__hajimi_model").await {
+                    resolve_input.model = Some(entry.value.clone());
+                }
+            }
+            let budget = crate::context_budget::resolve_context_budget(resolve_input);
+
             let sys_content = if crate::prompts::is_persona_enabled() {
                 crate::prompts::load_agent_persona().to_string()
             } else {
                 "System: Please assist.".to_string()
             };
 
-            let blocks = vec![
-                crate::context_window_manager::ContextBlock {
-                    name: "system_prompt".to_string(),
-                    priority: crate::context_window_manager::ContextPriority::P0,
-                    content_type: crate::context_window_manager::ContentType::SystemPrompt,
-                    content: sys_content,
-                    token_estimate: 0,
-                    truncatable: false,
-                },
-                crate::context_window_manager::ContextBlock {
-                    name: "user_prompt".to_string(),
-                    priority: crate::context_window_manager::ContextPriority::P0,
-                    content_type: crate::context_window_manager::ContentType::Text,
-                    content: prompt.clone(),
-                    token_estimate: crate::context_window_manager::estimate_tokens(&prompt),
-                    truncatable: false,
-                },
-            ];
-
-            match mgr.assemble(blocks) {
-                Ok(assembled) => {
-                    let mut messages = Vec::new();
-                    for b in assembled.blocks {
-                        let role = match b.content_type {
-                            crate::context_window_manager::ContentType::SystemPrompt => "system",
-                            _ => "user",
-                        };
-                        messages.push(engine_llm_core::ChatMessage {
-                            role: role.into(),
-                            content: b.content,
-                            timestamp: None,
-                        });
-                    }
+            match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
+                Ok((messages, estimated_input, omitted_count)) => {
+                    tracing::info!(
+                        "Reflector budget stats: provider={}, model={}, input_budget={}, estimated_input={}, omitted_count={}",
+                        budget.provider_id,
+                        budget.model,
+                        budget.input_budget,
+                        estimated_input,
+                        omitted_count
+                    );
                     client
                         .stream_chat_with_context(messages, None)
                         .await
@@ -402,32 +389,14 @@ impl ReflectorLlmBridge {
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "ContextWindow assemble Err: {}, fallback to legacy simple path",
-                        e
+                        "ContextWindow assembly failed: {}. P0 overflow occurred with input_budget: {}!",
+                        e,
+                        budget.input_budget
                     );
-                    if crate::prompts::is_persona_enabled() {
-                        let messages = vec![
-                            engine_llm_core::ChatMessage {
-                                role: "system".into(),
-                                content: crate::prompts::load_agent_persona().into(),
-                                timestamp: None,
-                            },
-                            engine_llm_core::ChatMessage {
-                                role: "user".into(),
-                                content: prompt.clone(),
-                                timestamp: None,
-                            },
-                        ];
-                        client
-                            .stream_chat_with_context(messages, None)
-                            .await
-                            .map_err(|e| ReplError::Session(e.to_string()))?
-                    } else {
-                        client
-                            .stream_chat(prompt.clone())
-                            .await
-                            .map_err(|e| ReplError::Session(e.to_string()))?
-                    }
+                    return Err(ReplError::Session(format!(
+                        "Context window assembly failed (P0 overflow) with input_budget: {}: {}",
+                        budget.input_budget, e
+                    )));
                 }
             }
         } else {
