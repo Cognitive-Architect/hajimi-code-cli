@@ -53,3 +53,13 @@ pub fn is_context_window_enabled() -> bool {
         .map(|v| v != "false" && v != "0")
         .unwrap_or(true)
 }
+
+/// Feature-gate for Long Context budget expansion.
+/// Reads from environment variable `HAJIMI_LONG_CONTEXT_ENABLED`.
+/// Defaults to `true` if unset. When disabled, long-context profiles fall back
+/// to a conservative fast budget while preserving existing non-long behavior.
+pub fn is_long_context_enabled() -> bool {
+    std::env::var("HAJIMI_LONG_CONTEXT_ENABLED")
+        .map(|v| v != "false" && v != "0")
+        .unwrap_or(true)
+}

@@ -236,6 +236,9 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `minimal_agent.rs` | 最小Agent实现 | 18 |
 | `llm/bridge.rs` | **LLM 适配器桥接**（PlannerLlmBridge + ReflectorLlmBridge）⭐ | 161 |
 | `llm/mod.rs` | LLM 模块入口 | 3 |
+| `context_budget.rs` | **Long Context 预算计划入口**（计划 Day 2-3；定义 `ContextBudget` / `ModelContextCaps`，不得依赖 Interface 层 ProviderConfig） | planned |
+| `long_context_pack.rs` | **Long Context Pack 结构化上下文入口**（计划 Day 8-9；repo tree / active files / diff / diagnostics / memory blocks） | planned |
+| `context_receipt.rs` | **Context Receipt 回执入口**（计划 Day 13；included / omitted block 元数据与 token 使用记录） | planned |
 | `mod.rs` | 公共API导出（含约束声明） | 34 |
 | `memory_retriever.rs` | **多层级记忆检索**（DEBT-LINES清偿） | 87 |
 | `loop_state_machine.rs` | **7步循环状态机**（DEBT-LINES清偿） | 69 |
@@ -340,6 +343,7 @@ pub async fn run(&self, agent_id: &AgentId) -> ReplResult<()> {
 - `src/intelligence/agent-core/README.md` - 模块README
 - `docs/debt/agent-core-debt-history.md` - 历史技术约束记录
 - `docs/debt/DEBT-ACTIVE-DECLARATION.md` - 活跃技术约束声明
+- `docs/debt/DEBT-LONG-CONTEXT-1M.md` - Long Context 1M 债务基线（8K bridge、system prompt token、Provider capability、Memory budget）
 
 ---
 

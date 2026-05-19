@@ -177,46 +177,33 @@ impl PlannerLlmBridge {
 
         // Phase 4 Day 12: ContextWindowManager integration with feature-gate
         let mut stream = if crate::prompts::is_context_window_enabled() {
-            let mgr = crate::context_window_manager::ContextWindowManager::new(8000); // max_tokens limit
+            let mut resolve_input = crate::context_budget::BudgetResolveInput::default();
+            if let Some(ref bb) = self.blackboard {
+                if let Some(entry) = bb.read("__hajimi_provider_id").await {
+                    resolve_input.provider_id = Some(entry.value.clone());
+                }
+                if let Some(entry) = bb.read("__hajimi_model").await {
+                    resolve_input.model = Some(entry.value.clone());
+                }
+            }
+            let budget = crate::context_budget::resolve_context_budget(resolve_input);
+
             let sys_content = if crate::prompts::is_persona_enabled() {
                 crate::prompts::load_agent_persona().to_string()
             } else {
                 "System: Please assist.".to_string()
             };
 
-            let blocks = vec![
-                crate::context_window_manager::ContextBlock {
-                    name: "system_prompt".to_string(),
-                    priority: crate::context_window_manager::ContextPriority::P0,
-                    content_type: crate::context_window_manager::ContentType::SystemPrompt,
-                    content: sys_content,
-                    token_estimate: 0,
-                    truncatable: false,
-                },
-                crate::context_window_manager::ContextBlock {
-                    name: "user_prompt".to_string(),
-                    priority: crate::context_window_manager::ContextPriority::P0,
-                    content_type: crate::context_window_manager::ContentType::Text,
-                    content: prompt.clone(),
-                    token_estimate: crate::context_window_manager::estimate_tokens(&prompt),
-                    truncatable: false,
-                },
-            ];
-
-            match mgr.assemble(blocks) {
-                Ok(assembled) => {
-                    let mut messages = Vec::new();
-                    for b in assembled.blocks {
-                        let role = match b.content_type {
-                            crate::context_window_manager::ContentType::SystemPrompt => "system",
-                            _ => "user",
-                        };
-                        messages.push(engine_llm_core::ChatMessage {
-                            role: role.into(),
-                            content: b.content,
-                            timestamp: None,
-                        });
-                    }
+            match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
+                Ok((messages, estimated_input, omitted_count)) => {
+                    tracing::info!(
+                        "Planner budget stats: provider={}, model={}, input_budget={}, estimated_input={}, omitted_count={}",
+                        budget.provider_id,
+                        budget.model,
+                        budget.input_budget,
+                        estimated_input,
+                        omitted_count
+                    );
                     client
                         .stream_chat_with_context(messages, None)
                         .await
@@ -224,8 +211,9 @@ impl PlannerLlmBridge {
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "ContextWindow assemble Err: {}, fallback to legacy simple path",
-                        e
+                        "ContextWindow assembly failed: {}. P0 overflow occurred with input_budget: {}! falling back to legacy simple path without omitted blocks",
+                        e,
+                        budget.input_budget
                     );
                     if crate::prompts::is_persona_enabled() {
                         let messages = vec![
@@ -803,4 +791,79 @@ mod tests {
             crate::reflector::CritiqueSeverity::Medium
         );
     }
+
+    #[test]
+    fn test_assemble_messages_for_bridge_success() {
+        let budget = crate::context_budget::fast_128k();
+        let prompt = "Analyze repository files";
+        let sys_content = "Persona instructions";
+        let res = assemble_messages_for_bridge(prompt, sys_content, &budget);
+        assert!(res.is_ok());
+        let (messages, estimated_input, omitted_count) = res.unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[0].content, sys_content);
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, prompt);
+        assert!(estimated_input > 0);
+        assert_eq!(omitted_count, 0);
+    }
+
+    #[test]
+    fn test_assemble_messages_for_bridge_overflow() {
+        let mut budget = crate::context_budget::legacy_8k();
+        budget.input_budget = 2; // tiny budget
+        let prompt = "Analyze repository files";
+        let sys_content = "Persona instructions";
+        let res = assemble_messages_for_bridge(prompt, sys_content, &budget);
+        assert!(res.is_err());
+    }
+}
+
+/// Helper to assemble messages for bridge.
+pub(crate) fn assemble_messages_for_bridge(
+    prompt: &str,
+    sys_content: &str,
+    budget: &crate::context_budget::ContextBudget,
+) -> Result<
+    (Vec<engine_llm_core::ChatMessage>, usize, usize),
+    crate::context_window_manager::ContextError,
+> {
+    let mgr = crate::context_window_manager::ContextWindowManager::new(budget.input_budget);
+    let sys_estimate = crate::context_window_manager::estimate_tokens(sys_content);
+    let user_estimate = crate::context_window_manager::estimate_tokens(prompt);
+
+    let blocks = vec![
+        crate::context_window_manager::ContextBlock {
+            name: "system_prompt".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P0,
+            content_type: crate::context_window_manager::ContentType::SystemPrompt,
+            content: sys_content.to_string(),
+            token_estimate: sys_estimate,
+            truncatable: false,
+        },
+        crate::context_window_manager::ContextBlock {
+            name: "user_prompt".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P0,
+            content_type: crate::context_window_manager::ContentType::Text,
+            content: prompt.to_string(),
+            token_estimate: user_estimate,
+            truncatable: false,
+        },
+    ];
+
+    let assembled = mgr.assemble(blocks)?;
+    let mut messages = Vec::new();
+    for b in assembled.blocks {
+        let role = match b.content_type {
+            crate::context_window_manager::ContentType::SystemPrompt => "system",
+            _ => "user",
+        };
+        messages.push(engine_llm_core::ChatMessage {
+            role: role.into(),
+            content: b.content,
+            timestamp: None,
+        });
+    }
+    Ok((messages, assembled.total_tokens, assembled.omitted.len()))
 }

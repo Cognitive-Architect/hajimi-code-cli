@@ -7,6 +7,7 @@ pub mod agent_loop;
 pub mod agent_loop_builder;
 pub mod blackboard;
 pub mod checkpoint;
+pub mod context_budget;
 pub mod context_window_manager;
 pub mod degrade;
 pub mod edit_applier;
