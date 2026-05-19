@@ -15,6 +15,7 @@ pub mod event_tracing;
 pub mod events;
 pub mod governance;
 pub mod llm;
+pub mod long_context_pack;
 pub mod loop_state_machine;
 pub mod memory_bootstrapper;
 pub mod memory_retriever;
