@@ -139,6 +139,38 @@ window.app = {
     }
   },
 
+  getTauriInvoke() {
+    const tauri = window.__TAURI__;
+    if (!tauri) throw new Error('Tauri 不可用');
+    return tauri.core?.invoke || tauri.invoke;
+  },
+
+  isToolConfirmationError(error) {
+    return String(error?.message || error || '').includes('requires confirmation');
+  },
+
+  async executeTool(name, args = {}, options = {}) {
+    const invoke = this.getTauriInvoke();
+    const payload = { name, args };
+    if (options.confirmMessage) {
+      const confirmed = confirm(options.confirmMessage);
+      if (!confirmed) throw new Error('用户取消执行');
+      payload.confirmationToken = await invoke('create_tool_confirmation_token', { name, args });
+    }
+    return invoke('execute_tool', payload);
+  },
+
+  async executeToolWithConfirmationRetry(name, args = {}, confirmMessage = '') {
+    try {
+      return await this.executeTool(name, args);
+    } catch (error) {
+      if (!this.isToolConfirmationError(error)) throw error;
+      return this.executeTool(name, args, {
+        confirmMessage: confirmMessage || `工具 ${name} 需要确认，是否继续？`,
+      });
+    }
+  },
+
   // ============================================================
   // Live Shell State
   // ============================================================
@@ -659,10 +691,7 @@ window.app = {
     const wholeWord = document.getElementById('searchWholeWord')?.checked || false;
 
     try {
-      const result = await invoke('execute_tool', {
-        name: 'grep',
-        args: { pattern, path: '.', recursive: true, caseSensitive, regex, wholeWord }
-      });
+      const result = await this.executeTool('grep', { pattern, path: '.', recursive: true, caseSensitive, regex, wholeWord });
       const output = result.stdout || result.result || '';
       this.renderSearchResults(output);
     } catch (e) {
@@ -753,7 +782,7 @@ window.app = {
     if (!tauri) return;
     const invoke = tauri.core?.invoke || tauri.invoke;
     try {
-      const result = await invoke('execute_tool', { name: 'git_status', args: {} });
+      const result = await this.executeTool('git_status', {});
       const output = result.stdout || result.result || '';
       this.renderGitFiles(output);
       this.updateGitBranch(output);
@@ -811,7 +840,7 @@ window.app = {
     if (!tauri) return;
     const invoke = tauri.core?.invoke || tauri.invoke;
     try {
-      const result = await invoke('execute_tool', { name: 'git_diff', args: { file } });
+      const result = await this.executeTool('git_diff', { file });
       const diff = result.stdout || result.result || '';
       const diffView = document.getElementById('gitDiffView');
       const diffFileName = document.getElementById('gitDiffFileName');
@@ -849,7 +878,9 @@ window.app = {
     if (!tauri) { this.showErrorToast('Tauri 不可用'); return; }
     const invoke = tauri.core?.invoke || tauri.invoke;
     try {
-      await invoke('execute_tool', { name: 'git_commit', args: { message } });
+      await this.executeTool('git_commit', { message }, {
+        confirmMessage: `确定要提交当前 Git 更改吗？\n\n${message}`,
+      });
       commitInput.value = '';
       this.loadGitStatus();
       this.showErrorToast('提交成功');
@@ -2705,7 +2736,11 @@ window.app = {
         return;
       }
       try {
-        const result = await invoke('execute_tool', { name: toolName, args });
+        const result = await this.executeToolWithConfirmationRetry(
+          toolName,
+          args,
+          `工具 ${toolName} 需要执行权限确认，是否继续？`
+        );
         const output = result.stdout || result.result || JSON.stringify(result, null, 2);
         this.addChatMessage('ai', `**工具 \`${toolName}\` 执行结果：**\n\n\`\`\`\n${output}\n\`\`\``);
       } catch (e) {
@@ -2815,10 +2850,7 @@ window.app = {
       const pattern = text === '/search' ? '' : text.slice(8).trim();
       if (!pattern) { this.addChatMessage('ai', '用法: `/search <pattern>`'); return; }
       try {
-        const result = await invoke('execute_tool', {
-          name: 'grep',
-          args: { pattern, path: '.', recursive: true, caseSensitive: false, regex: false, wholeWord: false }
-        });
+        const result = await this.executeTool('grep', { pattern, path: '.', recursive: true, caseSensitive: false, regex: false, wholeWord: false });
         const output = result.stdout || result.result || '';
         if (!output.trim()) {
           this.addChatMessage('ai', `**搜索 \`${this.escapeHtml(pattern)}\`**：未找到匹配`);
@@ -2846,7 +2878,7 @@ window.app = {
 
       if (subCmd === 'status' || subCmd === '') {
         try {
-          const result = await invoke('execute_tool', { name: 'git_status', args: {} });
+          const result = await this.executeTool('git_status', {});
           const output = result.stdout || result.result || '无更改';
           this.addChatMessage('ai', `**Git 状态：**\n\n\`\`\`\n${output}\n\`\`\``);
         } catch (e) {
@@ -2858,7 +2890,7 @@ window.app = {
       if (subCmd === 'diff') {
         const file = parts.slice(1).join(' ');
         try {
-          const result = await invoke('execute_tool', { name: 'git_diff', args: file ? { file } : {} });
+          const result = await this.executeTool('git_diff', file ? { file } : {});
           const output = result.stdout || result.result || '无 diff';
           this.addChatMessage('ai', `**Git Diff${file ? ' — ' + this.escapeHtml(file) : ''}：**\n\n\`\`\`diff\n${output}\n\`\`\``);
         } catch (e) {
@@ -2871,7 +2903,9 @@ window.app = {
         const message = parts.slice(1).join(' ');
         if (!message) { this.addChatMessage('ai', '用法: `/git commit <message>`'); return; }
         try {
-          await invoke('execute_tool', { name: 'git_commit', args: { message } });
+          await this.executeTool('git_commit', { message }, {
+            confirmMessage: `确定要提交当前 Git 更改吗？\n\n${message}`,
+          });
           this.addChatMessage('ai', `✅ 已提交: ${this.escapeHtml(message)}`);
         } catch (e) {
           this.addChatMessage('ai', `提交失败: ${e.message || e}`);
@@ -3948,24 +3982,16 @@ window.app = {
   },
 
   async mcpInit(serverUrl, transport) {
-    const tauri = window.__TAURI__;
-    if (!tauri) throw new Error('Tauri 不可用');
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    const result = await invoke('execute_tool', {
-      name: 'mcp_init',
-      args: { server_url: serverUrl, transport }
+    const result = await this.executeTool('mcp_init', { server_url: serverUrl, transport }, {
+      confirmMessage: `确定要初始化 MCP 连接吗？\n\n${serverUrl}`,
     });
     const output = result.stdout || result.result || '{}';
     return JSON.parse(output);
   },
 
   async mcpInvoke(serverUrl, toolName, args) {
-    const tauri = window.__TAURI__;
-    if (!tauri) throw new Error('Tauri 不可用');
-    const invoke = tauri.core?.invoke || tauri.invoke;
-    const result = await invoke('execute_tool', {
-      name: 'mcp_invoke',
-      args: { server_url: serverUrl, tool_name: toolName, arguments: args || {} }
+    const result = await this.executeTool('mcp_invoke', { server_url: serverUrl, tool_name: toolName, arguments: args || {} }, {
+      confirmMessage: `确定要调用 MCP 工具 ${toolName} 吗？\n\n${serverUrl}`,
     });
     const output = result.stdout || result.result || '{}';
     return JSON.parse(output);
@@ -4131,10 +4157,7 @@ window.app = {
     const line = 0;
     const character = 0;
     try {
-      const result = await invoke('execute_tool', {
-        name: 'lsp_definition',
-        args: { uri: this.pathToUri(filePath), line, character }
-      });
+      const result = await this.executeTool('lsp_definition', { uri: this.pathToUri(filePath), line, character });
       const output = result.stdout || result.result || '{}';
       const data = JSON.parse(output);
       if (data && data.uri) {
@@ -4155,10 +4178,7 @@ window.app = {
     const line = 0;
     const character = 0;
     try {
-      const result = await invoke('execute_tool', {
-        name: 'lsp_references',
-        args: { uri: this.pathToUri(filePath), line, character }
-      });
+      const result = await this.executeTool('lsp_references', { uri: this.pathToUri(filePath), line, character });
       const output = result.stdout || result.result || '[]';
       const locations = JSON.parse(output);
       if (!locations || !locations.length) {
@@ -4186,10 +4206,7 @@ window.app = {
     const line = 0;
     const character = 0;
     try {
-      const result = await invoke('execute_tool', {
-        name: 'lsp_hover',
-        args: { uri: this.pathToUri(filePath), line, character }
-      });
+      const result = await this.executeTool('lsp_hover', { uri: this.pathToUri(filePath), line, character });
       const output = result.stdout || result.result || '{}';
       const data = JSON.parse(output);
       const contents = data.contents;

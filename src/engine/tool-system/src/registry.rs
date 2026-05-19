@@ -43,7 +43,6 @@ mod tests {
         BenchmarkTool, CoverageReportTool, LspDefinitionTool, LspHoverTool, LspReferencesTool,
         McpInitTool, McpInvokeTool,
     };
-    use crate::{Config, PermissionLevel, ToolArgs, ToolError, ToolOutput, ToolPermissions};
     use crate::{
         GenerateDocsTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool,
         GraphTool,
@@ -54,6 +53,7 @@ mod tests {
         PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, SecurityAuditTool,
         UpdateReadmeTool,
     };
+    use crate::{ToolArgs, ToolError, ToolOutput, ToolPermissions};
     use async_trait::async_trait;
 
     struct TestTool;

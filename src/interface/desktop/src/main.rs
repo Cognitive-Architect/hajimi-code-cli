@@ -14,6 +14,7 @@ use engine_llm_core::{
     AnthropicClient, ChatMessage, Client, LlmClient, OllamaClient, OpenAiClient,
 };
 use engine_tool_system::lsp_integration::ASTContextProvider;
+use engine_tool_system::PermissionLevel;
 use engine_tool_system::{
     AnalyzeTool, BashTool, BenchmarkTool, CargoBuildTool, CmakeTool, CoverageReportTool,
     DeleteFileTool, EditFileTool, FetchUrlTool, FindTool, GenerateDocsTool,
@@ -21,12 +22,13 @@ use engine_tool_system::{
     GraphTool, GrepTool, JsBundleAnalyzerTool, ListDirectoryTool, LsTool, LspDefinitionTool,
     LspHoverTool, LspInitTool, LspReferencesTool, MakeTool, McpInitTool, McpInvokeTool, NpmRunTool,
     PowerShellTool, ReadFileTool, RefactorCodeTool, RunTestsTool, RustDocGeneratorTool,
-    SecurityAuditTool, SmartCommitTool, ToolOutput, ToolRegistry, UpdateReadmeTool, ViewImageTool,
-    WebSearchTool, WriteFileTool,
+    SecurityAuditTool, SmartCommitTool, ToolOutput, ToolPermissions, ToolRegistry,
+    UpdateReadmeTool, ViewImageTool, WebSearchTool, WriteFileTool,
 };
 use keyring::Entry;
 use memory::memory_gateway::MemoryGateway as AgentMemoryGateway;
 use pbkdf2::pbkdf2_hmac;
+use rand::RngCore;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -152,6 +154,7 @@ struct AppState {
     trace_tx: std::sync::Mutex<Option<tokio::sync::broadcast::Sender<TraceEvent>>>,
     paused: std::sync::Mutex<bool>,
     approval_level: std::sync::Mutex<String>,
+    tool_confirmation_tokens: std::sync::Mutex<HashMap<String, (String, String)>>,
     edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
     memory_gateway: Arc<MemoryGateway>,
     token_tracker: Arc<TokenUsageTracker>,
@@ -166,14 +169,19 @@ impl AppState {
     }
 }
 
-fn build_registry() -> ToolRegistry {
+fn build_registry(workspace_root: &Path) -> ToolRegistry {
     let mut r = ToolRegistry::new();
+    let workspace_paths = vec![workspace_root.to_path_buf()];
     r.register(Arc::new(AnalyzeTool::new()));
     r.register(Arc::new(BashTool::new()));
     r.register(Arc::new(CargoBuildTool::new()));
     r.register(Arc::new(CmakeTool::new()));
-    r.register(Arc::new(DeleteFileTool::new()));
-    r.register(Arc::new(EditFileTool::new()));
+    r.register(Arc::new(DeleteFileTool::with_allowed_paths(
+        workspace_paths.clone(),
+    )));
+    r.register(Arc::new(EditFileTool::with_allowed_paths(
+        workspace_paths.clone(),
+    )));
     r.register(Arc::new(FetchUrlTool::new()));
     r.register(Arc::new(FindTool::new()));
     r.register(Arc::new(GenerateDocsTool::new()));
@@ -192,7 +200,9 @@ fn build_registry() -> ToolRegistry {
     r.register(Arc::new(LspHoverTool::new()));
     r.register(Arc::new(LspInitTool::new()));
     r.register(Arc::new(LspReferencesTool::new()));
-    r.register(Arc::new(LsTool::new()));
+    r.register(Arc::new(LsTool::with_allowed_paths(
+        workspace_paths.clone(),
+    )));
     r.register(Arc::new(MakeTool::new()));
     r.register(Arc::new(McpInitTool::new()));
     r.register(Arc::new(McpInvokeTool::new()));
@@ -200,7 +210,9 @@ fn build_registry() -> ToolRegistry {
     r.register(Arc::new(BenchmarkTool::new()));
     r.register(Arc::new(NpmRunTool::new()));
     r.register(Arc::new(PowerShellTool::new()));
-    r.register(Arc::new(ReadFileTool::new()));
+    r.register(Arc::new(ReadFileTool::with_allowed_paths(
+        workspace_paths.clone(),
+    )));
     r.register(Arc::new(RefactorCodeTool::new()));
     r.register(Arc::new(RunTestsTool::new()));
     r.register(Arc::new(RustDocGeneratorTool::new()));
@@ -208,7 +220,7 @@ fn build_registry() -> ToolRegistry {
     r.register(Arc::new(UpdateReadmeTool::new()));
     r.register(Arc::new(ViewImageTool::new()));
     r.register(Arc::new(WebSearchTool::new()));
-    r.register(Arc::new(WriteFileTool::new()));
+    r.register(Arc::new(WriteFileTool::with_allowed_paths(workspace_paths)));
     r
 }
 
@@ -220,20 +232,15 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "cargo",
     "npm",
     "node",
-    "npx",
-    "pnpm",
     "rustc",
     "rustfmt",
     "clippy-driver",
     "python",
     "python3",
-    "pip",
-    "pip3",
-    "code",
-    "cursor",
 ];
 
 const FORBIDDEN_CHARS: &[char] = &[';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>'];
+const PREVIEW_EDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 // ------------------------------------------------------------------
 // Legacy commands
@@ -873,6 +880,92 @@ impl From<ToolOutput> for ToolResult {
     }
 }
 
+fn tool_requires_confirmation(permissions: &ToolPermissions) -> bool {
+    permissions.requires_confirmation || permissions.default_level == PermissionLevel::Ask
+}
+
+fn canonical_tool_args(args: &Value) -> String {
+    serde_json::to_string(args).unwrap_or_else(|_| "null".to_string())
+}
+
+fn validate_and_consume_confirmation_token(
+    tokens: &mut HashMap<String, (String, String)>,
+    tool_name: &str,
+    args: &Value,
+    confirmation_token: Option<&str>,
+) -> Result<(), String> {
+    let token = confirmation_token
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("tool '{}' requires confirmation", tool_name))?;
+    let Some((confirmed_tool, confirmed_args)) = tokens.remove(token) else {
+        return Err(format!(
+            "tool '{}' confirmation token is invalid",
+            tool_name
+        ));
+    };
+    if confirmed_tool != tool_name || confirmed_args != canonical_tool_args(args) {
+        return Err(format!(
+            "tool '{}' confirmation token does not match this request",
+            tool_name
+        ));
+    }
+    Ok(())
+}
+
+fn enforce_tool_permissions(
+    permissions: &ToolPermissions,
+    tool_name: &str,
+    args: &Value,
+    confirmation_token: Option<&str>,
+    tokens: &std::sync::Mutex<HashMap<String, (String, String)>>,
+) -> Result<(), String> {
+    match permissions.default_level {
+        PermissionLevel::Deny => Err(format!("tool '{}' is denied by policy", tool_name)),
+        PermissionLevel::Allow if !permissions.requires_confirmation => Ok(()),
+        PermissionLevel::Allow | PermissionLevel::Ask => {
+            let mut guard = tokens.lock().unwrap_or_else(|e| e.into_inner());
+            validate_and_consume_confirmation_token(&mut guard, tool_name, args, confirmation_token)
+        }
+    }
+}
+
+fn random_confirmation_token(tool_name: &str) -> String {
+    let mut bytes = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    let suffix = bytes
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect::<String>();
+    format!("{}:{}", tool_name, suffix)
+}
+
+#[tauri::command]
+fn create_tool_confirmation_token(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    args: Value,
+) -> Result<String, String> {
+    let tool = state
+        .registry
+        .get(&name)
+        .ok_or_else(|| format!("tool '{}' not found", name))?;
+    let permissions = tool.permissions();
+    if permissions.default_level == PermissionLevel::Deny {
+        return Err(format!("tool '{}' is denied by policy", name));
+    }
+    if !tool_requires_confirmation(&permissions) {
+        return Ok(String::new());
+    }
+
+    let token = random_confirmation_token(&name);
+    state
+        .tool_confirmation_tokens
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(token.clone(), (name.clone(), canonical_tool_args(&args)));
+    Ok(token)
+}
+
 #[tauri::command]
 fn list_tools(state: tauri::State<'_, AppState>) -> Vec<ToolInfo> {
     state
@@ -893,11 +986,20 @@ async fn execute_tool(
     state: tauri::State<'_, AppState>,
     name: String,
     args: Value,
+    confirmation_token: Option<String>,
 ) -> Result<ToolResult, String> {
     let tool = state
         .registry
         .get(&name)
         .ok_or_else(|| format!("tool '{}' not found", name))?;
+    let permissions = tool.permissions();
+    enforce_tool_permissions(
+        &permissions,
+        &name,
+        &args,
+        confirmation_token.as_deref(),
+        &state.tool_confirmation_tokens,
+    )?;
     let output = tool.execute(args).await.map_err(|e| e.message)?;
     Ok(output.into())
 }
@@ -976,10 +1078,33 @@ fn provider_config_path() -> PathBuf {
 }
 
 // Workspace-level config lives in <workspace>/.hajimi/providers.json
-fn workspace_config_path(workspace: &str) -> PathBuf {
-    PathBuf::from(workspace)
-        .join(".hajimi")
-        .join("providers.json")
+fn workspace_config_path(workspace: &Path) -> PathBuf {
+    workspace.join(".hajimi").join("providers.json")
+}
+
+fn trusted_workspace_path(
+    workspace_path: Option<&str>,
+    app_handle: &tauri::AppHandle,
+) -> Result<Option<PathBuf>, String> {
+    let current = get_workspace_dir(app_handle)?;
+    let canonical_current = current
+        .canonicalize()
+        .map_err(|e| format!("无法解析当前 workspace: {}", e))?;
+    let Some(input) = workspace_path else {
+        return Ok(Some(canonical_current));
+    };
+    let requested = PathBuf::from(input);
+    let canonical_requested = requested
+        .canonicalize()
+        .map_err(|e| format!("无法解析 workspace 参数: {}", e))?;
+    if canonical_requested != canonical_current {
+        return Err(format!(
+            "workspace 参数越界: {} 不是当前 workspace {}",
+            canonical_requested.display(),
+            canonical_current.display()
+        ));
+    }
+    Ok(Some(canonical_current))
 }
 
 // Profile-level config lives in profiles/{name}/providers.json (B-05/01)
@@ -1021,7 +1146,7 @@ fn read_configs_at(path: &std::path::Path) -> Vec<ProviderConfig> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-fn read_merged_configs(workspace: Option<&str>, profile: Option<&str>) -> Vec<ProviderConfig> {
+fn read_merged_configs(workspace: Option<&Path>, profile: Option<&str>) -> Vec<ProviderConfig> {
     let global = read_provider_configs_with_profile(profile);
     let mut map: HashMap<String, ProviderConfig> =
         global.into_iter().map(|c| (c.id.clone(), c)).collect();
@@ -1232,14 +1357,19 @@ fn decrypt_backup(data: &[u8], password: &str) -> Result<String, String> {
 fn get_provider_configs(
     workspace_path: Option<String>,
     state: tauri::State<'_, AppState>,
-) -> Vec<ProviderConfig> {
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<ProviderConfig>, String> {
     // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
     let profile = state
         .active_profile
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    read_merged_configs(workspace_path.as_deref(), profile.as_deref())
+    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
+    Ok(read_merged_configs(
+        trusted_workspace.as_deref(),
+        profile.as_deref(),
+    ))
 }
 
 #[tauri::command]
@@ -1248,6 +1378,7 @@ fn add_provider_config(
     workspace_path: Option<String>,
     save_target: Option<String>,
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
     let profile = state
@@ -1261,8 +1392,8 @@ fn add_provider_config(
     config.api_key.clear();
     let target = save_target.as_deref().unwrap_or("global");
     if target == "workspace" {
-        if let Some(ws) = workspace_path.as_deref() {
-            let path = workspace_config_path(ws);
+        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
+            let path = workspace_config_path(&ws);
             let mut configs = read_configs_at(&path);
             if configs.iter().any(|c| c.id == config.id) {
                 return Err(format!("Provider '{}' already exists", config.id));
@@ -1285,6 +1416,7 @@ fn update_provider_config(
     workspace_path: Option<String>,
     save_target: Option<String>,
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let profile = state
         .active_profile
@@ -1297,8 +1429,8 @@ fn update_provider_config(
     config.api_key.clear();
     let target = save_target.as_deref().unwrap_or("global");
     if target == "workspace" {
-        if let Some(ws) = workspace_path.as_deref() {
-            let path = workspace_config_path(ws);
+        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
+            let path = workspace_config_path(&ws);
             let mut configs = read_configs_at(&path);
             let idx = configs
                 .iter()
@@ -1323,6 +1455,7 @@ fn delete_provider_config(
     workspace_path: Option<String>,
     delete_target: Option<String>,
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let profile = state
         .active_profile
@@ -1332,8 +1465,8 @@ fn delete_provider_config(
     let _ = delete_api_key_with_profile(&id, profile.as_deref());
     let target = delete_target.as_deref().unwrap_or("global");
     if target == "workspace" {
-        if let Some(ws) = workspace_path.as_deref() {
-            let path = workspace_config_path(ws);
+        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
+            let path = workspace_config_path(&ws);
             let mut configs = read_configs_at(&path);
             configs.retain(|c| c.id != id);
             if configs.is_empty() {
@@ -1353,7 +1486,8 @@ fn delete_provider_config(
 fn get_providers(
     workspace_path: Option<String>,
     state: tauri::State<'_, AppState>,
-) -> Vec<ProviderInfo> {
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<ProviderInfo>, String> {
     let profile = state
         .active_profile
         .lock()
@@ -1383,7 +1517,8 @@ fn get_providers(
     });
 
     // Append custom providers from config (keys secured in keyring), with workspace overlay
-    for cfg in read_merged_configs(workspace_path.as_deref(), profile.as_deref()) {
+    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
+    for cfg in read_merged_configs(trusted_workspace.as_deref(), profile.as_deref()) {
         let is_official = cfg.id == "anthropic"
             || cfg.id == "openai"
             || cfg.name.to_lowercase() == "anthropic"
@@ -1398,7 +1533,7 @@ fn get_providers(
             });
         }
     }
-    providers
+    Ok(providers)
 }
 
 #[tauri::command]
@@ -1735,13 +1870,15 @@ fn export_provider_backup(
     password: String,
     workspace_path: Option<String>,
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let profile = state
         .active_profile
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let configs = read_merged_configs(workspace_path.as_deref(), profile.as_deref());
+    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
+    let configs = read_merged_configs(trusted_workspace.as_deref(), profile.as_deref());
     let mut export_data = Vec::new();
     for cfg in configs {
         let key = get_api_key_with_profile(&cfg.id, profile.as_deref()).unwrap_or_default();
@@ -2336,15 +2473,21 @@ struct EditHunkPayload {
 async fn apply_edits(
     edits: Vec<EditHunkPayload>,
     state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<Vec<ToolResult>, String> {
     let mut results = Vec::new();
+    let base_dir = get_workspace_dir(&app_handle)?;
     for edit in edits {
+        if edit.old_string.is_empty() {
+            return Err("old_string cannot be empty".to_string());
+        }
+        let safe_path = resolve_workspace_path(&edit.path, &base_dir, PathIntent::ExistingFile)?;
         let tool = state
             .registry
             .get("edit_file")
             .ok_or_else(|| "edit_file tool not found".to_string())?;
         let args = serde_json::json!({
-            "path": edit.path,
+            "path": safe_path,
             "old_string": edit.old_string,
             "new_string": edit.new_string,
         });
@@ -2355,14 +2498,43 @@ async fn apply_edits(
 }
 
 #[tauri::command]
-fn preview_edit(path: String, old_string: String, new_string: String) -> Result<String, String> {
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+fn preview_edit(
+    path: String,
+    old_string: String,
+    new_string: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    if old_string.is_empty() {
+        return Err("old_string cannot be empty".to_string());
+    }
+    let base_dir = get_workspace_dir(&app_handle)?;
+    let safe_path = resolve_workspace_path(&path, &base_dir, PathIntent::ExistingFile)?;
+    preview_edit_for_path(&safe_path, &path, &old_string, &new_string)
+}
+
+fn preview_edit_for_path(
+    safe_path: &Path,
+    display_path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> Result<String, String> {
+    if old_string.is_empty() {
+        return Err("old_string cannot be empty".to_string());
+    }
+    let metadata = std::fs::metadata(safe_path).map_err(|e| e.to_string())?;
+    if metadata.len() > PREVIEW_EDIT_MAX_BYTES {
+        return Err(format!(
+            "file too large for preview: {} bytes",
+            metadata.len()
+        ));
+    }
+    let content = std::fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
     if !content.contains(&old_string) {
         return Err("Old string not found in file".to_string());
     }
     let lines: Vec<&str> = content.lines().collect();
     let old_lines: Vec<&str> = old_string.lines().collect();
-    let mut diff = format!("--- {}\n+++ {}\n", path, path);
+    let mut diff = format!("--- {}\n+++ {}\n", display_path, display_path);
     // Find approximate line number of old_string
     let mut line_no = 1usize;
     for (i, window) in lines.windows(old_lines.len()).enumerate() {
@@ -2453,22 +2625,6 @@ async fn get_cumulative_stats(
 // Main
 // ------------------------------------------------------------------
 fn main() {
-    let state = AppState {
-        registry: build_registry(),
-        active_profile: std::sync::Mutex::new(None),
-        agent_providers: std::sync::Mutex::new(HashMap::new()),
-        trace_tx: std::sync::Mutex::new(None),
-        paused: std::sync::Mutex::new(false),
-        approval_level: std::sync::Mutex::new("Auto".to_string()),
-        edit_history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-        memory_gateway: Arc::new(MemoryGateway::with_budget(TokenBudget {
-            focus_limit: 8000,
-            working_limit: 64000,
-            archive_limit: 2000000,
-        })),
-        token_tracker: Arc::new(TokenUsageTracker::new()),
-    };
-
     // Create production-ready AgentLoop with planner and reflector.
     // SAFETY: AgentLoop is Send + Sync; safe to hold in AppState and register with Tauri.
     let agent_loop = {
@@ -2490,17 +2646,39 @@ fn main() {
             .expect("AgentLoop build failed")
     };
 
-    // Inject the broadcast sender so frontend trace panel receives real AgentLoop events.
-    if let Some(tx) = agent_loop.trace_tx() {
-        state.set_trace_tx(tx);
-    }
-
-    let agent_loop_arc = Arc::new(agent_loop);
+    let agent_loop_for_setup = Arc::new(agent_loop);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(state)
-        .manage(agent_loop_arc.clone())
+        .setup(move |app| {
+            let workspace_root = get_workspace_dir(app.handle())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let state = AppState {
+                registry: build_registry(&workspace_root),
+                active_profile: std::sync::Mutex::new(None),
+                agent_providers: std::sync::Mutex::new(HashMap::new()),
+                trace_tx: std::sync::Mutex::new(None),
+                paused: std::sync::Mutex::new(false),
+                approval_level: std::sync::Mutex::new("Auto".to_string()),
+                tool_confirmation_tokens: std::sync::Mutex::new(HashMap::new()),
+                edit_history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+                memory_gateway: Arc::new(MemoryGateway::with_budget(TokenBudget {
+                    focus_limit: 8000,
+                    working_limit: 64000,
+                    archive_limit: 2000000,
+                })),
+                token_tracker: Arc::new(TokenUsageTracker::new()),
+            };
+
+            // Inject the broadcast sender so frontend trace panel receives real AgentLoop events.
+            if let Some(tx) = agent_loop_for_setup.trace_tx() {
+                state.set_trace_tx(tx);
+            }
+
+            app.manage(state);
+            app.manage(agent_loop_for_setup.clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             read_file,
@@ -2511,6 +2689,7 @@ fn main() {
             delete_path,
             run_command,
             list_tools,
+            create_tool_confirmation_token,
             execute_tool,
             get_providers,
             get_provider_configs,
@@ -2595,6 +2774,94 @@ mod tests {
 
     fn cleanup_test_workspace(temp: &PathBuf) {
         let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn execute_tool_denies_requires_confirmation_without_token() {
+        let permissions = ToolPermissions {
+            default_level: PermissionLevel::Ask,
+            requires_confirmation: true,
+            allowed_paths: None,
+        };
+        let args = json!({"path": "a.txt"});
+        let tokens = std::sync::Mutex::new(HashMap::new());
+
+        let result = enforce_tool_permissions(&permissions, "write_file", &args, None, &tokens);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires confirmation"));
+    }
+
+    #[test]
+    fn execute_tool_consumes_confirmation_token_once() {
+        let permissions = ToolPermissions {
+            default_level: PermissionLevel::Ask,
+            requires_confirmation: true,
+            allowed_paths: None,
+        };
+        let args = json!({"message": "test"});
+        let tokens = std::sync::Mutex::new(HashMap::from([(
+            String::from("git_commit:test"),
+            (String::from("git_commit"), canonical_tool_args(&args)),
+        )]));
+
+        assert!(enforce_tool_permissions(
+            &permissions,
+            "git_commit",
+            &args,
+            Some("git_commit:test"),
+            &tokens
+        )
+        .is_ok());
+        assert!(enforce_tool_permissions(
+            &permissions,
+            "git_commit",
+            &args,
+            Some("git_commit:test"),
+            &tokens
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn execute_tool_rejects_confirmation_token_for_different_args() {
+        let permissions = ToolPermissions {
+            default_level: PermissionLevel::Ask,
+            requires_confirmation: true,
+            allowed_paths: None,
+        };
+        let confirmed_args = json!({"message": "safe"});
+        let requested_args = json!({"message": "different"});
+        let tokens = std::sync::Mutex::new(HashMap::from([(
+            String::from("git_commit:test"),
+            (
+                String::from("git_commit"),
+                canonical_tool_args(&confirmed_args),
+            ),
+        )]));
+
+        let result = enforce_tool_permissions(
+            &permissions,
+            "git_commit",
+            &requested_args,
+            Some("git_commit:test"),
+            &tokens,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not match"));
+    }
+
+    #[test]
+    fn preview_edit_rejects_empty_old_string_at_command_boundary() {
+        let (temp, workspace) = setup_test_workspace();
+        let test_file = workspace.join("edit.txt");
+        std::fs::write(&test_file, "hello").expect("write test file");
+
+        let result = preview_edit_for_path(&test_file, "edit.txt", "", "world");
+
+        assert!(result.is_err());
+        cleanup_test_workspace(&temp);
     }
 
     #[cfg(unix)]

@@ -7,7 +7,7 @@ use super::{
 use fs2::FileExt;
 use serde_json::Value;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs::File;
 
@@ -18,7 +18,9 @@ const MAX_MAGIC_BYTES: usize = 512;
 const LOCK_RETRIES: u32 = 3;
 const LOCK_RETRY_MS: u64 = 10;
 
-pub struct ReadFileTool;
+pub struct ReadFileTool {
+    allowed_paths: Option<Vec<PathBuf>>,
+}
 impl Default for ReadFileTool {
     fn default() -> Self {
         Self::new()
@@ -27,10 +29,20 @@ impl Default for ReadFileTool {
 
 impl ReadFileTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            allowed_paths: None,
+        }
+    }
+
+    pub fn with_allowed_paths(allowed_paths: Vec<PathBuf>) -> Self {
+        Self {
+            allowed_paths: Some(allowed_paths),
+        }
     }
 }
-pub struct WriteFileTool;
+pub struct WriteFileTool {
+    allowed_paths: Option<Vec<PathBuf>>,
+}
 impl Default for WriteFileTool {
     fn default() -> Self {
         Self::new()
@@ -39,10 +51,20 @@ impl Default for WriteFileTool {
 
 impl WriteFileTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            allowed_paths: None,
+        }
+    }
+
+    pub fn with_allowed_paths(allowed_paths: Vec<PathBuf>) -> Self {
+        Self {
+            allowed_paths: Some(allowed_paths),
+        }
     }
 }
-pub struct LsTool;
+pub struct LsTool {
+    allowed_paths: Option<Vec<PathBuf>>,
+}
 impl Default for LsTool {
     fn default() -> Self {
         Self::new()
@@ -51,7 +73,15 @@ impl Default for LsTool {
 
 impl LsTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            allowed_paths: None,
+        }
+    }
+
+    pub fn with_allowed_paths(allowed_paths: Vec<PathBuf>) -> Self {
+        Self {
+            allowed_paths: Some(allowed_paths),
+        }
     }
 }
 
@@ -78,7 +108,7 @@ impl Tool for ReadFileTool {
         ToolPermissions {
             default_level: PermissionLevel::Ask,
             requires_confirmation: false,
-            allowed_paths: None,
+            allowed_paths: self.allowed_paths.clone(),
         }
     }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -86,8 +116,11 @@ impl Tool for ReadFileTool {
             .get("path")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::new("Missing path"))?;
-        let path_buf: PathBuf = path.into();
-        validate_path(&path_buf, &self.permissions().allowed_paths)?;
+        let path_buf = validate_tool_path(
+            Path::new(path),
+            &self.allowed_paths,
+            PathValidation::ExistingFile,
+        )?;
         let meta = tokio::fs::metadata(&path_buf)
             .await
             .map_err(|e| ToolError::new(format!("Access: {}", e)))?;
@@ -137,7 +170,7 @@ impl Tool for WriteFileTool {
         ToolPermissions {
             default_level: PermissionLevel::Ask,
             requires_confirmation: true,
-            allowed_paths: None,
+            allowed_paths: self.allowed_paths.clone(),
         }
     }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -149,9 +182,18 @@ impl Tool for WriteFileTool {
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::new("Missing content"))?;
-        let path_buf: PathBuf = path.into();
-        validate_path(&path_buf, &self.permissions().allowed_paths)?;
+        let path_buf = validate_tool_path(
+            Path::new(path),
+            &self.allowed_paths,
+            PathValidation::NewOrExistingFile,
+        )?;
         if path_buf.exists() {
+            if path_buf.is_dir() {
+                return Err(ToolError {
+                    message: "Target is a directory".into(),
+                    kind: ToolErrorKind::InvalidArgs,
+                });
+            }
             let ext = path_buf
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
@@ -211,13 +253,18 @@ impl Tool for LsTool {
         ToolPermissions {
             default_level: PermissionLevel::Allow,
             requires_confirmation: false,
-            allowed_paths: None,
+            allowed_paths: self.allowed_paths.clone(),
         }
     }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
         let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
+        let path_buf = validate_tool_path(
+            Path::new(path),
+            &self.allowed_paths,
+            PathValidation::ExistingDir,
+        )?;
         let mut entries = Vec::new();
-        let mut dir = tokio::fs::read_dir(path)
+        let mut dir = tokio::fs::read_dir(path_buf)
             .await
             .map_err(|e| ToolError::new(format!("Dir: {}", e)))?;
         while let Some(entry) = dir
@@ -231,22 +278,133 @@ impl Tool for LsTool {
     }
 }
 
-fn validate_path(path: &std::path::Path, allowed: &Option<Vec<PathBuf>>) -> Result<(), ToolError> {
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(ToolError::new("Traversal"));
-    }
-    if let Some(ref bases) = allowed {
-        if !bases.iter().any(|base| path.starts_with(base)) {
-            return Err(ToolError::new("Not allowed"));
-        }
-    }
-    Ok(())
+#[derive(Clone, Copy)]
+pub(crate) enum PathValidation {
+    ExistingFile,
+    ExistingDir,
+    NewOrExistingFile,
+    AnyExisting,
 }
 
-pub struct DeleteFileTool;
+fn has_parent_dir_component(path: &Path) -> bool {
+    path.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+}
+
+fn canonicalize_allowed_bases(allowed: &[PathBuf]) -> Result<Vec<PathBuf>, ToolError> {
+    allowed
+        .iter()
+        .map(|base| {
+            base.canonicalize().map_err(|e| ToolError {
+                message: format!("Allowed path unavailable: {}", e),
+                kind: ToolErrorKind::PermissionDenied,
+            })
+        })
+        .collect()
+}
+
+fn resolve_candidate_path(path: &Path) -> Result<PathBuf, ToolError> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .map_err(|e| ToolError::new(format!("Current dir: {}", e)))
+    }
+}
+
+pub(crate) fn validate_tool_path(
+    path: &Path,
+    allowed: &Option<Vec<PathBuf>>,
+    validation: PathValidation,
+) -> Result<PathBuf, ToolError> {
+    if has_parent_dir_component(path) {
+        return Err(ToolError {
+            message: "Path traversal detected".into(),
+            kind: ToolErrorKind::InvalidArgs,
+        });
+    }
+
+    let Some(bases) = allowed.as_ref() else {
+        if path.is_absolute() {
+            return Err(ToolError {
+                message: "Absolute paths require an explicit allowed_paths sandbox".into(),
+                kind: ToolErrorKind::PermissionDenied,
+            });
+        }
+        return Ok(path.to_path_buf());
+    };
+
+    let canonical_bases = canonicalize_allowed_bases(bases)?;
+    let resolved = resolve_candidate_path(path)?;
+    let canonical = match validation {
+        PathValidation::ExistingFile
+        | PathValidation::ExistingDir
+        | PathValidation::AnyExisting => resolved.canonicalize().map_err(|e| ToolError {
+            message: format!("Access: {}", e),
+            kind: ToolErrorKind::PermissionDenied,
+        })?,
+        PathValidation::NewOrExistingFile => {
+            if resolved.exists() {
+                resolved.canonicalize().map_err(|e| ToolError {
+                    message: format!("Access: {}", e),
+                    kind: ToolErrorKind::PermissionDenied,
+                })?
+            } else {
+                let parent = resolved.parent().ok_or_else(|| ToolError {
+                    message: "Missing parent directory".into(),
+                    kind: ToolErrorKind::InvalidArgs,
+                })?;
+                let canonical_parent = parent.canonicalize().map_err(|e| ToolError {
+                    message: format!("Parent access: {}", e),
+                    kind: ToolErrorKind::PermissionDenied,
+                })?;
+                canonical_parent.join(resolved.file_name().ok_or_else(|| ToolError {
+                    message: "Missing file name".into(),
+                    kind: ToolErrorKind::InvalidArgs,
+                })?)
+            }
+        }
+    };
+
+    if !canonical_bases
+        .iter()
+        .any(|base| canonical.starts_with(base))
+    {
+        return Err(ToolError {
+            message: format!("Path outside allowed workspace: {}", canonical.display()),
+            kind: ToolErrorKind::PermissionDenied,
+        });
+    }
+
+    match validation {
+        PathValidation::ExistingFile if !canonical.is_file() => {
+            return Err(ToolError {
+                message: format!("Not a file: {}", canonical.display()),
+                kind: ToolErrorKind::InvalidArgs,
+            });
+        }
+        PathValidation::ExistingDir if !canonical.is_dir() => {
+            return Err(ToolError {
+                message: format!("Not a directory: {}", canonical.display()),
+                kind: ToolErrorKind::InvalidArgs,
+            });
+        }
+        PathValidation::NewOrExistingFile if canonical.exists() && !canonical.is_file() => {
+            return Err(ToolError {
+                message: format!("Not a file: {}", canonical.display()),
+                kind: ToolErrorKind::InvalidArgs,
+            });
+        }
+        _ => {}
+    }
+
+    Ok(canonical)
+}
+
+pub struct DeleteFileTool {
+    allowed_paths: Option<Vec<PathBuf>>,
+}
 impl Default for DeleteFileTool {
     fn default() -> Self {
         Self::new()
@@ -255,7 +413,15 @@ impl Default for DeleteFileTool {
 
 impl DeleteFileTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            allowed_paths: None,
+        }
+    }
+
+    pub fn with_allowed_paths(allowed_paths: Vec<PathBuf>) -> Self {
+        Self {
+            allowed_paths: Some(allowed_paths),
+        }
     }
 }
 
@@ -374,7 +540,7 @@ impl Tool for DeleteFileTool {
         ToolPermissions {
             default_level: PermissionLevel::Ask,
             requires_confirmation: true,
-            allowed_paths: None,
+            allowed_paths: self.allowed_paths.clone(),
         }
     }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -407,6 +573,19 @@ impl Tool for DeleteFileTool {
                 message: format!("Not found: {}", path),
                 kind: ToolErrorKind::NotFound,
             });
+        }
+
+        let path_buf =
+            validate_tool_path(&path_buf, &self.allowed_paths, PathValidation::AnyExisting)?;
+
+        if let Some(bases) = &self.allowed_paths {
+            let canonical_bases = canonicalize_allowed_bases(bases)?;
+            if canonical_bases.iter().any(|base| path_buf == *base) {
+                return Err(ToolError {
+                    message: "Cannot delete workspace root".into(),
+                    kind: ToolErrorKind::PermissionDenied,
+                });
+            }
         }
 
         let metadata = tokio::fs::symlink_metadata(&path_buf)
@@ -485,6 +664,41 @@ mod tests {
     }
 
     #[test]
+    fn fs_tools_reject_absolute_when_allowed_paths_missing() {
+        #[cfg(windows)]
+        let path = PathBuf::from("C:\\Windows\\System32\\notepad.exe");
+        #[cfg(not(windows))]
+        let path = PathBuf::from("/etc/passwd");
+
+        let result = validate_tool_path(&path, &None, PathValidation::AnyExisting);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind,
+            ToolErrorKind::PermissionDenied
+        ));
+    }
+
+    #[test]
+    fn fs_tools_reject_outside_allowed_workspace() -> Result<(), Box<dyn std::error::Error>> {
+        let workspace = tempfile::tempdir()?;
+        let outside = tempfile::NamedTempFile::new()?;
+
+        let result = validate_tool_path(
+            outside.path(),
+            &Some(vec![workspace.path().to_path_buf()]),
+            PathValidation::ExistingFile,
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind,
+            ToolErrorKind::PermissionDenied
+        ));
+        Ok(())
+    }
+
+    #[test]
     fn test_delete_result_json() {
         let result = DeleteResult {
             deleted: 5,
@@ -505,7 +719,7 @@ mod tests {
         f.write_all(b"test")?;
         drop(f);
 
-        let tool = DeleteFileTool::new();
+        let tool = DeleteFileTool::with_allowed_paths(vec![temp_dir.path().to_path_buf()]);
         let args = serde_json::json!({
             "path": file_path.to_str().ok_or("Invalid path")?,
             "dry_run": true
@@ -519,17 +733,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_file_not_found() {
-        let tool = DeleteFileTool::new();
-        let args = serde_json::json!({"path": "/nonexistent/file/12345"});
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let outside = tempfile::NamedTempFile::new().expect("outside file");
+        let tool = DeleteFileTool::with_allowed_paths(vec![temp_dir.path().to_path_buf()]);
+        let missing_path = temp_dir.path().join("missing.txt");
+        let args = serde_json::json!({"path": outside.path().to_string_lossy()});
         let result = tool.execute(args).await;
         assert!(result.is_err());
         match result {
             Err(ToolError {
-                kind: ToolErrorKind::NotFound,
+                kind: ToolErrorKind::PermissionDenied,
                 ..
             }) => (),
-            _ => panic!("Expected NotFound error"),
+            _ => panic!("Expected PermissionDenied error"),
         }
+
+        let args = serde_json::json!({"path": missing_path.to_string_lossy()});
+        let result = tool.execute(args).await;
+        assert!(matches!(result.unwrap_err().kind, ToolErrorKind::NotFound));
     }
 
     #[tokio::test]

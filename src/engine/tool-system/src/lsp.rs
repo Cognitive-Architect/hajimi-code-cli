@@ -23,10 +23,20 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use super::{Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions};
+use super::{
+    PermissionLevel, Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions,
+};
 
 const LSP_TIMEOUT: Duration = Duration::from_secs(30);
 const JSONRPC_VERSION: &str = "2.0";
+
+fn read_only_permissions() -> ToolPermissions {
+    ToolPermissions {
+        default_level: PermissionLevel::Allow,
+        requires_confirmation: false,
+        allowed_paths: None,
+    }
+}
 
 /// JSON-RPC请求结构
 #[derive(Debug, Serialize, Deserialize)]
@@ -458,7 +468,7 @@ impl Tool for LspDefinitionTool {
         "Go to definition using LSP (GotoDefinition)"
     }
     fn permissions(&self) -> ToolPermissions {
-        ToolPermissions::default()
+        read_only_permissions()
     }
 
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -532,7 +542,7 @@ impl Tool for LspReferencesTool {
         "Find references using LSP (References)"
     }
     fn permissions(&self) -> ToolPermissions {
-        ToolPermissions::default()
+        read_only_permissions()
     }
 
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -614,7 +624,7 @@ impl Tool for LspHoverTool {
         "Get hover information using LSP (Hover)"
     }
     fn permissions(&self) -> ToolPermissions {
-        ToolPermissions::default()
+        read_only_permissions()
     }
 
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {

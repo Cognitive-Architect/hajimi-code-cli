@@ -4,16 +4,19 @@
 use super::{
     PermissionLevel, Tool, ToolArgs, ToolError, ToolErrorKind, ToolOutput, ToolPermissions,
 };
+use crate::fs::{validate_tool_path, PathValidation};
 use fs2::FileExt;
 use serde_json::Value;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const LOCK_RETRIES: u32 = 3;
 const LOCK_RETRY_MS: u64 = 10;
 
-pub struct EditFileTool;
+pub struct EditFileTool {
+    allowed_paths: Option<Vec<PathBuf>>,
+}
 impl Default for EditFileTool {
     fn default() -> Self {
         Self::new()
@@ -22,7 +25,15 @@ impl Default for EditFileTool {
 
 impl EditFileTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            allowed_paths: None,
+        }
+    }
+
+    pub fn with_allowed_paths(allowed_paths: Vec<PathBuf>) -> Self {
+        Self {
+            allowed_paths: Some(allowed_paths),
+        }
     }
 }
 
@@ -54,7 +65,7 @@ impl Tool for EditFileTool {
         ToolPermissions {
             default_level: PermissionLevel::Ask,
             requires_confirmation: true,
-            allowed_paths: None,
+            allowed_paths: self.allowed_paths.clone(),
         }
     }
     async fn execute(&self, args: ToolArgs) -> Result<ToolOutput, ToolError> {
@@ -67,7 +78,11 @@ impl Tool for EditFileTool {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let op = parse_operation(&args)?;
-        let path_buf: PathBuf = path.into();
+        let path_buf = validate_tool_path(
+            Path::new(path),
+            &self.allowed_paths,
+            PathValidation::ExistingFile,
+        )?;
         let content = tokio::fs::read_to_string(&path_buf)
             .await
             .map_err(|e| ToolError::new(format!("Read: {}", e)))?;

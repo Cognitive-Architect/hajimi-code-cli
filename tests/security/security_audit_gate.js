@@ -5,6 +5,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const tauriConfigPath = 'src/interface/desktop/tauri.conf.json';
 const webRoot = 'src/interface/web';
 const shellPath = 'src/engine/tool-system/src/shell.rs';
+const desktopMainPath = 'src/interface/desktop/src/main.rs';
 const allowlistPath = 'tests/security/security_audit_allowlist.json';
 
 const failures = [];
@@ -121,6 +122,71 @@ function scanShellAllowList() {
   }
 }
 
+function scanDesktopCommandAllowList() {
+  const raw = readText(desktopMainPath);
+  const block = raw.match(/const\s+ALLOWED_COMMANDS:[\s\S]*?=\s*&\[(?<body>[\s\S]*?)\];/);
+  if (!block) {
+    addFailure('desktop-run-command-allow-list-missing', desktopMainPath, findLine(raw, 'ALLOWED_COMMANDS'), 'desktop run_command allow-list block not found');
+    return;
+  }
+
+  const commands = Array.from(block.groups.body.matchAll(/"([^"]+)"/g)).map(match => match[1]);
+  const highCapabilityCommands = ['npx', 'pnpm', 'pip', 'pip3', 'code', 'cursor'];
+  for (const command of highCapabilityCommands) {
+    if (commands.includes(command)) {
+      addFailure('desktop-run-command-high-capability', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
+    }
+  }
+}
+
+function scanDesktopToolGate() {
+  const raw = readText(desktopMainPath);
+  const executeToolIndex = raw.indexOf('async fn execute_tool');
+  if (executeToolIndex < 0) {
+    addFailure('desktop-execute-tool-missing', desktopMainPath, 1, 'execute_tool command not found');
+    return;
+  }
+  const executeToolBody = raw.slice(executeToolIndex, executeToolIndex + 900);
+  if (!executeToolBody.includes('enforce_tool_permissions')) {
+    addFailure('desktop-execute-tool-permission-gate', desktopMainPath, findLine(raw, 'async fn execute_tool'), 'execute_tool must enforce ToolPermissions before tool.execute');
+  }
+  const executePosition = executeToolBody.indexOf('tool.execute');
+  const gatePosition = executeToolBody.indexOf('enforce_tool_permissions');
+  if (executePosition >= 0 && (gatePosition < 0 || gatePosition > executePosition)) {
+    addFailure('desktop-execute-tool-gate-order', desktopMainPath, findLine(raw, 'tool.execute(args)'), 'permission gate must run before tool.execute');
+  }
+}
+
+function scanWorkspaceBoundFileTools() {
+  const raw = readText(desktopMainPath);
+  const required = [
+    'ReadFileTool::with_allowed_paths',
+    'WriteFileTool::with_allowed_paths',
+    'DeleteFileTool::with_allowed_paths',
+    'EditFileTool::with_allowed_paths',
+  ];
+  for (const pattern of required) {
+    if (!raw.includes(pattern)) {
+      addFailure('desktop-file-tools-workspace-bound', desktopMainPath, findLine(raw, 'fn build_registry'), `${pattern} must be used in desktop registry`);
+    }
+  }
+}
+
+function scanInlineEditWorkspaceResolver() {
+  const raw = readText(desktopMainPath);
+  for (const command of ['async fn apply_edits', 'fn preview_edit']) {
+    const index = raw.indexOf(command);
+    if (index < 0) {
+      addFailure('desktop-inline-edit-command-missing', desktopMainPath, 1, `${command} not found`);
+      continue;
+    }
+    const body = raw.slice(index, index + 900);
+    if (!body.includes('resolve_workspace_path')) {
+      addFailure('desktop-inline-edit-workspace-resolver', desktopMainPath, findLine(raw, command), `${command} must resolve paths through workspace resolver`);
+    }
+  }
+}
+
 function scanFileOpsBypass(files) {
   const fileOpsBypassPattern = /run_command[\s\S]{0,120}\b(mkdir|mv|rm|rmdir|del)\b/i;
   for (const fullPath of files) {
@@ -171,6 +237,10 @@ function main() {
   scanInlineHandlers(webFiles);
   scanDangerousHtmlApi(webFiles, allowlist);
   scanShellAllowList();
+  scanDesktopCommandAllowList();
+  scanDesktopToolGate();
+  scanWorkspaceBoundFileTools();
+  scanInlineEditWorkspaceResolver();
   scanFileOpsBypass(webFiles);
   printSummary();
 }
