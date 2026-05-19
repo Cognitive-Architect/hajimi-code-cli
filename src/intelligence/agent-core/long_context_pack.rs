@@ -23,6 +23,19 @@ pub enum ContextSource {
     Other(String),
 }
 
+impl ContextSource {
+    /// Encodes source information into the block name for visual traceability (e.g. source:sub-info:filename)
+    pub fn encode_name(&self, block_name: &str) -> String {
+        match self {
+            Self::RepoTree => format!("repo_tree:repo_tree:{}", block_name),
+            Self::ActiveFile(p) => format!("active_file:{}:{}", p, block_name),
+            Self::UserProvided(p) => format!("user_provided:{}:{}", p, block_name),
+            Self::Blackboard => format!("blackboard:blackboard:{}", block_name),
+            Self::Other(d) => format!("other:{}:{}", d, block_name),
+        }
+    }
+}
+
 /// Policy describing how to handle files that exceed the defined max size boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LargeFilePolicy {
@@ -73,6 +86,7 @@ impl LongContextPack {
             .iter()
             .map(|packed| {
                 let mut b = packed.block.clone();
+                b.name = packed.source.encode_name(&b.name);
                 // If omitted, ensure content is empty or displays the skipped reason
                 if packed.omitted {
                     b.content = format!(
@@ -177,11 +191,10 @@ impl LongContextPackBuilder {
             }
         }
 
-        // 2. Component/Path segment check
-        if let Some(path_str) = path.to_str() {
-            let normalized = path_str.replace('\\', "/");
-            for pattern in &self.exclude_patterns {
-                if normalized.contains(pattern) {
+        // 2. Component exact check
+        for component in path.components() {
+            if let Some(comp_str) = component.as_os_str().to_str() {
+                if self.exclude_patterns.iter().any(|p| p == comp_str) {
                     return true;
                 }
             }
@@ -200,7 +213,32 @@ impl LongContextPackBuilder {
             return Ok(());
         }
 
-        let metadata = fs::metadata(path)?;
+        let metadata = match fs::metadata(path) {
+            Ok(m) => m,
+            Err(e) => {
+                let reason = format!("Metadata error: {}", e);
+                self.blocks.push(PackedBlock {
+                    block: ContextBlock {
+                        name: path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        priority,
+                        content_type: ContentType::Text,
+                        content: String::new(),
+                        token_estimate: 0,
+                        truncatable: true,
+                    },
+                    source,
+                    original_path: Some(path.to_path_buf()),
+                    omitted: true,
+                    omitted_reason: Some(reason),
+                });
+                return Ok(());
+            }
+        };
+
         if !metadata.is_file() {
             return Ok(());
         }
@@ -216,7 +254,6 @@ impl LongContextPackBuilder {
         if file_size > self.max_file_size_bytes {
             match self.large_file_policy {
                 LargeFilePolicy::Skip => {
-                    // Record omitted block
                     let reason = format!(
                         "File size {} exceeds limit {}",
                         file_size, self.max_file_size_bytes
@@ -238,7 +275,27 @@ impl LongContextPackBuilder {
                     });
                 }
                 LargeFilePolicy::HeadTail { lines } => {
-                    let content = fs::read_to_string(path)?;
+                    let content = match fs::read_to_string(path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let reason = format!("Read error: {}", e);
+                            self.blocks.push(PackedBlock {
+                                block: ContextBlock {
+                                    name: file_name,
+                                    priority,
+                                    content_type: ContentType::Text,
+                                    content: String::new(),
+                                    token_estimate: 0,
+                                    truncatable: true,
+                                },
+                                source,
+                                original_path: Some(path.to_path_buf()),
+                                omitted: true,
+                                omitted_reason: Some(reason),
+                            });
+                            return Ok(());
+                        }
+                    };
                     let all_lines: Vec<&str> = content.lines().collect();
                     let total_lines = all_lines.len();
 
@@ -275,7 +332,27 @@ impl LongContextPackBuilder {
                     });
                 }
                 LargeFilePolicy::Full => {
-                    let content = fs::read_to_string(path)?;
+                    let content = match fs::read_to_string(path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let reason = format!("Read error: {}", e);
+                            self.blocks.push(PackedBlock {
+                                block: ContextBlock {
+                                    name: file_name,
+                                    priority,
+                                    content_type: ContentType::Text,
+                                    content: String::new(),
+                                    token_estimate: 0,
+                                    truncatable: true,
+                                },
+                                source,
+                                original_path: Some(path.to_path_buf()),
+                                omitted: true,
+                                omitted_reason: Some(reason),
+                            });
+                            return Ok(());
+                        }
+                    };
                     let token_est = estimate_tokens(&content);
                     let block = ContextBlock {
                         name: file_name,
@@ -295,8 +372,27 @@ impl LongContextPackBuilder {
                 }
             }
         } else {
-            // Read normal file fully
-            let content = fs::read_to_string(path)?;
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(e) => {
+                    let reason = format!("Read error: {}", e);
+                    self.blocks.push(PackedBlock {
+                        block: ContextBlock {
+                            name: file_name,
+                            priority,
+                            content_type: ContentType::Text,
+                            content: String::new(),
+                            token_estimate: 0,
+                            truncatable: true,
+                        },
+                        source,
+                        original_path: Some(path.to_path_buf()),
+                        omitted: true,
+                        omitted_reason: Some(reason),
+                    });
+                    return Ok(());
+                }
+            };
             let token_est = estimate_tokens(&content);
             let block = ContextBlock {
                 name: file_name,
@@ -473,10 +569,10 @@ mod tests {
     fn test_builder_excludes() {
         let builder = LongContextPackBuilder::new();
 
-        // 1. Verify VCS, packages, and build directories are excluded
+        // 1. Verify VCS, packages, and build directories are excluded (component exact)
         assert!(builder.should_exclude(Path::new("project/.git/config")));
         assert!(builder.should_exclude(Path::new("project/node_modules/lodash/index.js")));
-        assert!(builder.should_exclude(Path::new("project/target/debug/app.exe")));
+        assert!(builder.should_exclude(Path::new("project/target/debug/app")));
         assert!(builder.should_exclude(Path::new("project/dist/index.js")));
         assert!(builder.should_exclude(Path::new("project/coverage/lcov.info")));
 
@@ -489,6 +585,34 @@ mod tests {
         // 3. Normal source code files are included
         assert!(!builder.should_exclude(Path::new("src/main.rs")));
         assert!(!builder.should_exclude(Path::new("index.html")));
+
+        // 4. Exact matching component check (no false positives on sub-substrings)
+        assert!(!builder.should_exclude(Path::new("src/build_script.rs")));
+        assert!(!builder.should_exclude(Path::new("docs/targeted-plan.md")));
+        assert!(!builder.should_exclude(Path::new(".gitignore")));
+    }
+
+    #[test]
+    fn test_source_encoding_trace() {
+        let temp_dir = TempTestDir::new("source_trace");
+        let path = temp_dir.path.join("trace.txt");
+        fs::write(&path, "trace contents").unwrap();
+
+        let mut builder = LongContextPackBuilder::new();
+        builder
+            .add_file(
+                &path,
+                ContextSource::ActiveFile("trace.txt".to_string()),
+                ContextPriority::P1,
+            )
+            .unwrap();
+
+        let pack = builder.build();
+        let flat = pack.to_context_blocks();
+        assert_eq!(flat.len(), 1);
+        let block_name = &flat[0].name;
+        // Verify source info is correctly encoded into the name field
+        assert!(block_name.contains("active_file:trace.txt"));
     }
 
     #[test]
