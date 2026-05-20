@@ -236,6 +236,81 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust.", name)
 }
 
+#[tauri::command]
+async fn probe_provider_context_capacity(
+    provider_id: String,
+    model: String,
+    level: String,
+    declared_max: usize,
+) -> Result<Value, String> {
+    use agent_core::context_probe::{ContextProbeRunner, ProbeLevel};
+
+    let probe_level = match level.as_str() {
+        "256K" => ProbeLevel::Level256K,
+        "512K" => ProbeLevel::Level512K,
+        "900K" => ProbeLevel::Level900K,
+        _ => ProbeLevel::Level128K,
+    };
+
+    let runner = ContextProbeRunner::new();
+    let result = runner
+        .run_mock_probe(
+            provider_id,
+            model.clone(),
+            probe_level,
+            declared_max,
+            86400, // 24 hours TTL
+            |tokens| {
+                if model.contains("fail") {
+                    Err("Rate limit exceeded".to_string())
+                } else if model.contains("cancel") {
+                    Err("cancelled".to_string())
+                } else if model.contains("timeout") {
+                    Err("Request timeout".to_string())
+                } else {
+                    use agent_core::context_probe::ProbeUsage;
+                    Ok(ProbeUsage {
+                        prompt_tokens: tokens,
+                        completion_tokens: 12,
+                    })
+                }
+            },
+        )
+        .await;
+
+    // Save to local file persistence
+    if let Err(e) = result.save_to_file().await {
+        eprintln!("Failed to save probe result: {:?}", e);
+    }
+
+    Ok(serde_json::to_value(&result).unwrap_or(json!({})))
+}
+
+#[tauri::command]
+async fn get_probe_result(provider_id: String, model: String) -> Result<Value, String> {
+    use agent_core::context_probe::ProbeResult;
+    match ProbeResult::load_from_file(&provider_id, &model).await {
+        Ok(probe) => {
+            let expired = probe.is_expired();
+            Ok(json!({
+                "providerId": probe.provider_id,
+                "model": probe.model,
+                "declaredMax": probe.declared_max,
+                "testedInputTokens": probe.tested_input_tokens,
+                "success": probe.success,
+                "usage": probe.usage,
+                "latencyMs": probe.latency_ms,
+                "error": probe.error,
+                "timestamp": probe.timestamp,
+                "ttlSeconds": probe.ttl_seconds,
+                "cancelled": probe.cancelled,
+                "expired": expired,
+            }))
+        }
+        Err(_) => Ok(Value::Null),
+    }
+}
+
 /// 获取应用工作目录沙箱根路径
 fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let base = app_handle
@@ -2828,6 +2903,9 @@ fn main() {
             run_agent_command,
             // P1-03/05: Token cumulative stats
             get_cumulative_stats,
+            // Day 12: Context capacity probe
+            probe_provider_context_capacity,
+            get_probe_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

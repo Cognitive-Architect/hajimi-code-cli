@@ -550,6 +550,25 @@
           </div>
         </div>
         <div class="modal-field">
+          <label>超长上下文容量测试 (Context Probe)</label>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+            <select id="providerProbeLevelSelect" style="width: auto; flex: 1;">
+              <option value="128K">Fast 128K (测试 128,000 tokens)</option>
+              <option value="256K">Pro 256K (测试 256,000 tokens) [高费用/警告]</option>
+              <option value="512K">Pro 512K (测试 512,000 tokens) [极高费用/警告]</option>
+              <option value="900K">Extreme 900K (测试 900,000 tokens) [超大压力/超高费用/高危警告]</option>
+            </select>
+            <button type="button" class="modal-btn secondary btn-secondary" id="testContextCapacityBtn" style="padding: 6px 12px; font-size: 12px;">测试容量</button>
+            <button type="button" class="modal-btn danger-btn" id="cancelContextCapacityBtn" style="display: none; padding: 6px 12px; font-size: 12px; background: var(--error); color: white;">取消测试</button>
+          </div>
+          <div id="providerProbeStatusDetails" style="font-size: 11px; margin-top: 6px; padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.15); border: 1px solid var(--border); display: none;">
+            <div>状态: <span id="probeDetailStatus" style="font-weight: bold;">-</span></div>
+            <div>已测试输入 tokens: <span id="probeDetailTested">0</span> / <span id="probeDetailDeclared">-</span></div>
+            <div>响应延时: <span id="probeDetailLatency">-</span> ms</div>
+            <div id="probeDetailErrorWrap" style="display: none; margin-top: 2px;">错误原因: <span id="probeDetailError" style="color: #ff6b6b;">-</span></div>
+          </div>
+        </div>
+        <div class="modal-field">
           <label>验证状态 (Capability Status)</label>
           <div id="providerCapabilityStatus" style="font-size: 12px; color: var(--fg-dim); padding: 4px 0;">Declared / Not Verified</div>
         </div>

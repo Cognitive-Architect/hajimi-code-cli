@@ -3681,6 +3681,166 @@ window.app = {
         if (e.target === backupModal) this.closeBackupModal();
       });
     }
+
+    // Setup Context Capacity Probe controls (Day 12)
+    const testCapacityBtn = document.getElementById('testContextCapacityBtn');
+    const cancelCapacityBtn = document.getElementById('cancelContextCapacityBtn');
+    const probeLevelSelect = document.getElementById('providerProbeLevelSelect');
+    const probeStatusDetails = document.getElementById('providerProbeStatusDetails');
+    const probeDetailStatus = document.getElementById('probeDetailStatus');
+    const probeDetailTested = document.getElementById('probeDetailTested');
+    const probeDetailDeclared = document.getElementById('probeDetailDeclared');
+    const probeDetailLatency = document.getElementById('probeDetailLatency');
+    const probeDetailErrorWrap = document.getElementById('probeDetailErrorWrap');
+    const probeDetailError = document.getElementById('probeDetailError');
+
+    if (testCapacityBtn) {
+      testCapacityBtn.addEventListener('click', async () => {
+        const providerId = document.getElementById('providerId').value.trim();
+        const model = document.getElementById('providerModel').value.trim();
+        const maxContextVal = document.getElementById('providerMaxContext').value;
+        const declaredMax = maxContextVal ? parseInt(maxContextVal) : 128000;
+        const level = probeLevelSelect?.value || '128K';
+
+        if (!providerId || !model) {
+          this.showErrorToast('请先填写 Provider ID 和模型名');
+          return;
+        }
+
+        // 256K+ Probes require confirmation
+        if (level === '256K') {
+          if (!confirm('测试 256K 上下文容量将产生较高的 API 费用，确定要继续吗？')) return;
+        } else if (level === '512K') {
+          if (!confirm('测试 512K 上下文容量将产生极高的 API 费用，且耗时较长，确定要继续吗？')) return;
+        } else if (level === '900K') {
+          if (!confirm('【高危警告】测试 900K 超长上下文容量将产生巨大的 API 费用与服务器压力，极易导致超时或扣费，确定要继续吗？')) return;
+        }
+
+        // Map level to target tokens for UI display
+        let targetTokens = 128000;
+        if (level === '256K') targetTokens = 256000;
+        if (level === '512K') targetTokens = 512000;
+        if (level === '900K') targetTokens = 900000;
+
+        // Reset Cancelled flag
+        this.activeContextProbeCancelled = false;
+
+        // UI progress update
+        testCapacityBtn.disabled = true;
+        if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'inline-block';
+        if (probeStatusDetails) probeStatusDetails.style.display = 'block';
+        if (probeDetailStatus) {
+          probeDetailStatus.textContent = '测试中... (Probing)';
+          probeDetailStatus.style.color = 'var(--fg-orange, #f59e0b)';
+        }
+        if (probeDetailTested) probeDetailTested.textContent = '0';
+        if (probeDetailDeclared) probeDetailDeclared.textContent = declaredMax;
+        if (probeDetailLatency) probeDetailLatency.textContent = '-';
+        if (probeDetailErrorWrap) probeDetailErrorWrap.style.display = 'none';
+
+        // Animate the progress beautiful micro-animation
+        let progress = 0;
+        const intervalId = setInterval(async () => {
+          if (this.activeContextProbeCancelled) {
+            clearInterval(intervalId);
+            if (probeDetailStatus) {
+              probeDetailStatus.textContent = '已取消 (Cancelled)';
+              probeDetailStatus.style.color = 'var(--fg-red, #ef4444)';
+            }
+            testCapacityBtn.disabled = false;
+            if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
+            
+            // Invoke cancelled mock capability probe
+            if (this.isTauriAvailable()) {
+              try {
+                // If model has fail, let it still run mock fail/cancel via model name check
+                const dummyModel = "cancel";
+                await this.invokeTauri('probe_provider_context_capacity', {
+                  providerId,
+                  model: dummyModel,
+                  level,
+                  declaredMax
+                });
+                await this.loadProviders();
+                this.updateCapabilityStatusDisplay(dummyModel);
+              } catch (err) {}
+            }
+            return;
+          }
+
+          progress += 25;
+          if (probeDetailTested) {
+            probeDetailTested.textContent = Math.round((progress / 100) * targetTokens);
+          }
+
+          if (progress >= 100) {
+            clearInterval(intervalId);
+
+            if (!this.isTauriAvailable()) {
+              if (probeDetailStatus) {
+                probeDetailStatus.textContent = '成功 (Mock Success)';
+                probeDetailStatus.style.color = 'var(--fg-green, #10b981)';
+              }
+              testCapacityBtn.disabled = false;
+              if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
+              return;
+            }
+
+            try {
+              const res = await this.invokeTauri('probe_provider_context_capacity', {
+                providerId,
+                model,
+                level,
+                declaredMax
+              });
+
+              testCapacityBtn.disabled = false;
+              if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
+
+              if (res.success) {
+                if (probeDetailStatus) {
+                  probeDetailStatus.textContent = '已验证 (Verified)';
+                  probeDetailStatus.style.color = 'var(--fg-green, #10b981)';
+                }
+                if (probeDetailLatency) probeDetailLatency.textContent = res.latencyMs || res.latency_ms || '-';
+                if (probeDetailTested) probeDetailTested.textContent = res.testedInputTokens || res.tested_input_tokens || targetTokens;
+              } else {
+                if (probeDetailStatus) {
+                  probeDetailStatus.textContent = res.cancelled ? '已取消 (Cancelled)' : '降级/失败 (Fallback/Failed)';
+                  probeDetailStatus.style.color = res.cancelled ? 'var(--fg-red, #ef4444)' : 'var(--fg-orange, #f59e0b)';
+                }
+                if (probeDetailLatency) probeDetailLatency.textContent = res.latencyMs || res.latency_ms || '-';
+                if (probeDetailErrorWrap) {
+                  probeDetailErrorWrap.style.display = 'block';
+                  if (probeDetailError) probeDetailError.textContent = res.error || 'Unknown error';
+                }
+              }
+
+              // Update the active capability status display field in modal
+              this.updateCapabilityStatusDisplay(model, res);
+              await this.loadProviders();
+            } catch (err) {
+              testCapacityBtn.disabled = false;
+              if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
+              if (probeDetailStatus) {
+                probeDetailStatus.textContent = '异常 (Error)';
+                probeDetailStatus.style.color = 'var(--fg-red, #ef4444)';
+              }
+              if (probeDetailErrorWrap) {
+                probeDetailErrorWrap.style.display = 'block';
+                if (probeDetailError) probeDetailError.textContent = err.message || err;
+              }
+            }
+          }
+        }, 300);
+      });
+    }
+
+    if (cancelCapacityBtn) {
+      cancelCapacityBtn.addEventListener('click', () => {
+        this.activeContextProbeCancelled = true;
+      });
+    }
   },
 
   openProviderModal(config) {
@@ -3712,29 +3872,20 @@ window.app = {
     document.getElementById('providerRetrievalBudget').value = config ? (config.retrievalBudgetTokens || config.retrieval_budget_tokens || '') : '';
     document.getElementById('providerLongContextMode').checked = config ? (!!(config.longContextMode || config.long_context_mode)) : false;
 
-    // Set Capability Status (UX-001)
-    let statusText = 'Declared / Not Verified';
-    if (config) {
-      if (config.capabilityStatus === 'Verified' || config.capability_status === 'Verified') {
-        statusText = 'Verified';
-      } else if (config.capabilityStatus === 'Fallback' || config.capability_status === 'Fallback') {
-        statusText = 'Fallback';
-      } else if (config.capabilityStatus === 'Stale' || config.capability_status === 'Stale') {
-        statusText = 'Declared / Stale';
-      }
-    }
-    const statusDiv = document.getElementById('providerCapabilityStatus');
-    if (statusDiv) {
-      statusDiv.textContent = statusText;
-      if (statusText === 'Verified') {
-        statusDiv.style.color = 'var(--fg-green, #10b981)';
-      } else if (statusText === 'Fallback') {
-        statusDiv.style.color = 'var(--fg-orange, #f59e0b)';
-      } else if (statusText.includes('Stale')) {
-        statusDiv.style.color = 'var(--fg-red, #ef4444)';
-      } else {
-        statusDiv.style.color = 'var(--fg-dim)';
-      }
+    // Load actual probe status when opening providerModal (Day 12)
+    const probeStatusDetails = document.getElementById('providerProbeStatusDetails');
+    if (probeStatusDetails) probeStatusDetails.style.display = 'none';
+
+    if (config && this.isTauriAvailable()) {
+      this.invokeTauri('get_probe_result', { providerId: config.id, model: config.model || '' })
+        .then(probe => {
+          this.updateCapabilityStatusDisplay(config.model || '', probe);
+        })
+        .catch(() => {
+          this.updateCapabilityStatusDisplay(config.model || '', null);
+        });
+    } else {
+      this.updateCapabilityStatusDisplay(config ? (config.model || '') : '', null);
     }
 
     // Set preset dropdown according to current values
@@ -3748,6 +3899,41 @@ window.app = {
     }
 
     modal.classList.add('active');
+  },
+
+  updateCapabilityStatusDisplay(model, probe) {
+    const statusDiv = document.getElementById('providerCapabilityStatus');
+    if (!statusDiv) return;
+
+    if (!probe) {
+      statusDiv.textContent = 'Declared / Not Verified';
+      statusDiv.style.color = 'var(--fg-dim)';
+      return;
+    }
+
+    if (probe.cancelled) {
+      statusDiv.textContent = 'Cancelled (已取消，退回至 8K)';
+      statusDiv.style.color = 'var(--fg-orange, #f59e0b)';
+    } else if (probe.success) {
+      if (probe.expired) {
+        statusDiv.textContent = 'Stale (已过期，受限至 128K)';
+        statusDiv.style.color = 'var(--fg-red, #ef4444)';
+      } else {
+        statusDiv.textContent = `Verified (已验证: ${probe.testedInputTokens || probe.tested_input_tokens || 128000} tokens)`;
+        statusDiv.style.color = 'var(--fg-green, #10b981)';
+      }
+    } else {
+      // Failed probe: show fallback cascade result
+      const tested = probe.testedInputTokens || probe.tested_input_tokens || 0;
+      let fallbackLevel = '8K';
+      if (tested >= 900000) fallbackLevel = '512K';
+      else if (tested >= 512000) fallbackLevel = '256K';
+      else if (tested >= 256000) fallbackLevel = '128K';
+      else if (tested >= 128000) fallbackLevel = '32K';
+
+      statusDiv.textContent = `Fallback (已降级至 ${fallbackLevel} | 错误: ${probe.error || 'Probe failed'})`;
+      statusDiv.style.color = 'var(--fg-orange, #f59e0b)';
+    }
   },
 
   closeProviderModal() {

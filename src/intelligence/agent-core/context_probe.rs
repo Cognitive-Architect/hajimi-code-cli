@@ -109,6 +109,25 @@ impl ProbeResult {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         Ok(result)
     }
+
+    pub fn save_to_file_sync(&self) -> Result<(), std::io::Error> {
+        let path = resolve_probe_path(&self.provider_id, &self.model);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    pub fn load_from_file_sync(provider_id: &str, model: &str) -> Result<Self, std::io::Error> {
+        let path = resolve_probe_path(provider_id, model);
+        let content = std::fs::read_to_string(path)?;
+        let result: Self = serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(result)
+    }
 }
 
 /// Sanitize filename characters to ensure safe OS-independent path creation.
