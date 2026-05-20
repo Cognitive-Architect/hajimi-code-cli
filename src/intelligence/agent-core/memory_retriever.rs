@@ -51,6 +51,79 @@ impl MemoryRetriever {
         self
     }
 
+    /// Dynamically resolve the retrieval budget from the blackboard.
+    /// Falls back to the legacy `MAX_RETRIEVAL_TOKENS` (4096) if resolution fails or no config is found.
+    pub async fn resolve_dynamic_retrieval_budget(&self) -> usize {
+        let mut resolve_input = crate::context_budget::BudgetResolveInput::default();
+        if let Some(entry) = self.blackboard.read("__hajimi_provider_id").await {
+            resolve_input.provider_id = Some(entry.value.clone());
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_model").await {
+            resolve_input.model = Some(entry.value.clone());
+        }
+
+        let mut caps = crate::context_budget::ProviderContextCaps::default();
+        caps.provider_id = resolve_input.provider_id.clone();
+        caps.model = resolve_input.model.clone();
+
+        let mut has_caps = false;
+        if let Some(entry) = self.blackboard.read("__hajimi_max_context_tokens").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.max_context_tokens = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_max_output_tokens").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.max_output_tokens = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_reserve_output_tokens").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.reserve_output_tokens = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_safety_margin_tokens").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.safety_margin_tokens = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_retrieval_budget_tokens").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.retrieval_budget_tokens = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_long_context_mode").await {
+            if let Ok(val) = entry.value.parse::<bool>() {
+                caps.long_context_mode = Some(val);
+                has_caps = true;
+            }
+        }
+        if let Some(entry) = self.blackboard.read("__hajimi_context_threshold").await {
+            if let Ok(val) = entry.value.parse::<usize>() {
+                caps.context_threshold = Some(val);
+                has_caps = true;
+            }
+        }
+
+        if has_caps {
+            resolve_input.provider_caps = Some(caps);
+        }
+
+        if std::env::var("HAJIMI_LONG_CONTEXT_ENABLED").map(|v| v == "true").unwrap_or(false) {
+            let budget = crate::context_budget::resolve_context_budget(resolve_input);
+            budget.retrieval_budget
+        } else {
+            // Explicit explanation: Fallback to the legacy hardcoded MAX_RETRIEVAL_TOKENS (4096)
+            // when long context mode is disabled.
+            MAX_RETRIEVAL_TOKENS
+        }
+    }
+
     /// `retrieve_for_context` retrieves memory entries as `ContextBlock`s for the `ContextWindowManager`.
     ///
     /// Maps memory tiers to context priorities:
@@ -187,6 +260,8 @@ impl MemoryRetriever {
                 return RetrieveOutcome::CacheHit(summary.clone());
             }
         }
+        let retrieval_budget = self.resolve_dynamic_retrieval_budget().await;
+
         if let Some(ref sg) = self.sync_gateway {
             let mut sg_guard = sg.lock().await;
             match sg_guard
@@ -201,7 +276,7 @@ impl MemoryRetriever {
                     let mut tokens = 0usize;
                     for (tier, entries) in &results {
                         for entry in entries {
-                            if tokens + entry.tokens > MAX_RETRIEVAL_TOKENS {
+                            if tokens + entry.tokens > retrieval_budget {
                                 break;
                             }
                             self.blackboard
@@ -405,5 +480,51 @@ mod tests {
         assert!(!focus_large.content.contains("[OMITTED"));
         assert!(!working_large.content.contains("[OMITTED"));
         assert!(!archive_large.content.contains("[OMITTED"));
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_for_context_1m_archive_not_infinite() {
+        let bb = Arc::new(Blackboard::new());
+        let mut gateway = memory::memory_gateway::MemoryGateway::new("device");
+
+        // Populate Focus Memory (ctx_<agent_id>) with 300,000 chars (~75k tokens)
+        gateway
+            .session
+            .insert("ctx_agent1".to_string(), "focus ".repeat(50_000))
+            .unwrap();
+        // Populate Working Memory (working_<agent_id>) with 1,600,000 chars (~400k tokens)
+        gateway
+            .session
+            .insert("working_agent1".to_string(), "working ".repeat(200_000))
+            .unwrap();
+        // Populate Archive Memory (archive_<agent_id>) with 4,800,000 chars (~1.2M tokens)
+        gateway
+            .session
+            .insert("archive_agent1".to_string(), "archive ".repeat(600_000))
+            .unwrap();
+
+        let memory = Some(Arc::new(Mutex::new(gateway)));
+        let retriever = MemoryRetriever::new(bb, None, memory);
+
+        // Under 1,000,000 (1M) budget:
+        // Focus limit = min(100k, 32k) = 32,000 tokens
+        // Working limit = min(250k, 128k) = 128,000 tokens
+        // Archive limit = min(650k, 400k) = 400,000 tokens
+        let blocks = retriever.retrieve_for_context("agent1", 1_000_000).await;
+        assert_eq!(blocks.len(), 3);
+
+        let focus = blocks.iter().find(|b| b.name.contains("Focus")).unwrap();
+        let working = blocks.iter().find(|b| b.name.contains("Working")).unwrap();
+        let archive = blocks.iter().find(|b| b.name.contains("Archive")).unwrap();
+
+        // 1M budget archive cap must be strictly limited to 400,000, not infinite!
+        assert!(focus.token_estimate <= 32_000);
+        assert!(working.token_estimate <= 128_000);
+        assert!(archive.token_estimate <= 400_000);
+
+        // Verify that they were indeed capped and show omission notices
+        assert!(focus.content.contains("[OMITTED due to Focus budget exceeded]"));
+        assert!(working.content.contains("[OMITTED due to Working budget exceeded]"));
+        assert!(archive.content.contains("[OMITTED due to Archive budget exceeded]"));
     }
 }

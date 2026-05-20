@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
-const MAX_SESSION_TOKENS: usize = 4_000;
+const MAX_SESSION_TOKENS: usize = 2_000_000;
 const ESTIMATED_TOKENS_PER_CHAR: usize = 4;
 
 #[derive(Debug, Clone)]

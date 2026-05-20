@@ -1,4 +1,4 @@
-//! WorkingMemory - 工作内存层（滑动窗口，16000 tokens，持久化可选）
+//! WorkingMemory - 工作内存层（滑动窗口，32000 tokens，持久化可选）
 //!
 //! 性能特征: 非O(1)，滑动窗口扫描+BTreeMap操作，可选持久化延迟
 
@@ -17,7 +17,7 @@ pub struct WorkingEntry {
     pub created_at: Instant,
 }
 
-/// 工作内存层 - 滑动窗口淘汰，16000 tokens
+/// 工作内存层 - 滑动窗口淘汰，32000 tokens
 pub struct WorkingMemory {
     entries: Arc<RwLock<BTreeMap<Instant, (String, WorkingEntry)>>>,
     total_tokens: Arc<RwLock<usize>>,
