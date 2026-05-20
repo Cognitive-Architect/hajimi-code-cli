@@ -123,15 +123,18 @@ impl LongContextPack {
         let mut candidate_blocks = Vec::new();
         let mut candidate_mapping = std::collections::HashMap::new();
 
+        let mut idx = 0;
         for packed in &self.blocks {
             if packed.omitted {
                 omitted_blocks.push(packed.clone());
             } else {
                 let mut b = packed.block.clone();
                 let encoded_name = packed.source.encode_name(&b.name);
-                b.name = encoded_name.clone();
+                let unique_name = format!("{}#{}", encoded_name, idx);
+                b.name = unique_name.clone();
                 candidate_blocks.push(b);
-                candidate_mapping.insert(encoded_name, packed.clone());
+                candidate_mapping.insert(unique_name, packed.clone());
+                idx += 1;
             }
         }
 
@@ -896,5 +899,89 @@ mod tests {
         let dry_run_large = pack.dry_run(1000);
         assert_eq!(dry_run_large.omitted_blocks.len(), 0);
         assert_eq!(dry_run_large.included_blocks.len(), 4);
+    }
+
+    #[test]
+    fn test_dry_run_no_duplicate_overwrite() {
+        let temp_dir = TempTestDir::new("dry_run_dup");
+        let dir1 = temp_dir.path.join("dir1");
+        let dir2 = temp_dir.path.join("dir2");
+        fs::create_dir(&dir1).unwrap();
+        fs::create_dir(&dir2).unwrap();
+
+        let f1 = dir1.join("same.txt");
+        let f2 = dir2.join("same.txt");
+        fs::write(&f1, "content 1").unwrap();
+        fs::write(&f2, "content 2").unwrap();
+
+        let mut builder = LongContextPackBuilder::new();
+        builder
+            .add_file(
+                &f1,
+                ContextSource::UserProvided("same.txt".to_string()),
+                ContextPriority::P2,
+            )
+            .unwrap();
+        builder
+            .add_file(
+                &f2,
+                ContextSource::UserProvided("same.txt".to_string()),
+                ContextPriority::P2,
+            )
+            .unwrap();
+
+        let pack = builder.build();
+        let dry_run = pack.dry_run(1000);
+        assert_eq!(dry_run.included_blocks.len(), 2);
+        assert_eq!(dry_run.omitted_blocks.len(), 0);
+
+        let contents: Vec<String> = dry_run
+            .included_blocks
+            .iter()
+            .map(|b| b.block.content.clone())
+            .collect();
+        assert!(contents.contains(&"content 1".to_string()));
+        assert!(contents.contains(&"content 2".to_string()));
+    }
+
+    #[test]
+    fn test_dry_run_fast_128k_vs_long_1m() {
+        let mut builder = LongContextPackBuilder::new();
+
+        builder
+            .add_current_diff("git diff content".to_string())
+            .unwrap();
+
+        let large_content = "large ".repeat(150_000);
+        let block = ContextBlock {
+            name: "huge_file.txt".to_string(),
+            priority: ContextPriority::P3,
+            content_type: ContentType::Text,
+            content: large_content,
+            token_estimate: 200_000,
+            truncatable: true,
+        };
+        builder.blocks.push(PackedBlock {
+            block,
+            source: ContextSource::UserProvided("huge_file.txt".to_string()),
+            original_path: None,
+            omitted: false,
+            omitted_reason: None,
+        });
+
+        let pack = builder.build();
+
+        let dry_run_128k = pack.dry_run(131_072);
+        assert_eq!(dry_run_128k.included_blocks.len(), 1);
+        assert_eq!(dry_run_128k.omitted_blocks.len(), 1);
+        let omitted_large = &dry_run_128k.omitted_blocks[0];
+        assert_eq!(omitted_large.block.name, "huge_file.txt");
+        assert!(omitted_large.omitted);
+        let reason = omitted_large.omitted_reason.as_ref().unwrap();
+        assert!(reason.to_lowercase().contains("budget exceeded"));
+
+        let dry_run_1m = pack.dry_run(1_000_000);
+        assert_eq!(dry_run_1m.included_blocks.len(), 2);
+        assert_eq!(dry_run_1m.omitted_blocks.len(), 0);
     }
 }
