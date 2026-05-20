@@ -41,11 +41,11 @@ impl MemoryGateway {
         Self {
             focus: Arc::new(FocusMemory::new()),
             working: Arc::new(WorkingMemory::with_persistence(
-                16000,
+                budget.working_limit,
                 memory_path(&home, "working"),
             )),
             archive: Arc::new(ArchiveMemory::with_path(
-                1_000_000,
+                budget.archive_limit,
                 memory_path(&home, "archive"),
             )),
             budget: Arc::new(RwLock::new(budget)),

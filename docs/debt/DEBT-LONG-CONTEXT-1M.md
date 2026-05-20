@@ -43,38 +43,11 @@ Status: Cleared in Day 06.
 
 We have successfully extended the `ProviderConfig` backend struct to natively support modern camelCase capability fields (`maxContextTokens`, `maxOutputTokens`, `reserveOutputTokens`, `safetyMarginTokens`, `retrievalBudgetTokens`, `longContextMode`) while fully maintaining backward compatibility with the legacy `contextThreshold` (`context_threshold`) field. These capability fields are dynamically injected into the Blackboard and resolved by the pure `agent-core` budget resolution engine without layer violation.
 
-### P1: Memory and working budget terms conflict
+### [CLEARED] P1: Memory and working budget terms conflict
 
-Command:
+Status: Cleared in Day 10.
 
-```text
-rg "MAX_RETRIEVAL_TOKENS|working_limit|16000|32000" src/intelligence
-```
-
-Output summary:
-
-```text
-src/intelligence\agent-core\memory_retriever.rs:const MAX_RETRIEVAL_TOKENS: usize = 4096;
-src/intelligence\agent-core\memory_retriever.rs:                            if tokens + entry.tokens > MAX_RETRIEVAL_TOKENS {
-src/intelligence\codex-twist\src\ffi.rs:    pub working_limit: u32,
-src/intelligence\codex-twist\src\ffi.rs:            working_limit: b.working_limit as usize,
-src/intelligence\codex-twist\src\ffi.rs:        working_tokens: token_budget.working_limit as u32,
-src/intelligence\codex-twist\src\ffi.rs:        working_limit: budget.working_limit as u32,
-src/intelligence\codex-twist\src\memory\memory_gateway.rs:                16000,
-src/intelligence\codex-twist\src\memory\memory_gateway.rs:            working_limit: 64000,
-src/intelligence\codex-twist\src\memory\memory_tier.rs:    pub working_limit: usize, // 默认32000
-src/intelligence\codex-twist\src\memory\memory_tier.rs:            working_limit: 32000,
-src/intelligence\codex-twist\src\memory\memory_tier.rs:        assert_eq!(budget.working_limit, 32000);
-src/intelligence\codex-twist\src\memory\working_memory.rs://! WorkingMemory - 工作内存层（滑动窗口，16000 tokens，持久化可选）
-src/intelligence\codex-twist\src\memory\working_memory.rs:/// 工作内存层 - 滑动窗口淘汰，16000 tokens
-src/intelligence\codex-twist\src\memory\working_memory.rs:    /// per-instance limit: 16000 tokens
-src/intelligence\codex-twist\src\memory\working_memory.rs:    /// Gateway层管理 total budget: 32000 (可创建2个WorkingMemory实例)
-src/intelligence\codex-twist\src\memory\working_memory.rs:        Self::with_limit(16000)
-src/intelligence\codex-twist\src\memory\working_memory.rs:    async fn test_working_capacity_16000() {
-src/intelligence\codex-twist\src\memory\working_memory.rs:        assert_eq!(mem.limit, 16000);
-```
-
-Impact: memory storage capacity and per-request retrieval budget are currently mixed across 4096, 16K, 32K, and 64K terms. Day 10 must separate repository memory capacity from the current model input budget.
+Memory storage capacity and per-request retrieval budget are now cleanly separated. The 16K/32K capacity mouth/budget conflict has been completely unified by setting WorkingMemory's default limits to 32,000 tokens (matching the default TokenBudget working_limit). Additionally, `MemoryRetriever::retrieve_for_context` has been refactored to dynamically allocate Focus (<= min(10%, 32K)), Working (<= min(25%, 128K)), and Archive (<= min(65%, 400K)) budgets based on the request-aware budget parameter. Each retrieved block's name now natively incorporates detailed tracking metadata including its source layer, default score, retrieval key, and the agent identifier. All token estimation and truncation gates are fully validated by comprehensive test suites.
 
 ### Architecture boundary scan
 
@@ -172,7 +145,7 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 - Day 4-5: [CLEARED] replace bridge 8K hardcoding and fix system prompt token accounting. Status: Implemented for both Planner and Reflector with dynamic context budget resolving and robust P0 overflow gating.
 - Day 6-7: [CLEARED] upgrade provider capability fields while retaining old `contextThreshold` / `context_threshold` compatibility. Status: Implemented in Day 06 with full blackboard neutral capability injection and automated unit/E2E test suite.
 - Day 8-9: [CLEARED] add `LongContextPackBuilder` and integrate included / omitted context blocks. Dry-run assembly, diff, diagnostics, and related files are fully operational with clear omitted reasons.
-- Day 10: make Memory retrieval budget derive from current `ContextBudget`.
+- Day 10: [CLEARED] make Memory retrieval budget derive from current `ContextBudget`. Status: Implemented request-aware Focus/Working/Archive budget limits and unified memory storage capacities to match TokenBudget default values.
 - Day 11-12: add provider probe result model, TTL, cancellation, and fallback semantics.
 - Day 13: add context receipt model and token UI.
 - Day 14-15: run matrix verification, update this debt document, and close only verified items.

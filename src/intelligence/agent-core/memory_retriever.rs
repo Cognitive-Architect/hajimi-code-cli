@@ -59,8 +59,12 @@ impl MemoryRetriever {
     /// - **Archive Memory** → P3 (top-ranked fragments only)
     ///
     /// Returns a `Vec<ContextBlock>` ready for `ContextWindowManager::assemble`.
-    pub async fn retrieve_for_context(&self, agent_id: &str, _budget: usize) -> Vec<ContextBlock> {
+    pub async fn retrieve_for_context(&self, agent_id: &str, budget: usize) -> Vec<ContextBlock> {
         let mut blocks = Vec::new();
+
+        let focus_limit = std::cmp::min(budget * 10 / 100, 32_000);
+        let working_limit = std::cmp::min(budget * 25 / 100, 128_000);
+        let archive_limit = std::cmp::min(budget * 65 / 100, 400_000);
 
         if let Some(ref memory) = self.memory {
             let mem = memory.lock().await;
@@ -68,12 +72,13 @@ impl MemoryRetriever {
             // Focus Memory → always P1 (high priority, always included)
             if let Some(focus) = mem.session.get(&format!("ctx_{}", agent_id)) {
                 let content = format!("{:?}", focus);
+                let truncated = truncate_to_tokens(&content, focus_limit, "Focus");
                 blocks.push(ContextBlock {
-                    name: "focus_memory".to_string(),
+                    name: format!("focus_memory_Focus_score_1.0_key_ctx_{}", agent_id),
                     priority: ContextPriority::P1,
                     content_type: ContentType::Text,
-                    content: content.clone(),
-                    token_estimate: estimate_tokens(&content),
+                    content: truncated.clone(),
+                    token_estimate: estimate_tokens(&truncated),
                     truncatable: true,
                 });
             }
@@ -81,17 +86,13 @@ impl MemoryRetriever {
             // Working Memory → P2 (compressed summary)
             if let Some(working) = mem.session.get(&format!("working_{}", agent_id)) {
                 let content = format!("{:?}", working);
-                let summary = if content.len() > 500 {
-                    format!("{}…", &content[..find_summary_end(&content, 500)])
-                } else {
-                    content.clone()
-                };
+                let truncated = truncate_to_tokens(&content, working_limit, "Working");
                 blocks.push(ContextBlock {
-                    name: "working_memory".to_string(),
+                    name: format!("working_memory_Working_score_1.0_key_working_{}", agent_id),
                     priority: ContextPriority::P2,
                     content_type: ContentType::Text,
-                    content: summary.clone(),
-                    token_estimate: estimate_tokens(&summary),
+                    content: truncated.clone(),
+                    token_estimate: estimate_tokens(&truncated),
                     truncatable: true,
                 });
             }
@@ -99,17 +100,13 @@ impl MemoryRetriever {
             // Archive Memory → P3 (top-ranked fragments)
             if let Some(archive) = mem.session.get(&format!("archive_{}", agent_id)) {
                 let content = format!("{:?}", archive);
-                let fragment = if content.len() > 300 {
-                    format!("{}…", &content[..find_summary_end(&content, 300)])
-                } else {
-                    content.clone()
-                };
+                let truncated = truncate_to_tokens(&content, archive_limit, "Archive");
                 blocks.push(ContextBlock {
-                    name: "archive_memory".to_string(),
+                    name: format!("archive_memory_Archive_score_1.0_key_archive_{}", agent_id),
                     priority: ContextPriority::P3,
                     content_type: ContentType::Text,
-                    content: fragment.clone(),
-                    token_estimate: estimate_tokens(&fragment),
+                    content: truncated.clone(),
+                    token_estimate: estimate_tokens(&truncated),
                     truncatable: true,
                 });
             }
@@ -290,14 +287,123 @@ impl MemoryRetriever {
     }
 }
 
-/// Find a safe truncation point at or before `max_len`, respecting char boundaries.
-fn find_summary_end(s: &str, max_len: usize) -> usize {
-    if max_len >= s.len() {
-        return s.len();
+fn truncate_to_tokens(content: &str, limit: usize, tier: &str) -> String {
+    let max_chars = limit * 4;
+    if content.len() > max_chars {
+        if max_chars > 50 {
+            let reserved = 40;
+            let mut end = max_chars.saturating_sub(reserved);
+            while end > 0 && !content.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!(
+                "{}... [OMITTED due to {} budget exceeded]",
+                &content[..end],
+                tier
+            )
+        } else {
+            let mut end = max_chars;
+            while end > 0 && !content.is_char_boundary(end) {
+                end -= 1;
+            }
+            content[..end].to_string()
+        }
+    } else {
+        content.to_string()
     }
-    let mut end = max_len;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blackboard::Blackboard;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_retrieve_for_context_dynamic_caps() {
+        let bb = Arc::new(Blackboard::new());
+        let mut gateway = memory::memory_gateway::MemoryGateway::new("device");
+
+        // Populate Focus Memory (ctx_<agent_id>)
+        gateway
+            .session
+            .insert("ctx_agent1".to_string(), "focus ".repeat(200))
+            .unwrap();
+        // Populate Working Memory (working_<agent_id>)
+        gateway
+            .session
+            .insert("working_agent1".to_string(), "working ".repeat(500))
+            .unwrap();
+        // Populate Archive Memory (archive_<agent_id>)
+        gateway
+            .session
+            .insert("archive_agent1".to_string(), "archive ".repeat(1000))
+            .unwrap();
+
+        let memory = Some(Arc::new(Mutex::new(gateway)));
+        let retriever = MemoryRetriever::new(bb, None, memory);
+
+        // 1. Test Small legacy budget (e.g. 500 tokens)
+        // Focus limit: min(50 tokens, 32K) = 50 tokens
+        // Working limit: min(125 tokens, 128K) = 125 tokens
+        // Archive limit: min(325 tokens, 400K) = 325 tokens
+        let blocks_small = retriever.retrieve_for_context("agent1", 500).await;
+        assert_eq!(blocks_small.len(), 3);
+
+        let focus_block = blocks_small
+            .iter()
+            .find(|b| b.name.contains("Focus"))
+            .unwrap();
+        let working_block = blocks_small
+            .iter()
+            .find(|b| b.name.contains("Working"))
+            .unwrap();
+        let archive_block = blocks_small
+            .iter()
+            .find(|b| b.name.contains("Archive"))
+            .unwrap();
+
+        assert!(focus_block.token_estimate <= 50);
+        assert!(working_block.token_estimate <= 125);
+        assert!(archive_block.token_estimate <= 325);
+
+        assert!(focus_block
+            .content
+            .contains("[OMITTED due to Focus budget exceeded]"));
+        assert!(working_block
+            .content
+            .contains("[OMITTED due to Working budget exceeded]"));
+
+        // Verify names contains Focus / Working / Archive / score / key / agent_id
+        assert!(focus_block.name.contains("Focus"));
+        assert!(focus_block.name.contains("score"));
+        assert!(focus_block.name.contains("key"));
+        assert!(focus_block.name.contains("agent1"));
+
+        // 2. Test Large long budget (e.g. 200,000 tokens)
+        // Focus limit: min(20_000, 32K) = 20_000 tokens
+        // Working limit: min(50_000, 128K) = 50_000 tokens
+        // Archive limit: min(130_000, 400K) = 130_000 tokens
+        let blocks_large = retriever.retrieve_for_context("agent1", 200_000).await;
+        assert_eq!(blocks_large.len(), 3);
+
+        let focus_large = blocks_large
+            .iter()
+            .find(|b| b.name.contains("Focus"))
+            .unwrap();
+        let working_large = blocks_large
+            .iter()
+            .find(|b| b.name.contains("Working"))
+            .unwrap();
+        let archive_large = blocks_large
+            .iter()
+            .find(|b| b.name.contains("Archive"))
+            .unwrap();
+
+        // Under huge budget, none should be truncated/omitted
+        assert!(!focus_large.content.contains("[OMITTED"));
+        assert!(!working_large.content.contains("[OMITTED"));
+        assert!(!archive_large.content.contains("[OMITTED"));
     }
-    end
 }

@@ -26,10 +26,10 @@ pub struct WorkingMemory {
 }
 
 impl WorkingMemory {
-    /// per-instance limit: 16000 tokens
-    /// Gateway层管理 total budget: 32000 (可创建2个WorkingMemory实例)
+    /// per-instance limit: 32000 tokens
+    /// Gateway层管理 total budget: 32000
     pub fn new() -> Self {
-        Self::with_limit(16000)
+        Self::with_limit(32000)
     }
     pub fn with_limit(limit: usize) -> Self {
         Self {
@@ -187,8 +187,8 @@ mod tests {
         Ok(())
     }
     #[tokio::test]
-    async fn test_working_capacity_16000() {
+    async fn test_working_capacity_32000() {
         let mem = WorkingMemory::new();
-        assert_eq!(mem.limit, 16000);
+        assert_eq!(mem.limit, 32000);
     }
 }
