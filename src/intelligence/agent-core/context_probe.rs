@@ -96,7 +96,8 @@ impl ProbeResult {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        let json = serde_json::to_string_pretty(self)?;
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         tokio::fs::write(path, json).await?;
         Ok(())
     }
@@ -104,19 +105,31 @@ impl ProbeResult {
     pub async fn load_from_file(provider_id: &str, model: &str) -> Result<Self, std::io::Error> {
         let path = resolve_probe_path(provider_id, model);
         let content = tokio::fs::read_to_string(path).await?;
-        let result: Self = serde_json::from_str(&content)?;
+        let result: Self = serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         Ok(result)
     }
+}
+
+/// Sanitize filename characters to ensure safe OS-independent path creation.
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => c,
+            _ => '_',
+        })
+        .collect()
 }
 
 /// Resolve path to local JSON persistence folder .hajimi/provider_probes
 pub fn resolve_probe_path(provider_id: &str, model: &str) -> std::path::PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".hajimi").join("provider_probes").join(format!(
+    let filename = format!(
         "{}_{}.json",
-        provider_id,
-        model.replace("/", "_")
-    ))
+        sanitize_filename(provider_id),
+        sanitize_filename(model)
+    );
+    home.join(".hajimi").join("provider_probes").join(filename)
 }
 
 /// Deterministic payload generator that repeats a deterministic sequence.
@@ -186,6 +199,8 @@ impl ContextProbeRunner {
                 cancelled: false,
             },
             Err(err) => {
+                // NOTE: cancelled scenario: cancelled does NOT equal provider unsupported.
+                // User cancellation is a process-level interrupt, not a model limitation.
                 let is_cancelled = err == "cancelled" || err == "canceled";
                 ProbeResult {
                     provider_id,
