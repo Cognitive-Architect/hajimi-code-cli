@@ -146,7 +146,8 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 - Day 6-7: [CLEARED] upgrade provider capability fields while retaining old `contextThreshold` / `context_threshold` compatibility. Status: Implemented in Day 06 with full blackboard neutral capability injection and automated unit/E2E test suite.
 - Day 8-9: [CLEARED] add `LongContextPackBuilder` and integrate included / omitted context blocks. Dry-run assembly, diff, diagnostics, and related files are fully operational with clear omitted reasons.
 - Day 10: [CLEARED] make Memory retrieval budget derive from current `ContextBudget`. Status: Implemented request-aware Focus/Working/Archive budget limits and unified memory storage capacities to match TokenBudget default values.
-- Day 11-12: add provider probe result model, TTL, cancellation, and fallback semantics.
+- Day 11: [CLEARED] add provider probe result model, TTL, cancellation, and fallback semantics. Status: Fully implemented with structured ProbeLevel, ProbeResult, local JSON persistence, and unit tests covering all 5 mock probe scenarios.
+- Day 12: add UI fallback and provider dynamic switching.
 - Day 13: add context receipt model and token UI.
 - Day 14-15: run matrix verification, update this debt document, and close only verified items.
 

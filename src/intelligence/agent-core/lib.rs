@@ -8,6 +8,7 @@ pub mod agent_loop_builder;
 pub mod blackboard;
 pub mod checkpoint;
 pub mod context_budget;
+pub mod context_probe;
 pub mod context_window_manager;
 pub mod degrade;
 pub mod edit_applier;
@@ -36,6 +37,7 @@ pub mod tool_manifest;
 pub mod tools;
 pub mod worker_lifecycle_manager;
 pub mod workflow_orchestrator;
+pub use context_probe::{ContextProbeRunner, ProbeLevel, ProbeResult, ProbeUsage};
 pub use edit_applier::{edit_summary, AppliedEdit, EditApplier, EditHunk, EditState, ProposedEdit};
 pub use workflow_orchestrator::{WorkflowOrchestrator, WorkflowOutcome};
 
