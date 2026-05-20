@@ -71,6 +71,18 @@ pub struct LongContextPack {
     pub total_token_estimate: usize,
 }
 
+/// Result of a dry-run assembly showing which blocks would fit in the budget,
+/// which would be omitted, and the total estimated tokens.
+#[derive(Debug, Clone)]
+pub struct LongContextPackDryRun {
+    /// Packed blocks that fit within the token budget.
+    pub included_blocks: Vec<PackedBlock>,
+    /// Packed blocks that were omitted due to budget limits or builder constraints.
+    pub omitted_blocks: Vec<PackedBlock>,
+    /// Combined estimated token count for all included blocks.
+    pub total_estimated_tokens: usize,
+}
+
 impl LongContextPack {
     /// Empty pack initializer.
     pub fn empty() -> Self {
@@ -99,6 +111,84 @@ impl LongContextPack {
                 b
             })
             .collect()
+    }
+
+    /// Performs a dry-run assembly of the pack within a specific token budget,
+    /// returning which blocks are included, which are omitted, and the total estimated tokens.
+    /// Pure synchronous, zero provider/network calls.
+    pub fn dry_run(&self, budget_limit: usize) -> LongContextPackDryRun {
+        use crate::context_window_manager::{ContextError, ContextWindowManager};
+
+        let mut omitted_blocks = Vec::new();
+        let mut candidate_blocks = Vec::new();
+        let mut candidate_mapping = std::collections::HashMap::new();
+
+        for packed in &self.blocks {
+            if packed.omitted {
+                omitted_blocks.push(packed.clone());
+            } else {
+                let mut b = packed.block.clone();
+                let encoded_name = packed.source.encode_name(&b.name);
+                b.name = encoded_name.clone();
+                candidate_blocks.push(b);
+                candidate_mapping.insert(encoded_name, packed.clone());
+            }
+        }
+
+        let mgr = ContextWindowManager::new(budget_limit);
+        let mut included_blocks = Vec::new();
+        let mut total_estimated_tokens = 0;
+
+        match mgr.assemble(candidate_blocks) {
+            Ok(assembled) => {
+                total_estimated_tokens = assembled.total_tokens;
+
+                for included_cb in assembled.blocks {
+                    if let Some(mut packed) = candidate_mapping.remove(&included_cb.name) {
+                        packed.block.content = included_cb.content;
+                        packed.block.token_estimate = included_cb.token_estimate;
+                        included_blocks.push(packed);
+                    }
+                }
+
+                for omitted_cb in assembled.omitted {
+                    if let Some(mut packed) = candidate_mapping.remove(&omitted_cb.name) {
+                        packed.omitted = true;
+                        packed.omitted_reason = Some(omitted_cb.reason);
+                        packed.block.content = String::new();
+                        packed.block.token_estimate = 0;
+                        omitted_blocks.push(packed);
+                    }
+                }
+            }
+            Err(ContextError::Overflow(_priority)) => {
+                let overflow_reason =
+                    format!("P0 Overflow: blocks exceeded budget limit {}", budget_limit);
+                for (_, mut packed) in candidate_mapping {
+                    packed.omitted = true;
+                    packed.omitted_reason = Some(overflow_reason.clone());
+                    packed.block.content = String::new();
+                    packed.block.token_estimate = 0;
+                    omitted_blocks.push(packed);
+                }
+            }
+            Err(ContextError::InvalidLimit(msg)) => {
+                let invalid_reason = format!("Invalid Limit: {}", msg);
+                for (_, mut packed) in candidate_mapping {
+                    packed.omitted = true;
+                    packed.omitted_reason = Some(invalid_reason.clone());
+                    packed.block.content = String::new();
+                    packed.block.token_estimate = 0;
+                    omitted_blocks.push(packed);
+                }
+            }
+        }
+
+        LongContextPackDryRun {
+            included_blocks,
+            omitted_blocks,
+            total_estimated_tokens,
+        }
     }
 }
 
@@ -497,6 +587,57 @@ impl LongContextPackBuilder {
         Ok(())
     }
 
+    /// Add a related file to the pack as medium priority (P2).
+    pub fn add_related_file(&mut self, path: &Path) -> std::io::Result<()> {
+        self.add_file(
+            path,
+            ContextSource::Other("related_file".to_string()),
+            ContextPriority::P2,
+        )
+    }
+
+    /// Add git diff content to the pack as high priority (P1).
+    pub fn add_current_diff(&mut self, diff_content: String) -> std::io::Result<()> {
+        let token_est = estimate_tokens(&diff_content);
+        let block = ContextBlock {
+            name: "git_diff".to_string(),
+            priority: ContextPriority::P1,
+            content_type: ContentType::Text,
+            content: diff_content,
+            token_estimate: token_est,
+            truncatable: true,
+        };
+        self.blocks.push(PackedBlock {
+            block,
+            source: ContextSource::Other("diff".to_string()),
+            original_path: None,
+            omitted: false,
+            omitted_reason: None,
+        });
+        Ok(())
+    }
+
+    /// Add compiler / linter diagnostics to the pack as high priority (P1).
+    pub fn add_diagnostics(&mut self, diagnostics_content: String) -> std::io::Result<()> {
+        let token_est = estimate_tokens(&diagnostics_content);
+        let block = ContextBlock {
+            name: "diagnostics".to_string(),
+            priority: ContextPriority::P1,
+            content_type: ContentType::Text,
+            content: diagnostics_content,
+            token_estimate: token_est,
+            truncatable: true,
+        };
+        self.blocks.push(PackedBlock {
+            block,
+            source: ContextSource::Other("diagnostics".to_string()),
+            original_path: None,
+            omitted: false,
+            omitted_reason: None,
+        });
+        Ok(())
+    }
+
     /// Consume builder and compute final long context pack package.
     pub fn build(self) -> LongContextPack {
         let total_tokens = self.blocks.iter().map(|pb| pb.block.token_estimate).sum();
@@ -505,6 +646,12 @@ impl LongContextPackBuilder {
             blocks: self.blocks,
             total_token_estimate: total_tokens,
         }
+    }
+
+    /// Build the pack and immediately perform a dry-run with the given token budget limit.
+    pub fn build_dry_run(self, budget_limit: usize) -> LongContextPackDryRun {
+        let pack = self.build();
+        pack.dry_run(budget_limit)
     }
 }
 
@@ -705,5 +852,49 @@ mod tests {
         assert!(!tree_block.block.content.contains(".git"));
         assert!(tree_block.block.content.contains("src"));
         assert!(tree_block.block.content.contains("Cargo.toml"));
+    }
+
+    #[test]
+    fn test_dry_run_budget_limits_and_retained_reasons() {
+        let temp_dir = TempTestDir::new("dry_run_budget");
+        let f1 = temp_dir.path.join("file1.txt");
+        let f2 = temp_dir.path.join("file2.txt");
+
+        fs::write(&f1, "hello").unwrap();
+        fs::write(&f2, "world ".repeat(10)).unwrap();
+
+        let mut builder = LongContextPackBuilder::new();
+        builder.add_related_file(&f1).unwrap();
+        builder
+            .add_current_diff("some diff content".to_string())
+            .unwrap();
+        builder
+            .add_diagnostics("warning: compilation issue".to_string())
+            .unwrap();
+        builder
+            .add_file(
+                &f2,
+                ContextSource::UserProvided("f2".to_string()),
+                ContextPriority::P3,
+            )
+            .unwrap();
+
+        let pack = builder.build();
+
+        let dry_run_small = pack.dry_run(5);
+        assert!(!dry_run_small.included_blocks.is_empty());
+        assert!(!dry_run_small.omitted_blocks.is_empty());
+
+        let p3_omitted = dry_run_small
+            .omitted_blocks
+            .iter()
+            .find(|b| b.block.priority == ContextPriority::P3);
+        assert!(p3_omitted.is_some());
+        let reason = p3_omitted.unwrap().omitted_reason.as_ref().unwrap();
+        assert!(reason.contains("budget exceeded"));
+
+        let dry_run_large = pack.dry_run(1000);
+        assert_eq!(dry_run_large.omitted_blocks.len(), 0);
+        assert_eq!(dry_run_large.included_blocks.len(), 4);
     }
 }

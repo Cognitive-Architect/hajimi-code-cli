@@ -171,7 +171,7 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 - Day 3: added `resolve_context_budget`, `known_model_caps`, neutral `ProviderContextCaps` / `BudgetResolveInput`, env overrides, old `context_threshold` / `contextThreshold` compatibility, and `HAJIMI_LONG_CONTEXT_ENABLED` gate. Status: implemented, not wired to bridge.
 - Day 4-5: [CLEARED] replace bridge 8K hardcoding and fix system prompt token accounting. Status: Implemented for both Planner and Reflector with dynamic context budget resolving and robust P0 overflow gating.
 - Day 6-7: [CLEARED] upgrade provider capability fields while retaining old `contextThreshold` / `context_threshold` compatibility. Status: Implemented in Day 06 with full blackboard neutral capability injection and automated unit/E2E test suite.
-- Day 8-9: add `LongContextPackBuilder` and integrate included / omitted context blocks.
+- Day 8-9: [CLEARED] add `LongContextPackBuilder` and integrate included / omitted context blocks. Dry-run assembly, diff, diagnostics, and related files are fully operational with clear omitted reasons.
 - Day 10: make Memory retrieval budget derive from current `ContextBudget`.
 - Day 11-12: add provider probe result model, TTL, cancellation, and fallback semantics.
 - Day 13: add context receipt model and token UI.

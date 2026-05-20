@@ -872,6 +872,26 @@ mod tests {
         let res = assemble_messages_for_bridge(prompt, sys_content, &budget);
         assert!(res.is_err());
     }
+
+    #[test]
+    fn test_assemble_rich_messages_for_bridge_success() {
+        let budget = crate::context_budget::fast_128k();
+        let sys_content = "Persona instructions";
+        let mut builder = crate::long_context_pack::LongContextPackBuilder::new();
+        builder
+            .add_current_diff("some diff content".to_string())
+            .unwrap();
+        let pack = builder.build();
+
+        let res = assemble_rich_messages_for_bridge(&pack, sys_content, &budget);
+        assert!(res.is_ok());
+        let (messages, estimated_input, omitted_count) = res.unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+        assert!(estimated_input > 0);
+        assert_eq!(omitted_count, 0);
+    }
 }
 
 /// Helper to assemble messages for bridge.
@@ -905,6 +925,47 @@ pub(crate) fn assemble_messages_for_bridge(
             truncatable: false,
         },
     ];
+
+    let assembled = mgr.assemble(blocks)?;
+    let mut messages = Vec::new();
+    for b in assembled.blocks {
+        let role = match b.content_type {
+            crate::context_window_manager::ContentType::SystemPrompt => "system",
+            _ => "user",
+        };
+        messages.push(engine_llm_core::ChatMessage {
+            role: role.into(),
+            content: b.content,
+            timestamp: None,
+        });
+    }
+    Ok((messages, assembled.total_tokens, assembled.omitted.len()))
+}
+
+/// Helper to assemble rich messages using a built LongContextPack.
+#[allow(dead_code)]
+pub fn assemble_rich_messages_for_bridge(
+    pack: &crate::long_context_pack::LongContextPack,
+    sys_content: &str,
+    budget: &crate::context_budget::ContextBudget,
+) -> Result<
+    (Vec<engine_llm_core::ChatMessage>, usize, usize),
+    crate::context_window_manager::ContextError,
+> {
+    let mgr = crate::context_window_manager::ContextWindowManager::new(budget.input_budget);
+    let sys_estimate = crate::context_window_manager::estimate_tokens(sys_content);
+
+    let mut blocks = vec![crate::context_window_manager::ContextBlock {
+        name: "system_prompt".to_string(),
+        priority: crate::context_window_manager::ContextPriority::P0,
+        content_type: crate::context_window_manager::ContentType::SystemPrompt,
+        content: sys_content.to_string(),
+        token_estimate: sys_estimate,
+        truncatable: false,
+    }];
+
+    let mut pack_blocks = pack.to_context_blocks();
+    blocks.append(&mut pack_blocks);
 
     let assembled = mgr.assemble(blocks)?;
     let mut messages = Vec::new();
