@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
-const MAX_SESSION_TOKENS: usize = 2_000_000;
+const MAX_SESSION_TOKENS: usize = 4_000;
 const ESTIMATED_TOKENS_PER_CHAR: usize = 4;
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub struct SessionMemory {
     entries: HashMap<String, SessionEntry>,
     lru: VecDeque<String>,
     token_counter: usize,
+    max_tokens: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +49,17 @@ impl SessionMemory {
             entries: HashMap::new(),
             lru: VecDeque::new(),
             token_counter: 0,
+            max_tokens: None,
         }
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.max_tokens = Some(limit);
+        self
+    }
+
+    fn max_tokens(&self) -> usize {
+        self.max_tokens.unwrap_or(MAX_SESSION_TOKENS)
     }
 
     pub fn get(&self, key: &str) -> Option<&SessionEntry> {
@@ -65,7 +76,8 @@ impl SessionMemory {
     }
 
     fn evict_lru(&mut self, required: usize) -> Result<(), SessionError> {
-        while self.token_counter + required > MAX_SESSION_TOKENS {
+        let max = self.max_tokens();
+        while self.token_counter + required > max {
             let key = self
                 .lru
                 .pop_front()
@@ -82,7 +94,7 @@ impl SessionMemory {
             return Err(SessionError::EmptyContent);
         }
         let tokens = estimate_tokens(&content);
-        if tokens > MAX_SESSION_TOKENS {
+        if tokens > self.max_tokens() {
             return Err(SessionError::TokenLimitExceeded);
         }
         if self.entries.contains_key(&key) {
@@ -239,5 +251,17 @@ mod tests {
         s.insert("k2".into(), "b".into()).expect("insert");
         let keys: Vec<_> = s.keys().collect();
         assert_eq!(keys, vec!["k1", "k2"]);
+    }
+
+    #[test]
+    fn test_session_custom_limit() {
+        let s = SessionMemory::new().with_limit(10);
+        assert_eq!(s.max_tokens(), 10);
+    }
+
+    #[test]
+    fn test_session_default_limit() {
+        let s = SessionMemory::new();
+        assert_eq!(s.max_tokens(), 4_000);
     }
 }

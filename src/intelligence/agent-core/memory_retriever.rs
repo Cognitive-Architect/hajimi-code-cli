@@ -91,7 +91,11 @@ impl MemoryRetriever {
                 has_caps = true;
             }
         }
-        if let Some(entry) = self.blackboard.read("__hajimi_retrieval_budget_tokens").await {
+        if let Some(entry) = self
+            .blackboard
+            .read("__hajimi_retrieval_budget_tokens")
+            .await
+        {
             if let Ok(val) = entry.value.parse::<usize>() {
                 caps.retrieval_budget_tokens = Some(val);
                 has_caps = true;
@@ -114,7 +118,10 @@ impl MemoryRetriever {
             resolve_input.provider_caps = Some(caps);
         }
 
-        if std::env::var("HAJIMI_LONG_CONTEXT_ENABLED").map(|v| v == "true").unwrap_or(false) {
+        if std::env::var("HAJIMI_LONG_CONTEXT_ENABLED")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        {
             let budget = crate::context_budget::resolve_context_budget(resolve_input);
             budget.retrieval_budget
         } else {
@@ -486,6 +493,7 @@ mod tests {
     async fn test_retrieve_for_context_1m_archive_not_infinite() {
         let bb = Arc::new(Blackboard::new());
         let mut gateway = memory::memory_gateway::MemoryGateway::new("device");
+        gateway.session = gateway.session.with_limit(2_000_000);
 
         // Populate Focus Memory (ctx_<agent_id>) with 300,000 chars (~75k tokens)
         gateway
@@ -523,8 +531,14 @@ mod tests {
         assert!(archive.token_estimate <= 400_000);
 
         // Verify that they were indeed capped and show omission notices
-        assert!(focus.content.contains("[OMITTED due to Focus budget exceeded]"));
-        assert!(working.content.contains("[OMITTED due to Working budget exceeded]"));
-        assert!(archive.content.contains("[OMITTED due to Archive budget exceeded]"));
+        assert!(focus
+            .content
+            .contains("[OMITTED due to Focus budget exceeded]"));
+        assert!(working
+            .content
+            .contains("[OMITTED due to Working budget exceeded]"));
+        assert!(archive
+            .content
+            .contains("[OMITTED due to Archive budget exceeded]"));
     }
 }
