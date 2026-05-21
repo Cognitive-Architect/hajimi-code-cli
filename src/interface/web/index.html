@@ -380,6 +380,7 @@
         <div class="inspector-tab active" data-inspector-tab="task-detail">任务详情</div>
         <div class="inspector-tab" data-inspector-tab="diff-preview">Diff 预览</div>
         <div class="inspector-tab" data-inspector-tab="agent-trace">Agent Trace</div>
+        <div class="inspector-tab" data-inspector-tab="context-receipt" id="contextReceiptTab">Context 小票</div>
       </div>
       <div class="inspector-content" id="inspectorContent">
         <!-- Tab: 任务详情 (默认显示) -->
@@ -425,6 +426,18 @@
         <div class="inspector-panel" data-inspector-panel="agent-trace" id="inspectorTraceContent">
           <div class="inspector-empty-state">
             <span>任务执行后显示 Trace</span>
+          </div>
+        </div>
+        <!-- Tab: Context Receipt (Day 13) -->
+        <div class="inspector-panel" data-inspector-panel="context-receipt" id="contextReceiptPanel">
+          <div class="inspector-card" style="padding:8px;">
+            <div class="inspector-card-title" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>Context 小票</span>
+              <button id="refreshReceiptBtn" class="sidebar-action-btn" title="刷新 Context 小票" style="font-size:11px;padding:2px 6px;">↻</button>
+            </div>
+            <div id="contextReceiptBody" class="inspector-card-body" style="font-size:11px;">
+              <span style="color:var(--fg-dim);">暂无上下文小票（Context Receipt）。Agent 运行后自动记录。</span>
+            </div>
           </div>
         </div>
       </div>

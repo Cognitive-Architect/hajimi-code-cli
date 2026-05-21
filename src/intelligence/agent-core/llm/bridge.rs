@@ -246,7 +246,7 @@ impl PlannerLlmBridge {
             };
 
             match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
-                Ok((messages, estimated_input, omitted_count)) => {
+                Ok((messages, estimated_input, included_meta, omitted_meta)) => {
                     tracing::info!(
                         "Planner budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
                         budget.provider_id,
@@ -254,9 +254,13 @@ impl PlannerLlmBridge {
                         budget.max_context_tokens,
                         budget.input_budget,
                         estimated_input,
-                        omitted_count
+                        omitted_meta.len()
                     );
-                    // Day 13: Write a context receipt (non-fatal, fire-and-forget).
+                    // Day 13: Write receipt AFTER provider call (post_request phase, non-fatal).
+                    let stream = client
+                        .stream_chat_with_context(messages, None)
+                        .await
+                        .map_err(|e| ReplError::Session(e.to_string()))?;
                     {
                         let receipt = crate::context_receipt::ContextReceipt::new(
                             uuid_v4_simple(),
@@ -268,19 +272,9 @@ impl PlannerLlmBridge {
                             estimated_input,
                             budget.long_context_mode,
                             "planner".to_string(),
-                            messages
-                                .iter()
-                                .map(|m| {
-                                    (
-                                        m.role.clone(),
-                                        "P0".to_string(),
-                                        crate::context_window_manager::estimate_tokens(&m.content),
-                                        "MessageBlock".to_string(),
-                                        m.content.chars().take(120).collect::<String>(),
-                                    )
-                                })
-                                .collect(),
-                            vec![],
+                            crate::context_receipt::ReceiptPhase::PostRequest,
+                            included_meta,
+                            omitted_meta,
                             None,
                         );
                         let receipt_clone = receipt.clone();
@@ -290,10 +284,7 @@ impl PlannerLlmBridge {
                             }
                         });
                     }
-                    client
-                        .stream_chat_with_context(messages, None)
-                        .await
-                        .map_err(|e| ReplError::Session(e.to_string()))?
+                    stream
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -510,7 +501,7 @@ impl ReflectorLlmBridge {
             };
 
             match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
-                Ok((messages, estimated_input, omitted_count)) => {
+                Ok((messages, estimated_input, included_meta, omitted_meta)) => {
                     tracing::info!(
                         "Reflector budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
                         budget.provider_id,
@@ -518,9 +509,13 @@ impl ReflectorLlmBridge {
                         budget.max_context_tokens,
                         budget.input_budget,
                         estimated_input,
-                        omitted_count
+                        omitted_meta.len()
                     );
-                    // Day 13: Write a context receipt (non-fatal, fire-and-forget).
+                    // Day 13: Write receipt AFTER provider call (post_request phase, non-fatal).
+                    let stream = client
+                        .stream_chat_with_context(messages, None)
+                        .await
+                        .map_err(|e| ReplError::Session(e.to_string()))?;
                     {
                         let receipt = crate::context_receipt::ContextReceipt::new(
                             uuid_v4_simple(),
@@ -532,19 +527,9 @@ impl ReflectorLlmBridge {
                             estimated_input,
                             budget.long_context_mode,
                             "reflector".to_string(),
-                            messages
-                                .iter()
-                                .map(|m| {
-                                    (
-                                        m.role.clone(),
-                                        "P0".to_string(),
-                                        crate::context_window_manager::estimate_tokens(&m.content),
-                                        "MessageBlock".to_string(),
-                                        m.content.chars().take(120).collect::<String>(),
-                                    )
-                                })
-                                .collect(),
-                            vec![],
+                            crate::context_receipt::ReceiptPhase::PostRequest,
+                            included_meta,
+                            omitted_meta,
                             None,
                         );
                         let receipt_clone = receipt.clone();
@@ -554,10 +539,7 @@ impl ReflectorLlmBridge {
                             }
                         });
                     }
-                    client
-                        .stream_chat_with_context(messages, None)
-                        .await
-                        .map_err(|e| ReplError::Session(e.to_string()))?
+                    stream
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -933,14 +915,28 @@ mod tests {
         let sys_content = "Persona instructions";
         let res = assemble_messages_for_bridge(prompt, sys_content, &budget);
         assert!(res.is_ok());
-        let (messages, estimated_input, omitted_count) = res.unwrap();
+        let (messages, estimated_input, included_meta, omitted_meta) = res.unwrap();
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[0].content, sys_content);
         assert_eq!(messages[1].role, "user");
         assert_eq!(messages[1].content, prompt);
         assert!(estimated_input > 0);
-        assert_eq!(omitted_count, 0);
+        // All blocks included, none omitted — metadata must reflect this.
+        assert_eq!(
+            included_meta.len(),
+            2,
+            "expected 2 included block metadata entries"
+        );
+        assert_eq!(omitted_meta.len(), 0, "expected 0 omitted blocks");
+        // Verify metadata structure: no raw content, only structural summary.
+        let sys_meta = &included_meta[0];
+        assert!(sys_meta.2 > 0, "token_estimate must be > 0");
+        assert!(!sys_meta.0.is_empty(), "block name must be non-empty");
+        assert!(
+            !sys_meta.4.contains(sys_content),
+            "summary must NOT contain raw content"
+        );
     }
 
     #[test]
@@ -970,19 +966,39 @@ mod tests {
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[1].role, "user");
         assert!(estimated_input > 0);
-        assert_eq!(omitted_count, 0);
+        assert_eq!(
+            omitted_count, 0,
+            "expected no omitted blocks in rich bridge test"
+        );
     }
 }
 
+/// Return type alias for assemble_messages_for_bridge.
+/// (messages, estimated_total_tokens, included_block_metadata, omitted_block_metadata)
+///
+/// included_block_metadata: Vec<(name, priority, token_estimate, source, structured_summary)>
+/// omitted_block_metadata:  Vec<(name, priority, token_estimate, source, reason)>
+type AssembleBridgeResult = Result<
+    (
+        Vec<engine_llm_core::ChatMessage>,
+        usize,
+        Vec<(String, String, usize, String, String)>,
+        Vec<(String, String, usize, String, String)>,
+    ),
+    crate::context_window_manager::ContextError,
+>;
+
 /// Helper to assemble messages for bridge.
+///
+/// Returns real included/omitted block metadata from ContextWindowManager assembly so that
+/// ContextReceipt can record true block statistics without touching raw content.
+/// The `structured_summary` in included metadata is a privacy-safe structural label:
+///   `"message role=<role> estimated_tokens=<n>"` — no prompt content.
 pub(crate) fn assemble_messages_for_bridge(
     prompt: &str,
     sys_content: &str,
     budget: &crate::context_budget::ContextBudget,
-) -> Result<
-    (Vec<engine_llm_core::ChatMessage>, usize, usize),
-    crate::context_window_manager::ContextError,
-> {
+) -> AssembleBridgeResult {
     let mgr = crate::context_window_manager::ContextWindowManager::new(budget.input_budget);
     let sys_estimate = crate::context_window_manager::estimate_tokens(sys_content);
     let user_estimate = crate::context_window_manager::estimate_tokens(prompt);
@@ -1007,6 +1023,45 @@ pub(crate) fn assemble_messages_for_bridge(
     ];
 
     let assembled = mgr.assemble(blocks)?;
+
+    // Build included metadata — structured summary only, NO raw content.
+    let included_meta: Vec<(String, String, usize, String, String)> = assembled
+        .blocks
+        .iter()
+        .map(|b| {
+            let role = match b.content_type {
+                crate::context_window_manager::ContentType::SystemPrompt => "system",
+                _ => "user",
+            };
+            let structured_summary = format!(
+                "message role={} estimated_tokens={}",
+                role, b.token_estimate
+            );
+            (
+                b.name.clone(),
+                format!("{}", b.priority),
+                b.token_estimate,
+                format!("{:?}", b.content_type),
+                structured_summary,
+            )
+        })
+        .collect();
+
+    // Build omitted metadata from real AssembledContext.omitted — preserves actual reasons.
+    let omitted_meta: Vec<(String, String, usize, String, String)> = assembled
+        .omitted
+        .iter()
+        .map(|o| {
+            (
+                o.name.clone(),
+                format!("{}", o.priority),
+                o.token_estimate,
+                "ContextBlock".to_string(),
+                o.reason.clone(),
+            )
+        })
+        .collect();
+
     let mut messages = Vec::new();
     for b in assembled.blocks {
         let role = match b.content_type {
@@ -1019,7 +1074,12 @@ pub(crate) fn assemble_messages_for_bridge(
             timestamp: None,
         });
     }
-    Ok((messages, assembled.total_tokens, assembled.omitted.len()))
+    Ok((
+        messages,
+        assembled.total_tokens,
+        included_meta,
+        omitted_meta,
+    ))
 }
 
 /// Helper to assemble rich messages using a built LongContextPack.

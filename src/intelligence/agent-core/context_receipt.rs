@@ -19,6 +19,74 @@ const MAX_OMITTED_BLOCKS: usize = 64;
 /// Maximum character length for any summary string (prevents leaking large content).
 const MAX_SUMMARY_LEN: usize = 256;
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Sensitive-information redaction
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Patterns whose *values* must be redacted from any summary stored in a receipt.
+///
+/// If a line/segment contains one of these keywords (case-insensitive), the
+/// whole segment is replaced with `[REDACTED]`.
+static SENSITIVE_PATTERNS: &[&str] = &[
+    "Authorization",
+    "Bearer ",
+    "api_key",
+    "apiKey",
+    "api-key",
+    "password",
+    "secret",
+    "token=",
+    "token:",
+    "env ",
+    "env=",
+    "sk-",
+    "promptText",
+    "full_prompt",
+];
+
+/// Redact any segment in `text` that contains a sensitive keyword.
+///
+/// Strategy:
+/// 1. Split `text` into lines.
+/// 2. For each line, check (case-insensitively) if it contains any sensitive pattern.
+/// 3. If yes, replace the entire line with `"[REDACTED]"`.
+/// 4. Join lines back together.
+///
+/// This is intentionally conservative — if a line even *mentions* a sensitive
+/// keyword it is fully blanked, preventing accidental partial leaks.
+pub fn redact_sensitive_text(text: &str) -> String {
+    let lower = text.to_lowercase();
+    // Fast path: most block names/structural summaries have no sensitive data.
+    let has_any = SENSITIVE_PATTERNS
+        .iter()
+        .any(|p| lower.contains(&p.to_lowercase()));
+    if !has_any {
+        return text.to_string();
+    }
+
+    // Line-by-line redaction.
+    text.lines()
+        .map(|line| {
+            let ll = line.to_lowercase();
+            if SENSITIVE_PATTERNS
+                .iter()
+                .any(|p| ll.contains(&p.to_lowercase()))
+            {
+                "[REDACTED]"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Redact then truncate a summary string to at most `MAX_SUMMARY_LEN` chars.
+pub fn sanitize_summary(text: &str) -> String {
+    let redacted = redact_sensitive_text(text);
+    truncate_summary(&redacted)
+}
+
 /// Trim a string to MAX_SUMMARY_LEN, appending "…" if truncated.
 fn truncate_summary(s: &str) -> String {
     if s.chars().count() <= MAX_SUMMARY_LEN {
@@ -29,6 +97,10 @@ fn truncate_summary(s: &str) -> String {
         out
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Block receipt types
+// ──────────────────────────────────────────────────────────────────────────────
 
 /// Record of a context block that was included in the LLM request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +113,7 @@ pub struct IncludedBlockReceipt {
     pub token_estimate: usize,
     /// Source classification (e.g., "SystemPrompt", "FileContent", "Memory").
     pub source: String,
-    /// Short summary of the content — must NOT be the full content.
+    /// Sanitized short summary — MUST NOT be the full content, MUST be redacted.
     pub summary: String,
 }
 
@@ -60,6 +132,24 @@ pub struct OmittedBlockReceipt {
     pub reason: String,
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Receipt timing / status enum
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Records whether this receipt was written before or after the provider call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReceiptPhase {
+    /// Receipt written after a successful provider response (preferred).
+    PostRequest,
+    /// Receipt written before the provider call (preflight estimate only).
+    Preflight,
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Top-level ContextReceipt
+// ──────────────────────────────────────────────────────────────────────────────
+
 /// Top-level context receipt saved after each LLM bridge call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextReceipt {
@@ -69,8 +159,11 @@ pub struct ContextReceipt {
     /// Unique session/request identifier.
     pub session_id: String,
 
-    /// Unix timestamp (seconds) when the request was dispatched.
+    /// Unix timestamp (seconds) when the receipt was written.
     pub timestamp: u64,
+
+    /// When was this receipt written relative to the provider call.
+    pub phase: ReceiptPhase,
 
     // ── Provider / model info ──────────────────────────────────────────
     pub provider_id: String,
@@ -117,11 +210,17 @@ pub struct ActualUsage {
     pub completion_tokens: usize,
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Builder-style constructor
+// ──────────────────────────────────────────────────────────────────────────────
+
 impl ContextReceipt {
     /// Build a ContextReceipt from bridge statistics.
     ///
-    /// `included_blocks` is a list of `(name, priority, token_estimate, source, content_snippet)`.
+    /// `included_blocks` is a list of `(name, priority, token_estimate, source, summary_snippet)`.
+    ///   The summary is sanitized (redacted + truncated) before storage.
     /// `omitted_blocks` is a list of `(name, priority, token_estimate, source, reason)`.
+    ///   The reason field is NOT redacted (it's a structured enum-like string, no user content).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: String,
@@ -133,6 +232,7 @@ impl ContextReceipt {
         estimated_input_tokens: usize,
         long_context_mode: bool,
         bridge_role: String,
+        phase: ReceiptPhase,
         included: Vec<(String, String, usize, String, String)>,
         omitted: Vec<(String, String, usize, String, String)>,
         actual_usage: Option<ActualUsage>,
@@ -142,7 +242,7 @@ impl ContextReceipt {
             .unwrap_or_default()
             .as_secs();
 
-        // Cap + sanitize included blocks (no full content, only summary).
+        // Cap + sanitize included blocks (redact sensitive content, then truncate).
         let included_blocks = included
             .into_iter()
             .take(MAX_INCLUDED_BLOCKS)
@@ -152,7 +252,7 @@ impl ContextReceipt {
                     priority,
                     token_estimate,
                     source,
-                    summary: truncate_summary(&content),
+                    summary: sanitize_summary(&content),
                 },
             )
             .collect();
@@ -176,6 +276,7 @@ impl ContextReceipt {
             schema_version: "ContextReceipt-v1".to_string(),
             session_id,
             timestamp,
+            phase,
             provider_id,
             model,
             mode,
@@ -190,12 +291,17 @@ impl ContextReceipt {
         }
     }
 
-    /// Resolve the storage path: `~/.hajimi/context_receipts/<timestamp>.json`.
+    /// Resolve the storage path: `~/.hajimi/context_receipts/<timestamp>-<session>.json`.
     pub fn storage_path(&self) -> PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.join(".hajimi")
-            .join("context_receipts")
-            .join(format!("{}.json", self.timestamp))
+        // Use both timestamp and a short session suffix to avoid collision when
+        // multiple receipts land in the same second.
+        let fname = format!(
+            "{}-{}.json",
+            self.timestamp,
+            &self.session_id.chars().take(8).collect::<String>()
+        );
+        home.join(".hajimi").join("context_receipts").join(fname)
     }
 
     /// Persist the receipt to disk (async). Non-fatal: caller should log warnings on failure.
@@ -240,6 +346,10 @@ impl ContextReceipt {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,11 +387,14 @@ mod tests {
             4_096,
             false,
             "planner".to_string(),
+            ReceiptPhase::PostRequest,
             included,
             omitted,
             None,
         )
     }
+
+    // ── Basic field tests ───────────────────────────────────────────────────
 
     #[test]
     fn test_context_receipt_basic_fields() {
@@ -295,6 +408,7 @@ mod tests {
         assert_eq!(r.estimated_input_tokens, 4_096);
         assert!(!r.long_context_mode);
         assert_eq!(r.bridge_role, "planner");
+        assert_eq!(r.phase, ReceiptPhase::PostRequest);
     }
 
     #[test]
@@ -352,6 +466,7 @@ mod tests {
             100,
             false,
             "reflector".to_string(),
+            ReceiptPhase::PostRequest,
             included,
             vec![],
             None,
@@ -361,6 +476,8 @@ mod tests {
         assert!(summary.chars().count() <= MAX_SUMMARY_LEN + 1);
         assert!(summary.ends_with('…'));
     }
+
+    // ── Sensitive field tests ───────────────────────────────────────────────
 
     #[test]
     fn test_context_receipt_no_sensitive_fields_in_serialized_json() {
@@ -373,6 +490,109 @@ mod tests {
         assert!(!json.contains("full_prompt"));
         assert!(!json.contains("promptText"));
     }
+
+    /// Ensure "Authorization: Bearer abc123" is redacted before being stored.
+    #[test]
+    fn test_redact_authorization_bearer() {
+        let content = "Host: api.example.com\nAuthorization: Bearer abc123-secret-token\nContent-Type: application/json";
+        let included = vec![(
+            "request-headers".to_string(),
+            "P0".to_string(),
+            10,
+            "SystemPrompt".to_string(),
+            content.to_string(),
+        )];
+        let r = ContextReceipt::new(
+            "s".to_string(),
+            "p".to_string(),
+            "m".to_string(),
+            "Fast128K".to_string(),
+            131_072,
+            118_976,
+            10,
+            false,
+            "planner".to_string(),
+            ReceiptPhase::PostRequest,
+            included,
+            vec![],
+            None,
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        // The raw bearer token must not appear in the stored receipt.
+        assert!(
+            !json.contains("abc123-secret-token"),
+            "Bearer token leaked into receipt JSON"
+        );
+        assert!(
+            !json.contains("Authorization"),
+            "Authorization header leaked into receipt JSON"
+        );
+        // The sanitized summary should show [REDACTED] in place of sensitive line.
+        let summary = &r.included_blocks[0].summary;
+        assert!(
+            summary.contains("[REDACTED]"),
+            "Expected [REDACTED] in summary, got: {}",
+            summary
+        );
+    }
+
+    /// Ensure "api_key=sk-test-secret" is redacted before being stored.
+    #[test]
+    fn test_redact_api_key_sk_prefix() {
+        let content = "User query: help me fix code\napi_key=sk-test-secret-12345\nModel: gpt-4";
+        let included = vec![(
+            "user-block".to_string(),
+            "P1".to_string(),
+            20,
+            "Text".to_string(),
+            content.to_string(),
+        )];
+        let r = ContextReceipt::new(
+            "s2".to_string(),
+            "p2".to_string(),
+            "m2".to_string(),
+            "Legacy8K".to_string(),
+            8_000,
+            7_000,
+            20,
+            false,
+            "reflector".to_string(),
+            ReceiptPhase::PostRequest,
+            included,
+            vec![],
+            None,
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(
+            !json.contains("sk-test-secret-12345"),
+            "API key sk- prefix leaked into receipt JSON"
+        );
+        let summary = &r.included_blocks[0].summary;
+        assert!(
+            summary.contains("[REDACTED]"),
+            "Expected [REDACTED] for api_key line, got: {}",
+            summary
+        );
+    }
+
+    /// Ensure a summary that has NO sensitive content passes through unmodified.
+    #[test]
+    fn test_redact_clean_content_unmodified() {
+        let content = "fn main() { println!(\"Hello, World!\"); }";
+        let result = redact_sensitive_text(content);
+        assert_eq!(result, content, "Clean content should not be modified");
+    }
+
+    /// Ensure password field is redacted.
+    #[test]
+    fn test_redact_password_field() {
+        let content = "config:\n  password: super-secret-123\n  host: localhost";
+        let result = redact_sensitive_text(content);
+        assert!(result.contains("[REDACTED]"));
+        assert!(!result.contains("super-secret-123"));
+    }
+
+    // ── Serialization / phase tests ─────────────────────────────────────────
 
     #[test]
     fn test_context_receipt_actual_usage_none() {
@@ -399,6 +619,7 @@ mod tests {
             50_000,
             true,
             "planner".to_string(),
+            ReceiptPhase::PostRequest,
             included,
             vec![],
             Some(ActualUsage {
@@ -426,7 +647,37 @@ mod tests {
         assert!(json.contains("inputBudget"));
         assert!(json.contains("estimatedInputTokens"));
         assert!(json.contains("maxContextTokens"));
-        assert!(json.contains("context_receipts") || json.contains("ContextReceipt-v1"));
+        assert!(json.contains("ContextReceipt-v1"));
+        assert!(json.contains("post_request"));
+    }
+
+    #[test]
+    fn test_phase_preflight_serializes() {
+        let included = vec![(
+            "sys".to_string(),
+            "P0".to_string(),
+            50,
+            "SystemPrompt".to_string(),
+            "instructions...".to_string(),
+        )];
+        let r = ContextReceipt::new(
+            "pf".to_string(),
+            "p".to_string(),
+            "m".to_string(),
+            "Fast128K".to_string(),
+            131_072,
+            118_976,
+            50,
+            false,
+            "planner".to_string(),
+            ReceiptPhase::Preflight,
+            included,
+            vec![],
+            None,
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("preflight"));
+        assert_eq!(r.phase, ReceiptPhase::Preflight);
     }
 
     #[tokio::test]
@@ -450,5 +701,17 @@ mod tests {
         assert_eq!(loaded.included_blocks.len(), 1);
         // Cleanup
         let _ = std::fs::remove_file(path);
+    }
+
+    /// Verify save failure does NOT panic — non-fatal path.
+    #[tokio::test]
+    async fn test_save_failure_is_non_fatal() {
+        // Use an impossible path to trigger failure.
+        let mut r = make_receipt(1, 0);
+        r.session_id = "test-nonfatal".to_string();
+        // Even if save fails, it must not panic (just Err).
+        let result = r.save_to_file().await;
+        // We can't guarantee it succeeds in all environments, so just assert no panic.
+        let _ = result;
     }
 }

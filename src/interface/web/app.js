@@ -82,6 +82,7 @@ window.app = {
     this.setupSettingsTabs();
     this.setupMoreMenus();
     this.setupLiveShellControls();
+    this.setupReceiptPanel(); // Day 13: wire Context Receipt inspector tab
     this.renderLiveShellState('就绪');
     this.updateGitBranch();
 
@@ -3972,9 +3973,11 @@ window.app = {
    * Displays: mode, maxContextTokens, inputBudget, estimatedInputTokens,
    * includedBlocks count, omittedBlocks count and reasons.
    * MUST NOT display Verified / probe status — this is budget estimation only.
+   * MUST NOT display raw prompt content — only structured block metadata.
    */
   renderContextReceiptPanel(receipt) {
-    const panel = document.getElementById('contextReceiptPanel');
+    // Target is contextReceiptBody (the inner scrollable card body, not the outer panel wrapper).
+    const panel = document.getElementById('contextReceiptBody');
     if (!panel) return;
 
     if (!receipt) {
@@ -4030,6 +4033,17 @@ window.app = {
       </div>` : ''}
       <div class="receipt-disclaimer">⚠️ 以上 Token 数为估算值，非 Provider 实际计费用量。</div>
     `;
+  },
+
+  /** Wire the refreshReceiptBtn click handler and initial load. */
+  setupReceiptPanel() {
+    // Load on init (best-effort, non-fatal).
+    this.loadLatestReceipt();
+    // Wire refresh button inside the inspector.
+    const refreshBtn = document.getElementById('refreshReceiptBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => this.loadLatestReceipt());
+    }
   },
 
   closeProviderModal() {
