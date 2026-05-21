@@ -3800,9 +3800,16 @@ window.app = {
               if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
 
               if (res.success) {
-                if (probeDetailStatus) {
-                  probeDetailStatus.textContent = '已验证 (Verified)';
-                  probeDetailStatus.style.color = 'var(--fg-green, #10b981)';
+                if (res.status === 'MockOnly') {
+                  if (probeDetailStatus) {
+                    probeDetailStatus.textContent = '模拟测试完成（不驱动 Verified 预算）';
+                    probeDetailStatus.style.color = 'var(--fg-orange, #f59e0b)';
+                  }
+                } else {
+                  if (probeDetailStatus) {
+                    probeDetailStatus.textContent = '已验证 (Verified)';
+                    probeDetailStatus.style.color = 'var(--fg-green, #10b981)';
+                  }
                 }
                 if (probeDetailLatency) probeDetailLatency.textContent = res.latencyMs || res.latency_ms || '-';
                 if (probeDetailTested) probeDetailTested.textContent = res.testedInputTokens || res.tested_input_tokens || targetTokens;
@@ -3910,6 +3917,12 @@ window.app = {
     if (!probe) {
       statusDiv.textContent = 'Declared / Not Verified';
       statusDiv.style.color = 'var(--fg-dim)';
+      return;
+    }
+
+    if (probe && probe.status === 'MockOnly') {
+      statusDiv.textContent = 'Declared (模拟测试完成，不驱动 Verified 预算)';
+      statusDiv.style.color = 'var(--fg-orange, #f59e0b)';
       return;
     }
 
