@@ -4006,7 +4006,7 @@ window.app = {
 
     // Build omitted reasons list (truncated to 5)
     const omittedItems = (receipt.omittedBlocks || []).slice(0, 5).map(b =>
-      `<li class="receipt-omit-item"><span class="omit-name">${this.escapeHtml(b.name)}</span><span class="omit-reason">${this.escapeHtml(b.reason)}</span><span class="omit-tokens">${(b.tokenEstimate || 0).toLocaleString()} tokens</span></li>`
+      `<li class="receipt-omit-item"><span class="omit-name">${this.escapeHtml(b.name)}</span><span class="omit-reason">${this.escapeHtml(b.reason)}</span><span class="omit-tokens">${(b.tokenEstimate ?? b.token_estimate ?? 0).toLocaleString()} tokens</span></li>`
     ).join('');
     const moreOmitted = omittedCount > 5 ? `<li class="receipt-omit-more">…还有 ${omittedCount - 5} 个省略块</li>` : '';
 
