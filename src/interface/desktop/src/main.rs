@@ -242,15 +242,63 @@ async fn probe_provider_context_capacity(
     model: String,
     level: String,
     declared_max: usize,
+    confirmed: Option<bool>,
+    cancelled: Option<bool>,
 ) -> Result<Value, String> {
     use agent_core::context_probe::{ContextProbeRunner, ProbeLevel};
 
     let probe_level = match level.as_str() {
-        "256K" => ProbeLevel::Level256K,
-        "512K" => ProbeLevel::Level512K,
-        "900K" => ProbeLevel::Level900K,
+        "256K" => {
+            if !confirmed.unwrap_or(false) {
+                return Err(
+                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
+                );
+            }
+            ProbeLevel::Level256K
+        }
+        "512K" => {
+            if !confirmed.unwrap_or(false) {
+                return Err(
+                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
+                );
+            }
+            ProbeLevel::Level512K
+        }
+        "900K" => {
+            if !confirmed.unwrap_or(false) {
+                return Err(
+                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
+                );
+            }
+            ProbeLevel::Level900K
+        }
         _ => ProbeLevel::Level128K,
     };
+
+    // If cancelled argument is true, save and return immediately without running the mock probe.
+    if cancelled.unwrap_or(false) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let result = agent_core::context_probe::ProbeResult {
+            provider_id: provider_id.clone(),
+            model: model.clone(),
+            declared_max,
+            tested_input_tokens: probe_level.tokens(),
+            success: false,
+            usage: None,
+            latency_ms: 0,
+            error: Some("cancelled".to_string()),
+            timestamp,
+            ttl_seconds: 86400,
+            cancelled: true,
+        };
+        if let Err(e) = result.save_to_file().await {
+            eprintln!("Failed to save cancelled probe result: {:?}", e);
+        }
+        return Ok(serde_json::to_value(&result).unwrap_or(json!({})));
+    }
 
     let runner = ContextProbeRunner::new();
     let result = runner
@@ -278,12 +326,22 @@ async fn probe_provider_context_capacity(
         )
         .await;
 
-    // Save to local file persistence
-    if let Err(e) = result.save_to_file().await {
-        eprintln!("Failed to save probe result: {:?}", e);
+    // Option A: Save to local file persistence only if it's cancelled or failed.
+    // Real success must not be persisted from mock so it doesn't drive verified budget in production.
+    if result.cancelled || !result.success {
+        if let Err(e) = result.save_to_file().await {
+            eprintln!("Failed to save probe result: {:?}", e);
+        }
     }
 
-    Ok(serde_json::to_value(&result).unwrap_or(json!({})))
+    let mut returned_val = serde_json::to_value(&result).unwrap_or(json!({}));
+    if result.success && !result.cancelled {
+        if let Some(obj) = returned_val.as_object_mut() {
+            obj.insert("status".to_string(), json!("MockOnly"));
+        }
+    }
+
+    Ok(returned_val)
 }
 
 #[tauri::command]

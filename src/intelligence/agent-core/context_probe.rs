@@ -40,7 +40,7 @@ impl ProbeLevel {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeUsage {
     #[serde(rename = "promptTokens")]
     pub prompt_tokens: usize,
@@ -50,7 +50,7 @@ pub struct ProbeUsage {
 
 /// Represents the status and outcomes of a context window verification.
 /// Helper to extract UX display details: error, latency, tested_input, prompt_tokens, completion_tokens.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeResult {
     #[serde(rename = "providerId")]
     pub provider_id: String,

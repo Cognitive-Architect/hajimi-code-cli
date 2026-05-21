@@ -3,8 +3,8 @@
 //! This module is intentionally pure and synchronous. It defines the budget
 //! types that later bridge, provider, memory, and receipt work can reuse.
 
+use serde::{Deserialize, Serialize};
 use std::cmp::min;
-use serde::{Serialize, Deserialize};
 
 const LEGACY_MAX_CONTEXT_TOKENS: usize = 8_192;
 const LEGACY_RESERVE_OUTPUT_TOKENS: usize = 2_048;
@@ -189,6 +189,7 @@ pub struct BudgetResolveInput {
     pub provider_caps: Option<ProviderContextCaps>,
     pub primitive_caps: Option<ProviderContextCaps>,
     pub context_threshold: Option<usize>,
+    pub probe_result: Option<crate::context_probe::ProbeResult>,
 }
 
 /// Calculate a request budget from provider/model capability data.
@@ -306,41 +307,67 @@ pub fn resolve_context_budget(input: BudgetResolveInput) -> ContextBudget {
     };
 
     apply_env_context_limit(&mut caps);
-    apply_long_context_gate(&mut caps);
 
     let mut fallback_reason = None;
-    if let Ok(probe) = crate::context_probe::ProbeResult::load_from_file_sync(&provider_id, &model) {
+    let probe_opt = input.probe_result.clone().or_else(|| {
+        // Fallback for backward compatibility, explicitly annotated and isolated
+        crate::context_probe::ProbeResult::load_from_file_sync(&provider_id, &model).ok()
+    });
+
+    if let Some(probe) = probe_opt {
         if probe.cancelled {
-            caps.capability_status = ContextCapabilityStatus::Cancelled;
+            let new_limit = min(caps.max_context_tokens, 8_192);
+            caps = caps_from_limit(
+                &provider_id,
+                &model,
+                new_limit,
+                ContextCapabilityStatus::Cancelled,
+            );
             fallback_reason = Some("Probe cancelled by user".to_string());
-            caps.max_context_tokens = min(caps.max_context_tokens, 8_192);
         } else if probe.success {
             if probe.is_expired() {
-                caps.capability_status = ContextCapabilityStatus::Stale;
+                let new_limit = min(caps.max_context_tokens, 128_000);
+                caps = caps_from_limit(
+                    &provider_id,
+                    &model,
+                    new_limit,
+                    ContextCapabilityStatus::Stale,
+                );
                 fallback_reason = Some("Probe result expired (Stale)".to_string());
-                caps.max_context_tokens = min(caps.max_context_tokens, 128_000);
             } else {
-                caps.capability_status = ContextCapabilityStatus::Verified;
-                caps.max_context_tokens = probe.tested_input_tokens;
+                caps = caps_from_limit(
+                    &provider_id,
+                    &model,
+                    probe.tested_input_tokens,
+                    ContextCapabilityStatus::Verified,
+                );
             }
         } else {
-            caps.capability_status = ContextCapabilityStatus::Fallback;
-            fallback_reason = Some(format!("Probe failed: {:?}", probe.error));
             // fallback rule: 900K fail -> 512K -> 256K -> 128K -> 32K/8K
             let failed_level = probe.tested_input_tokens;
-            if failed_level >= 900_000 {
-                caps.max_context_tokens = 512_000;
+            let new_limit = if failed_level >= 900_000 {
+                512_000
             } else if failed_level >= 512_000 {
-                caps.max_context_tokens = 256_000;
+                256_000
             } else if failed_level >= 256_000 {
-                caps.max_context_tokens = 128_000;
+                128_000
             } else if failed_level >= 128_000 {
-                caps.max_context_tokens = 32_000;
+                32_000
             } else {
-                caps.max_context_tokens = 8_192;
-            }
+                8_192
+            };
+            caps = caps_from_limit(
+                &provider_id,
+                &model,
+                new_limit,
+                ContextCapabilityStatus::Fallback,
+            );
+            fallback_reason = Some(format!("Probe failed: {:?}", probe.error));
         }
     }
+
+    // Apply the long context gate AFTER probe resolution so it CANNOT be bypassed by a successful probe!
+    apply_long_context_gate(&mut caps);
 
     let overrides = ContextBudgetOverrides {
         reserve_output_tokens: read_env_usize("HAJIMI_CONTEXT_RESERVE_OUTPUT"),
@@ -909,10 +936,10 @@ mod tests {
     fn test_context_budget_probe_integration_success() {
         let _guard = env_guard();
         clear_context_env();
-        
+
         let provider_id = "test_budget_prov";
         let model = "test_budget_model";
-        
+
         // Write a successful, non-expired probe result
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -950,10 +977,10 @@ mod tests {
     fn test_context_budget_probe_integration_expired_stale() {
         let _guard = env_guard();
         clear_context_env();
-        
+
         let provider_id = "test_budget_prov_stale";
         let model = "test_budget_model_stale";
-        
+
         // Write an expired probe result
         let res = crate::context_probe::ProbeResult {
             provider_id: provider_id.to_string(),
@@ -988,10 +1015,10 @@ mod tests {
     fn test_context_budget_probe_integration_failed_fallback() {
         let _guard = env_guard();
         clear_context_env();
-        
+
         let provider_id = "test_budget_prov_fail";
         let model = "test_budget_model_fail";
-        
+
         // Write a failed probe result at 900K level
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1024,6 +1051,88 @@ mod tests {
 
         let path = crate::context_probe::resolve_probe_path(provider_id, model);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_context_budget_probe_integration_success_long_context_disabled() {
+        let _guard = env_guard();
+        clear_context_env();
+        std::env::set_var("HAJIMI_LONG_CONTEXT_ENABLED", "false");
+
+        let provider_id = "test_budget_prov_gated";
+        let model = "test_budget_model_gated";
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let res = crate::context_probe::ProbeResult {
+            provider_id: provider_id.to_string(),
+            model: model.to_string(),
+            declared_max: 1_000_000,
+            tested_input_tokens: 1_000_000,
+            success: true,
+            usage: None,
+            latency_ms: 1000,
+            error: None,
+            timestamp: now,
+            ttl_seconds: 3600,
+            cancelled: false,
+        };
+        res.save_to_file_sync().unwrap();
+
+        let budget = resolve_context_budget(BudgetResolveInput {
+            provider_id: Some(provider_id.to_string()),
+            model: Some(model.to_string()),
+            ..BudgetResolveInput::default()
+        });
+
+        // The budget must NOT be 1M because HAJIMI_LONG_CONTEXT_ENABLED is false!
+        // It must be capped at 128K (Fast128K).
+        assert_eq!(budget.max_context_tokens, 131_072);
+        assert!(!budget.long_context_mode);
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Fallback);
+
+        let path = crate::context_probe::resolve_probe_path(provider_id, model);
+        let _ = std::fs::remove_file(path);
+        clear_context_env();
+    }
+
+    #[test]
+    fn test_context_budget_probe_explicit_resolve_without_disk() {
+        let _guard = env_guard();
+        clear_context_env();
+
+        let provider_id = "test_explicit_prov";
+        let model = "test_explicit_model";
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let probe = crate::context_probe::ProbeResult {
+            provider_id: provider_id.to_string(),
+            model: model.to_string(),
+            declared_max: 200_000,
+            tested_input_tokens: 180_000,
+            success: true,
+            usage: None,
+            latency_ms: 1000,
+            error: None,
+            timestamp: now,
+            ttl_seconds: 3600,
+            cancelled: false,
+        };
+
+        let budget = resolve_context_budget(BudgetResolveInput {
+            provider_id: Some(provider_id.to_string()),
+            model: Some(model.to_string()),
+            probe_result: Some(probe),
+            ..BudgetResolveInput::default()
+        });
+
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Verified);
+        assert_eq!(budget.max_context_tokens, 180_000);
     }
 
     fn env_guard() -> std::sync::MutexGuard<'static, ()> {

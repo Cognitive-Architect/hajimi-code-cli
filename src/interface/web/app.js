@@ -3750,19 +3750,19 @@ window.app = {
             testCapacityBtn.disabled = false;
             if (cancelCapacityBtn) cancelCapacityBtn.style.display = 'none';
             
-            // Invoke cancelled mock capability probe
+            // Invoke cancelled mock capability probe bound to real providerId + model (D12.1)
             if (this.isTauriAvailable()) {
               try {
-                // If model has fail, let it still run mock fail/cancel via model name check
-                const dummyModel = "cancel";
-                await this.invokeTauri('probe_provider_context_capacity', {
+                const res = await this.invokeTauri('probe_provider_context_capacity', {
                   providerId,
-                  model: dummyModel,
+                  model,
                   level,
-                  declaredMax
+                  declaredMax,
+                  confirmed: true,
+                  cancelled: true
                 });
                 await this.loadProviders();
-                this.updateCapabilityStatusDisplay(dummyModel);
+                this.updateCapabilityStatusDisplay(model, res);
               } catch (err) {}
             }
             return;
@@ -3791,7 +3791,9 @@ window.app = {
                 providerId,
                 model,
                 level,
-                declaredMax
+                declaredMax,
+                confirmed: true,
+                cancelled: false
               });
 
               testCapacityBtn.disabled = false;
