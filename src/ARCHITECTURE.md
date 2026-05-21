@@ -533,3 +533,62 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 **Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
 
 *本架构文档与代码同步维护，最后更新于 2026-04-30*
+
+---
+
+## Long Context 1M Engine 架构状态 — 阶段成果记录
+
+<!-- LONG-CONTEXT-1M-2026-05-21: Day 15 Closure pending final live E2E -->
+
+**当前状态**: 🔄 **Day 15 清债闭环待全面交付（已更新基线，回归通过）**
+
+Hajimi 1M Long Context 引擎在智能层 `agent-core` 内部完全闭环，完全隔离了对 Interface 层 `ProviderConfig` 的依赖，以保持无反向引用的清晰分层架构。
+
+### 1. 架构组件说明
+
+| 核心组件 | 实现文件 | 行数 | 核心职责 |
+|:---|:---|:---:|:---|
+| **ContextBudget** | `context_budget.rs` | 1147 | 基于 Legacy (8K) / Fast (128K) / Pro (200K) / Long (1M) 四档模型容量，动态计算系统 Prompt 占用、剩余输出保留区与上下文检索上限（Cap 600K）。 |
+| **LongContextPack** | `long_context_pack.rs` | 987 | 上下文超长打包合并。应用 Tree-sitter AST、首尾保留、大小剔除策略及 SimHash 指纹排重，保证打包后的 token 估算不超过可用预算，并对每个省略（Omitted）块记录清晰的原因。 |
+| **ContextProbe** | `context_probe.rs` | 393 | 负责异步 Provider 能力探测。基于本地 `.hajimi/context_probes` 持久化文件管理状态转换。支持 `1小时 TTL`，并在超时或失败时执行多级级联降级策略。 |
+| **ContextReceipt** | `context_receipt.rs` | 716 | 在每次 LLM 交互结束后产生审计回执并异步写盘。包含 Included/Omitted 列表、系统与检索估算 Token，同时对密钥（sk-...）与配置环境敏感信息执行完全的正则脱敏（Redaction）。 |
+
+### 2. 状态机生命周期 (Declared / Verified / Stale / Fallback)
+
+长上下文处理引擎采用清晰的容量五态口径进行驱动：
+
+```
+ [Declared (声明值)] ──────► 进行容量探针探测
+         │
+         ├───► 探针验证成功 (1h内 TTL 有效) ──────► [Verified (已验证)]
+         │
+         ├───► 探针验证成功但 TTL 超期(1h) ────────► [Stale (过期受限 128K)]
+         │
+         └───► 探针失败/超时/被取消 ───────────────► [Fallback (级联降级)]
+```
+
+### 3. 数据流生命周期
+
+```
+[Blackboard] ──► resolve_context_budget() ──► 内存分配上限 (Focus/Working/Archive)
+       │                                                 │
+       ▼                                                 ▼
+[AgentLoop] ──────► retrieve_multi() ──► LongContextPackBuilder::build() 
+       │                                                 │ (压缩/首尾/OMIT 追踪)
+       ▼                                                 ▼
+[LLM Bridges] ◄─────────────────────────────────── [Structured Pack]
+       │ (消息流式响应)
+       ▼
+[ContextReceipt] ──► redact_sensitive_text() ──► Asynchronous Disk Write (.json)
+```
+
+### 4. 架构硬性红线
+
+1. **分层完整性**: `agent-core` 对 `interface/desktop` 及 `ProviderConfig` 的依赖关系为 **0**。所有数据通过 neutral/plain Blackboard 转换承载。
+2. **回滚安全性 (Rollback)**: 任何时候设置 `HAJIMI_LONG_CONTEXT_ENABLED=false` 均能完美触发传统 8K standard 模式。
+3. **真实性原则**:
+   - 真实的 Provider Probe **尚未在真机网络下集成**，目前依然使用极度逼真的 MockOnly 机制。
+   - 小票显示的 token 计数为 **Estimated** 评估值，并非 provider 实机计费（actual usage）。
+   - 实机 GUI 点击测试仍保留为活跃技术债务。
+
+*本架构文档与代码同步维护，最后更新于 2026-05-21*

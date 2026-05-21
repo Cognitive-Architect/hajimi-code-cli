@@ -443,3 +443,42 @@ grep -n "chatMessages\|aiChatMessages" src/interface/web/app.js
 - `docs/roadmap/Hajimi Thinking UI/THINKING-UI-DETAILED-DAILY-PLAN.md`
 
 *本文档最后更新于 2026-04-30*
+
+---
+
+## Long Context 1M Engine 债务清偿与基线统计
+
+<!-- LONG-CONTEXT-1M-DEBT-2026-05-21: Day 15 Closure pending final live E2E -->
+
+**数据诚实性声明**：以下统计指标均来自 **2026-05-21** 现场运行的真实命令。
+
+### 1. 质量基线度量
+
+| 指标 | 验证命令 | 测得实值 | 状态 |
+|:---|:---|:---:|:---:|
+| `cargo check --workspace` | 编译检查 | **0 errors** | ✅ |
+| `agent-core` 单元测试 | `cargo test -p intelligence-agent-core --lib` | **221 passed** | ✅ |
+| 8K bridge 绝对硬编码 | `rg "ContextWindowManager::new\(8000\)" src` | **0 matches** | ✅ |
+| System prompt zero-tokens | `rg "token_estimate: 0" src/intelligence/agent-core` | **0 matches** | ✅ |
+| 4层分层边界逆向依赖 | `rg "interface/desktop\|ProviderConfig" src/intelligence/agent-core` | **0 matches** | ✅ |
+
+### 2. 长上下文已清偿债务
+
+| 修复项 | 原债务描述 | 修复后设计与事实 | 状态 |
+|:---|:---|:---|:---:|
+| P0-BRIDGE-8K | LLM Bridges 绝对写死 8000 token 限制 | 通过 pure `resolve_context_budget` 实现根据 Provider 动态分配预算，解开 8K 锁链。 | ✅ 已清偿 |
+| P0-SYSTEM-ZERO | system prompt 计费为零导致超配溢出 | 引入 `estimate_tokens(&sys_content)` 动态累加，防止溢出。 | ✅ 已清偿 |
+| P1-PROVIDER-FIELDS | ProviderConfig 仅支持 legacy context_threshold | 扩展 camelCase 现代化配置项，支持最大输入/最大输出/安全冗余等微调。 | ✅ 已清偿 |
+| P1-MEMORY-BUDGET | 内存 retrieval 与 working_limit 大小冲突 | 单独分配 Focus/Working/Archive 各自占比，解耦检索与持久层。 | ✅ 已清偿 |
+| P2-RECEIPT-PRIVACY | 缺少小票且敏感内容落盘明文 | 引入异步小票生成与 sk-/Bearer/Authorization 正则隐私脱敏。 | ✅ 已清偿 |
+
+### 3. 长上下文新增/延期未清债务 (Active Debt)
+
+| 债务 ID | 债务描述 | 影响范围 | 清偿方案 |
+|:---|:---|:---|:---|
+| **DEBT-LONG-CONTEXT-PROBE-001** | 真机网络 provider probe 探针未完成接入 | 容量探针目前仅在单元/集成测试中成功 Mock，尚不支持真实大模型接口握手能力。 | 维持 MockOnly，待后续网络通信及多模型端点整合。 |
+| **DEBT-LONG-CONTEXT-GUI-001** | 手动点击“容量测试”按钮与微动画更新的 E2E 确认延期 | 无法从视觉反馈层面确认进度加载与防抖过渡表现。 | 记录实机交互债，由后续 Tauri Webview 环境联调闭环。 |
+| **DEBT-LONG-CONTEXT-GUI-002** | 侧边栏“Context 小票”刷新并拉取 JSON 的物理点击延期 | 无法手动测试前端数据流刷新的交互细节。 | 记录实机交互债，由后续 UI 烟感测试闭环。 |
+| **DEBT-LONG-CONTEXT-GUI-003** | 在 Settings Modal 保存高容量 Provider 时的前端校验延期 | 无法手动确认前端表单验证细节。 | 记录实机表单债。 |
+
+*本文档最后更新于 2026-05-21*

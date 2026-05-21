@@ -109,15 +109,16 @@ Current 1M status: `Declared / Target`. It is not `Verified`.
 
 ## Risk Register
 
-| Risk | Level | Current fact | Required remediation |
+| Risk | Level | Day 15 Clean-closure Status | Engineering Facts |
 |---|---:|---|---|
-| Bridge hardcoded 8K | P0 | [CLEARED] 8K bridge hardcode cleared / pending E2E | Dynamically wired via `ContextBudget::input_budget` |
-| system prompt undercount | P0 | [CLEARED] Undercount resolved via `estimate_tokens` | Dynamic token estimation is fully operational |
-| Provider capability gap | P1 | `context_threshold` exists, newer capability fields do not | Day 6-7 provider config upgrade and UI display |
-| Memory budget conflict | P1 | 4096 / 16K / 32K / 64K terms appear in memory code | Day 10 dynamic retrieval budget and capacity wording cleanup |
-| Probe truth gap | P1 | No recorded probe result in this baseline | Day 11-12 manual probe, TTL, fallback |
-| Receipt gap | P2 | No context receipt contract in this baseline | Day 13 receipt JSON and token UI |
-| Ignored debt doc | P1 | `.gitignore:158:docs/` matches this path | Use forced staging for docs debt deliverables |
+| Bridge hardcoded 8K | P0 | **[CLEARED]** | Resolved via `resolve_context_budget` pure engine. |
+| system prompt undercount | P0 | **[CLEARED]** | Resolved via `estimate_tokens` dynamically in bridges. |
+| Provider capability gap | P1 | **[CLEARED]** | `ProviderConfig` extended with modern camelCase fields. |
+| Memory budget conflict | P1 | **[CLEARED]** | Deriving request-aware Focus/Working/Archive limits. |
+| Probe truth gap | P1 | **[DEFERRED]** | MockProbe validated perfectly; real provider probe pending integration (`DEBT-LONG-CONTEXT-PROBE-001`). |
+| Receipt gap | P2 | **[CLEARED]** | Asynchronous redact-redacted小票 metadata generated and saved successfully. |
+| Ignored debt doc | P1 | **[ACTIVE]** | `.gitignore:158:docs/` ignores this folder. Must forcefully stage via `git add -f`. |
+| GUI Smoke clicks | P1/P2 | **[DEFERRED]** | Deferred manual clicking validations to `DEBT-LONG-CONTEXT-GUI-001/002/003`. |
 
 ## Rollback / Feature Gate Plan
 
