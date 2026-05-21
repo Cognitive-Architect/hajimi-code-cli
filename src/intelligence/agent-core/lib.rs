@@ -9,6 +9,7 @@ pub mod blackboard;
 pub mod checkpoint;
 pub mod context_budget;
 pub mod context_probe;
+pub mod context_receipt;
 pub mod context_window_manager;
 pub mod degrade;
 pub mod edit_applier;

@@ -256,6 +256,40 @@ impl PlannerLlmBridge {
                         estimated_input,
                         omitted_count
                     );
+                    // Day 13: Write a context receipt (non-fatal, fire-and-forget).
+                    {
+                        let receipt = crate::context_receipt::ContextReceipt::new(
+                            uuid_v4_simple(),
+                            budget.provider_id.clone(),
+                            budget.model.clone(),
+                            format!("{:?}", budget.mode),
+                            budget.max_context_tokens,
+                            budget.input_budget,
+                            estimated_input,
+                            budget.long_context_mode,
+                            "planner".to_string(),
+                            messages
+                                .iter()
+                                .map(|m| {
+                                    (
+                                        m.role.clone(),
+                                        "P0".to_string(),
+                                        crate::context_window_manager::estimate_tokens(&m.content),
+                                        "MessageBlock".to_string(),
+                                        m.content.chars().take(120).collect::<String>(),
+                                    )
+                                })
+                                .collect(),
+                            vec![],
+                            None,
+                        );
+                        let receipt_clone = receipt.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = receipt_clone.save_to_file().await {
+                                tracing::warn!("ContextReceipt write failed (non-fatal): {}", e);
+                            }
+                        });
+                    }
                     client
                         .stream_chat_with_context(messages, None)
                         .await
@@ -486,6 +520,40 @@ impl ReflectorLlmBridge {
                         estimated_input,
                         omitted_count
                     );
+                    // Day 13: Write a context receipt (non-fatal, fire-and-forget).
+                    {
+                        let receipt = crate::context_receipt::ContextReceipt::new(
+                            uuid_v4_simple(),
+                            budget.provider_id.clone(),
+                            budget.model.clone(),
+                            format!("{:?}", budget.mode),
+                            budget.max_context_tokens,
+                            budget.input_budget,
+                            estimated_input,
+                            budget.long_context_mode,
+                            "reflector".to_string(),
+                            messages
+                                .iter()
+                                .map(|m| {
+                                    (
+                                        m.role.clone(),
+                                        "P0".to_string(),
+                                        crate::context_window_manager::estimate_tokens(&m.content),
+                                        "MessageBlock".to_string(),
+                                        m.content.chars().take(120).collect::<String>(),
+                                    )
+                                })
+                                .collect(),
+                            vec![],
+                            None,
+                        );
+                        let receipt_clone = receipt.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = receipt_clone.save_to_file().await {
+                                tracing::warn!("ContextReceipt write failed (non-fatal): {}", e);
+                            }
+                        });
+                    }
                     client
                         .stream_chat_with_context(messages, None)
                         .await
@@ -562,6 +630,18 @@ pub async fn collect_stream(
 // ------------------------------------------------------------------
 // Helpers
 // ------------------------------------------------------------------
+
+/// Generate a simple unique ID from timestamp + thread-local counter (no uuid crate dependency).
+fn uuid_v4_simple() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}-{:x}", ts, seq)
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct SubGoalDto {

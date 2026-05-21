@@ -369,6 +369,15 @@ async fn get_probe_result(provider_id: String, model: String) -> Result<Value, S
     }
 }
 
+/// Day 13: Return the most recent context receipt from ~/.hajimi/context_receipts/.
+#[tauri::command]
+fn get_latest_receipt() -> Result<Value, String> {
+    match agent_core::context_receipt::ContextReceipt::load_latest_sync() {
+        Some(receipt) => serde_json::to_value(&receipt).map_err(|e| e.to_string()),
+        None => Ok(Value::Null),
+    }
+}
+
 /// 获取应用工作目录沙箱根路径
 fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let base = app_handle
@@ -2964,6 +2973,7 @@ fn main() {
             // Day 12: Context capacity probe
             probe_provider_context_capacity,
             get_probe_result,
+            get_latest_receipt,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
