@@ -1,0 +1,36 @@
+{
+  "description": "write workspace tools require approval through constrained runtime",
+  "available_tools": ["write_file", "read_file"],
+  "manifest": {
+    "schema_version": "hajimi.skill.v0",
+    "version": "0.1.0",
+    "name": "write-helper",
+    "title": "Write Helper",
+    "description": "Allows a write tool only through approval constraints.",
+    "enabled": true,
+    "category": "runtime",
+    "exclusive_group": null,
+    "triggers": ["write"],
+    "risk_level": "medium",
+    "entry": "SKILL.md",
+    "eval_entry": null,
+    "context_budget_tokens": 256,
+    "allowed_tools": ["write_file"],
+    "permissions": {
+      "read_workspace": false,
+      "write_workspace": true,
+      "run_shell": false,
+      "network": false,
+      "delete": false
+    }
+  },
+  "expected_allowed": [
+    {
+      "tool_name": "write-file",
+      "permission": "ask",
+      "approval_level": "Required",
+      "reason_contains": "requires approval"
+    }
+  ],
+  "expected_denied": []
+}

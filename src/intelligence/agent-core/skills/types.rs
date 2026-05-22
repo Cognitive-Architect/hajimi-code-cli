@@ -130,6 +130,7 @@ pub const BB_ACTIVE_SKILLS: &str = "__hajimi_active_skills";
 pub const BB_SKILL_ROUTE_RECEIPT: &str = "__hajimi_skill_route_receipt";
 pub const BB_SKILL_INSTRUCTIONS: &str = "__hajimi_skill_instructions";
 pub const BB_SKILL_EVAL_CRITERIA: &str = "__hajimi_skill_eval_criteria";
+pub const BB_SKILL_TOOL_CONSTRAINTS: &str = "__hajimi_skill_tool_constraints";
 pub const HAJIMI_AGENT_SKILL_RUNTIME_ENV: &str = "HAJIMI_AGENT_SKILL_RUNTIME";
 
 /// Runtime-level tool permission after intersecting a Skill's allowed_tools and permissions.

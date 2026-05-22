@@ -695,6 +695,25 @@ impl AgentLoop {
                 .await;
         }
 
+        if crate::skills::is_agent_skill_runtime_enabled() && !loaded_skills.is_empty() {
+            let runtime = crate::skills::SkillRuntime::new(
+                crate::skills::default_runtime_tool_names().iter().copied(),
+            );
+            let tool_constraints: Vec<_> = loaded_skills
+                .iter()
+                .map(|skill| runtime.build_tool_constraints(&skill.manifest))
+                .collect();
+            let constraints_json = serde_json::to_string(&tool_constraints)
+                .map_err(|e| format!("Failed to serialize skill tool constraints: {}", e))?;
+            self.blackboard
+                .write(
+                    crate::skills::BB_SKILL_TOOL_CONSTRAINTS,
+                    &constraints_json,
+                    agent_id,
+                )
+                .await;
+        }
+
         Ok(())
     }
 

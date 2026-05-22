@@ -20,6 +20,10 @@ mod tests {
         include_str!("../../../../tests/agent_skills_golden/failure/auto_save_missing_block.json");
     const FIXTURE_SKILL_EVAL_CRITERIA: &str =
         include_str!("../../../../tests/agent_skills_golden/reflector/skill_eval_criteria.json");
+    const FIXTURE_RUNTIME_WRITE_REQUIRES_APPROVAL: &str =
+        include_str!("../../../../tests/agent_skills_golden/runtime/write_requires_approval.json");
+    const FIXTURE_RUNTIME_SHELL_DENIED: &str =
+        include_str!("../../../../tests/agent_skills_golden/runtime/shell_denied_by_default.json");
 
     #[derive(serde::Deserialize)]
     struct ConfigOverride {
@@ -49,6 +53,23 @@ mod tests {
         output: String,
         expected_pass: bool,
         expected_failure_reason: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ExpectedRuntimeConstraint {
+        tool_name: String,
+        permission: crate::skills::types::SkillToolPermissionLevel,
+        approval_level: crate::governance::ApprovalLevel,
+        reason_contains: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct RuntimeGoldenCase {
+        description: String,
+        available_tools: Vec<String>,
+        manifest: crate::skills::types::SkillManifest,
+        expected_allowed: Vec<ExpectedRuntimeConstraint>,
+        expected_denied: Vec<ExpectedRuntimeConstraint>,
     }
 
     fn run_case(case_json: &str) {
@@ -136,6 +157,50 @@ mod tests {
         assert!(!res.receipt.timestamp.is_empty());
     }
 
+    fn run_runtime_case(case_json: &str) {
+        let case: RuntimeGoldenCase =
+            serde_json::from_str(case_json).expect("Failed to parse runtime golden case JSON");
+        let runtime = crate::skills::SkillRuntime::new(case.available_tools);
+        let constraints = runtime.build_tool_constraints(&case.manifest);
+
+        assert_eq!(
+            constraints.allowed.len(),
+            case.expected_allowed.len(),
+            "Case '{}' failed allowed count. Got: {:?}",
+            case.description,
+            constraints.allowed
+        );
+        assert_eq!(
+            constraints.denied.len(),
+            case.expected_denied.len(),
+            "Case '{}' failed denied count. Got: {:?}",
+            case.description,
+            constraints.denied
+        );
+
+        for expected in &case.expected_allowed {
+            let matched = constraints
+                .allowed
+                .iter()
+                .find(|constraint| constraint.tool_name == expected.tool_name)
+                .expect("expected allowed runtime constraint");
+            assert_eq!(matched.permission, expected.permission);
+            assert_eq!(matched.approval_level, expected.approval_level);
+            assert!(matched.reason.contains(&expected.reason_contains));
+        }
+
+        for expected in &case.expected_denied {
+            let matched = constraints
+                .denied
+                .iter()
+                .find(|constraint| constraint.tool_name == expected.tool_name)
+                .expect("expected denied runtime constraint");
+            assert_eq!(matched.permission, expected.permission);
+            assert_eq!(matched.approval_level, expected.approval_level);
+            assert!(matched.reason.contains(&expected.reason_contains));
+        }
+    }
+
     #[test]
     fn test_agent_skills_golden() {
         run_case(FIXTURE_AUTO_SAVE);
@@ -162,5 +227,8 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains(&failure.expected_failure_reason));
+
+        run_runtime_case(FIXTURE_RUNTIME_WRITE_REQUIRES_APPROVAL);
+        run_runtime_case(FIXTURE_RUNTIME_SHELL_DENIED);
     }
 }

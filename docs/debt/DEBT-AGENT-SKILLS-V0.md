@@ -2,7 +2,7 @@
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 
-> Status: V0a partial / V0b constrained runtime initiated / V0c not started
+> Status: V0a partial / V0b constrained runtime integrated / V0c not started
 > Created: 2026-05-22
 > Scope: Agent Skills V0 local Skill Pack integration
 > Spec: `docs/agent-skills/SKILL-PACK-SPEC.md`
@@ -11,14 +11,14 @@
 
 ## Summary
 
-Agent Skills V0 is a staged Intelligence-layer capability. V0a now covers local manifests, registry, loader, router, Blackboard integration, Planner injection, and lightweight Reflector eval criteria. V0b Day9 adds a constrained runtime permission report skeleton, but does not execute tools or wire ActExecutor.
+Agent Skills V0 is a staged Intelligence-layer capability. V0a now covers local manifests, registry, loader, router, Blackboard integration, Planner injection, and lightweight Reflector eval criteria. V0b now writes constrained runtime reports to Blackboard and lets ActExecutor filter ToolCallV1 actions before dispatch. It still does not execute scripts, bypass Tool System, or add Interface management.
 
 ## Stage Status
 
 | Stage | Current status | Planned closure evidence |
 |---|---|---|
 | V0a | V0a partial: Manifest / Registry / Loader / Router / Blackboard / Planner ContextBlock injection / Reflector eval criteria completed; full Output Evaluator E2E pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
-| V0b | Constrained runtime initiated: permission mapping and tool constraint reports completed; ActExecutor wiring pending. | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
+| V0b | Constrained runtime integrated: permission mapping, tool constraint reports, Blackboard handoff, and ActExecutor filtering completed; Interface management pending. | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
 | V0c | Planned / not started | Skill execution receipt enters Blackboard and Memory; Interface provides read-only list/validate views only. |
 
 ## Day 1 Boundary
@@ -62,7 +62,7 @@ Unset, empty, `false`, `0`, `TRUE`, or any other value must preserve the old pat
 HAJIMI_AGENT_SKILL_RUNTIME=true
 ```
 
-Unset, empty, `false`, `0`, `TRUE`, or any other value must preserve the old runtime behavior. Day9 does not wire these constraints into ActExecutor, ToolRegistry, or Interface commands.
+Unset, empty, `false`, `0`, `TRUE`, or any other value must preserve the old runtime behavior. When enabled together with `HAJIMI_AGENT_SKILLS_V0=true`, AgentLoop writes `__hajimi_skill_tool_constraints`; ActExecutor reads that key before tool dispatch and denies tools outside active Skill `allowed_tools`.
 
 ## Runtime and Fixture Boundary
 
@@ -96,9 +96,10 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 | AGENT-SKILLS-V0A-004 | active | No real-device click validation was performed in B-07 because the deliverable is backend Planner context injection plus golden tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
 | AGENT-SKILLS-V0A-005 | active | Full Output Evaluator E2E remains out of B-08 scope. B-08 adds deterministic criteria parsing/evaluation and lightweight Reflector criteria injection only. |
 | AGENT-SKILLS-V0A-006 | active | No real-device click validation was performed in B-08 because the deliverable is backend Reflector criteria plus golden tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
-| AGENT-SKILLS-V0B-001 | partial | Runtime permissions and tool constraints can now be built as constrained reports, but they are not wired into ActExecutor or real tool dispatch. |
-| AGENT-SKILLS-V0B-002 | active | ActExecutor wiring is intentionally deferred to B-10. Day9 only produces `SkillToolConstraints` and does not execute tools. |
+| AGENT-SKILLS-V0B-001 | resolved | Runtime permissions and tool constraints can now be built as constrained reports and are read by ActExecutor before tool dispatch. |
+| AGENT-SKILLS-V0B-002 | resolved | ActExecutor wiring completed in B-10: denied and out-of-scope tools are rejected before execution, and Ask constraints mark ToolCallV1 for Governance approval. |
 | AGENT-SKILLS-V0B-003 | active | No real-device click validation was performed in B-09 because the deliverable is backend constrained runtime permission logic plus unit and shell safety tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
+| AGENT-SKILLS-V0B-004 | active | No real-device click validation was performed in B-10 because the deliverable is backend ActExecutor/Governance filtering plus golden tests. Interface list/validate remains V0c scope. |
 | AGENT-SKILLS-V0C-001 | not started | Skill execution receipts and Memory handoff are not wired. |
 | AGENT-SKILLS-STORE-001 | out of scope | Store, marketplace, URL install, automatic update, and cloud sync are intentionally excluded from V0. |
 
@@ -239,6 +240,20 @@ Commit / SHA: prepared on branch codex/agent-skills-v0b; final commit recorded i
 验证结果: fmt/check passed. skill_runtime passed 11/11. engine-tool-system shell allow-list passed 1/1. git diff --check passed. Security rg checks found no direct command/process/network execution API in skills. cargo clippy -p intelligence-agent-core -- -D warnings remains blocked by pre-existing engine-tool-system manual_contains lint; --no-deps remains blocked by pre-existing long-context lints outside Day9 scope.
 未完成 / 风险: ActExecutor wiring remains B-10 scope. Runtime does not execute commands, network calls, scripts, or delete operations. Real-device click validation was skipped per user instruction and tracked as AGENT-SKILLS-V0B-003.
 下一步: B-10 should connect constrained runtime reports to ActExecutor/Tool System dispatch without bypassing Governance.
+=====================
+```
+
+## Day 10 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-10/13
+Commit / SHA: prepared on branch codex/agent-skills-v0b; final commit recorded in Git history for this receipt
+做了什么: Added BB_SKILL_TOOL_CONSTRAINTS Blackboard key, AgentLoop runtime constraint write path behind HAJIMI_AGENT_SKILL_RUNTIME=true, ActExecutor pre-dispatch filtering, Governance escalation for Ask constraints, normalized tool-name filtering, runtime golden fixtures for write approval and shell denial, and docs for V0b runtime behavior.
+验证命令: cargo fmt -- --check; cargo check --workspace; cargo test -p intelligence-agent-core --lib skill_runtime; $env:HAJIMI_AGENT_SKILL_RUNTIME="false"; cargo test -p intelligence-agent-core --lib skill_runtime; cargo test -p intelligence-agent-core --lib agent_skills_golden; cargo test -p engine-tool-system -- test_allow_list; cargo clippy -p intelligence-agent-core -- -D warnings; rg blade checks
+验证结果: fmt passed. workspace check passed with pre-existing desktop deprecated warnings. skill_runtime passed 16/16 with runtime gate true/default and also with HAJIMI_AGENT_SKILL_RUNTIME=false. agent_skills_golden passed 1/1 including runtime fixtures. engine-tool-system shell allow-list passed 1/1. Full intelligence-agent-core lib suite passed 275/275. Blade rg checks found BB_SKILL_TOOL_CONSTRAINTS, ActExecutor filtering, runtime gate, runtime golden fixtures, and no Shell whitelist diff. cargo clippy -p intelligence-agent-core -- -D warnings remains blocked by pre-existing engine-tool-system manual_contains lint; --no-deps remains blocked by pre-existing long-context lints outside Day10 scope.
+未完成 / 风险: Interface list/validate remains V0c scope. Runtime still does not execute scripts, install URLs, bypass Shell allow-list, or perform direct network/delete operations. Real-device click validation was skipped per user instruction and tracked as AGENT-SKILLS-V0B-004.
+下一步: B-11 should continue Skill runtime/output evaluation integration without introducing Skill Store or URL installation.
 =====================
 ```
 

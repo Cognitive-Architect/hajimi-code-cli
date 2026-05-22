@@ -30,7 +30,7 @@ impl SkillRuntime {
         Self {
             available_tools: available_tools
                 .into_iter()
-                .map(|tool| normalize_tool_name(&tool.into()))
+                .map(|tool| normalize_runtime_tool_name(&tool.into()))
                 .collect(),
         }
     }
@@ -42,7 +42,7 @@ impl SkillRuntime {
         let mut warnings = Vec::new();
 
         for raw_tool in &manifest.allowed_tools {
-            let tool_name = normalize_tool_name(raw_tool);
+            let tool_name = normalize_runtime_tool_name(raw_tool);
             if self.available_tools.contains(&tool_name) {
                 valid_tools.insert(tool_name);
             } else {
@@ -94,8 +94,129 @@ impl SkillRuntime {
     }
 }
 
-fn normalize_tool_name(tool_name: &str) -> String {
+/// Tool names known to the V0b constrained runtime without constructing a ToolRegistry.
+pub fn default_runtime_tool_names() -> &'static [&'static str] {
+    &[
+        "analyze_complexity",
+        "api_request",
+        "apply_patch",
+        "benchmark",
+        "cargo_build",
+        "cmake",
+        "coverage_report",
+        "delete_file",
+        "dependency_graph",
+        "edit_file",
+        "fetch_url",
+        "find",
+        "generate_docs",
+        "generate_pr_description",
+        "git_commit",
+        "git_diff",
+        "git_log",
+        "git_status",
+        "glob",
+        "grep",
+        "js_bundle_analyzer",
+        "list_directory",
+        "lsp_definition",
+        "lsp_hover",
+        "lsp_init",
+        "lsp_references",
+        "ls",
+        "make",
+        "mcp_init",
+        "mcp_invoke",
+        "multi_edit",
+        "npm_run",
+        "planning",
+        "powershell",
+        "read_file",
+        "refactor_code",
+        "reflection",
+        "run_tests",
+        "rust_doc_generator",
+        "security_audit",
+        "shell",
+        "smart_commit",
+        "update_readme",
+        "view_image",
+        "web_search",
+        "write_file",
+    ]
+}
+
+/// Normalize runtime and ToolRegistry names to a single comparison form.
+pub fn normalize_runtime_tool_name(tool_name: &str) -> String {
     tool_name.trim().to_ascii_lowercase().replace('_', "-")
+}
+
+/// Applies active Skill constraints to a candidate tool name.
+pub fn filter_tool_by_constraints(
+    tool_name: &str,
+    constraints: &[SkillToolConstraints],
+) -> Result<Option<SkillToolConstraint>, String> {
+    if constraints.is_empty() {
+        return Ok(None);
+    }
+
+    let normalized_tool_name = normalize_runtime_tool_name(tool_name);
+    for group in constraints {
+        if let Some(denied) = group.denied.iter().find(|constraint| {
+            normalize_runtime_tool_name(&constraint.tool_name) == normalized_tool_name
+        }) {
+            return Err(format!(
+                "Skill runtime denied tool '{}': {}",
+                tool_name, denied.reason
+            ));
+        }
+    }
+
+    let mut selected: Option<SkillToolConstraint> = None;
+    for allowed in constraints.iter().flat_map(|group| &group.allowed) {
+        if normalize_runtime_tool_name(&allowed.tool_name) != normalized_tool_name {
+            continue;
+        }
+        selected = Some(match selected {
+            Some(current) if is_constraint_more_restrictive(&current, allowed) => current,
+            _ => allowed.clone(),
+        });
+    }
+
+    selected.map(Some).ok_or_else(|| {
+        format!(
+            "Skill runtime denied tool '{}': tool is not present in active Skill allowed_tools",
+            tool_name
+        )
+    })
+}
+
+fn is_constraint_more_restrictive(
+    current: &SkillToolConstraint,
+    candidate: &SkillToolConstraint,
+) -> bool {
+    let current_rank = approval_rank(current.approval_level) + permission_rank(current.permission);
+    let candidate_rank =
+        approval_rank(candidate.approval_level) + permission_rank(candidate.permission);
+    current_rank >= candidate_rank
+}
+
+fn approval_rank(level: crate::governance::ApprovalLevel) -> u8 {
+    match level {
+        crate::governance::ApprovalLevel::Auto => 0,
+        crate::governance::ApprovalLevel::Advisory => 1,
+        crate::governance::ApprovalLevel::Required => 2,
+        crate::governance::ApprovalLevel::Critical => 3,
+        crate::governance::ApprovalLevel::Override => 4,
+    }
+}
+
+fn permission_rank(level: SkillToolPermissionLevel) -> u8 {
+    match level {
+        SkillToolPermissionLevel::Allow => 0,
+        SkillToolPermissionLevel::Ask => 1,
+        SkillToolPermissionLevel::Deny => 4,
+    }
 }
 
 fn classify_tool_action(tool_name: &str) -> SkillToolAction {
@@ -314,5 +435,36 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("unknown-tool")));
+    }
+
+    #[test]
+    fn skill_runtime_filter_allows_normalized_allowed_tool() {
+        let runtime = SkillRuntime::new(default_runtime_tool_names().iter().copied());
+        let mut permissions = SkillPermissions::default();
+        permissions.write_workspace = true;
+        let manifest = manifest_with(vec!["write_file"], permissions);
+        let constraints = vec![runtime.build_tool_constraints(&manifest)];
+
+        let allowed = filter_tool_by_constraints("write_file", &constraints)
+            .expect("write_file should pass constraints")
+            .expect("matching constraint should be returned");
+
+        assert_eq!(allowed.tool_name, "write-file");
+        assert_eq!(allowed.permission, SkillToolPermissionLevel::Ask);
+        assert_eq!(allowed.approval_level, ApprovalLevel::Required);
+    }
+
+    #[test]
+    fn skill_runtime_filter_denies_tool_outside_allowed_tools() {
+        let runtime = SkillRuntime::new(default_runtime_tool_names().iter().copied());
+        let mut permissions = SkillPermissions::default();
+        permissions.read_workspace = true;
+        let manifest = manifest_with(vec!["read_file"], permissions);
+        let constraints = vec![runtime.build_tool_constraints(&manifest)];
+
+        let denied = filter_tool_by_constraints("write_file", &constraints)
+            .expect_err("write_file should be denied outside allowed_tools");
+
+        assert!(denied.contains("not present in active Skill allowed_tools"));
     }
 }

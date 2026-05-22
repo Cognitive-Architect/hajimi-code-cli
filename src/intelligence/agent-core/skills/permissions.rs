@@ -24,7 +24,7 @@ pub fn map_skill_permissions_to_approval(permissions: &SkillPermissions) -> Appr
         return ApprovalLevel::Required;
     }
     if permissions.write_workspace {
-        return ApprovalLevel::Advisory;
+        return ApprovalLevel::Required;
     }
     ApprovalLevel::Auto
 }
@@ -42,8 +42,8 @@ pub fn map_tool_action_to_permission(
         ),
         SkillToolAction::WriteWorkspace if permissions.write_workspace => (
             SkillToolPermissionLevel::Ask,
-            ApprovalLevel::Advisory,
-            "write_workspace=true requires advisory approval for write tools",
+            ApprovalLevel::Required,
+            "write_workspace=true requires approval for write tools",
         ),
         SkillToolAction::RunShell if permissions.run_shell => (
             SkillToolPermissionLevel::Ask,
@@ -99,12 +99,12 @@ mod tests {
     }
 
     #[test]
-    fn skill_runtime_permissions_map_write_to_advisory() {
+    fn skill_runtime_permissions_map_write_to_required() {
         let mut p = permissions();
         p.write_workspace = true;
         assert_eq!(
             map_skill_permissions_to_approval(&p),
-            ApprovalLevel::Advisory
+            ApprovalLevel::Required
         );
     }
 

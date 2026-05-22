@@ -3,7 +3,7 @@
 > **Directory**: `tests/agent_skills_golden`  
 > **Status**: Active / B-07 Planner injection validated
 
-This directory contains deterministic **Golden Fixtures** for the Hajimi IDE Agent Skills Router, Scoring Engine, Planner ContextBlock injection, and Reflector skill eval criteria.
+This directory contains deterministic **Golden Fixtures** for the Hajimi IDE Agent Skills Router, Scoring Engine, Planner ContextBlock injection, Reflector skill eval criteria, and constrained runtime tool constraints.
 
 ## 🚀 Key Characteristics
 
@@ -23,6 +23,7 @@ This directory contains deterministic **Golden Fixtures** for the Hajimi IDE Age
    - This prevents any silent test skipping due to missing files. If a fixture is renamed or deleted, the project will fail to compile.
    - `injection/` fixtures are compiled by the `planner_skill_injection` bridge tests.
    - `failure/` and `reflector/` fixtures are compiled by the `reflector_skill_eval` and `agent_skills_golden` tests.
+   - `runtime/` fixtures are compiled by `agent_skills_golden` and assert tool constraints without executing tools.
 
 ## 📁 Directory Structure
 
@@ -39,6 +40,9 @@ This directory contains deterministic **Golden Fixtures** for the Hajimi IDE Age
   - `skill_eval_criteria.json` — Defines the auto-save `must_include`, `must_not_include`, and optional `expected_structure` checks.
 - `failure/` — Negative output cases:
   - `auto_save_missing_block.json` — Proves an output without `=== AUTO SAVE` fails with a readable reason.
+- `runtime/` — Golden cases for constrained runtime tool constraints:
+  - `write_requires_approval.json` — Proves write tools become `Ask` constraints with Governance approval.
+  - `shell_denied_by_default.json` — Proves shell tools are denied when `run_shell=false`.
 
 ## Planner Injection Fixture Contract
 
@@ -61,3 +65,14 @@ Skill output fixtures under `evals/output_cases.json` and reflector golden fixtu
 - `failure_reason`: optional human-readable guidance for a missing or forbidden marker.
 
 For `auto-save`, the required markers are `=== AUTO SAVE`, `做了什么`, `当前状态`, `下一步`, and `风险`.
+
+## Runtime Fixture Contract
+
+Runtime fixtures define:
+
+- `available_tools`: the known tool names used to construct `SkillRuntime`.
+- `manifest`: a complete Skill manifest with `allowed_tools` and `permissions`.
+- `expected_allowed`: constraints that must be allowed after `allowed_tools` and `permissions` are intersected.
+- `expected_denied`: constraints that must be denied with a readable reason.
+
+These tests do not execute tools, shell commands, scripts, network requests, or file deletion. They only validate `SkillToolConstraints` reports.
