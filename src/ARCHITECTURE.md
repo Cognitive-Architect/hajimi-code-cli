@@ -240,6 +240,12 @@ pub async fn reflect(&self, goal: &Goal, results: &[WorkerResult]) -> ReplResult
 }
 ```
 
+### 7. Agent Skills V0 Integration (智能技能包本地增强)
+Hajimi Agent Skills V0 作为智能体决策流的本地强化层，旨在通过重用高频工作流模版提供更高确定性的输出保障，其架构设计划分为以下三阶段：
+- **V0a (已清偿)**: 提供本地技能包协议注册中心（Registry、Loader）及多轮路由与匹配得分（Router），并在 Planner 执行前向 LLM 注入技能上下文（ContextBlock），在任务产出后通过超低延迟（毫秒级）的强规则 Output Evaluator 执行确定性输出断言（`must_include`/`must_not_include`）。
+- **V0b (已集成)**: 限制技能运行期（Skill Runtime）权限与可用工具，构建专属工具约束（`__hajimi_skill_tool_constraints`），并由 ActExecutor 在拦截器层级配合 Governance 强制执行 Ask (需要审批) / Deny (直接拒绝) 操作。
+- **V0c (部分集成)**: 建立技能执行小票（`SkillExecutionReceipt`）契约，在 AgentLoop 反射（`reflect`）末期将执行结果（成功/失败等元数据）序列化为 JSON 数组并自动留档写入 Blackboard 键 `__hajimi_skill_execution_receipts`。关系图谱存储（Graph memory）、云端同步（Cloud sync）以及 Interface 列表/验证交互已被延迟至 V1 阶段开发。
+
 ---
 
 ## 🔌 关键接口定义

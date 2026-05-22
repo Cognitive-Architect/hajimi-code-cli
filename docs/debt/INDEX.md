@@ -13,7 +13,7 @@ Use this file first:
 
 | Document | Current status |
 |---|---|
-| `DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is initiated; V0a documentation baseline and default-off gate exist, while Registry, Router, Runtime, and Memory receipt remain planned. |
+| `DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is partially integrated: V0a cleared (manifest, registry, router, planner/reflector injection, output evaluation), V0b integrated (constrained runtime permissions, ActExecutor filtering), V0c partial (blackboard execution receipts, templates). Graph memory, cloud sync, and list-validate are deferred. |
 | `DEBT-FRONTEND-B13-UI-SMOKE-BLOCKED.md` | Manual Tauri/WebView UI smoke remains blocked. |
 | `DEBT-P0-UI-INTERACTION-REMEDIATION.md` | Frontend modularization and global Tauri API migration remain partial. |
 | `DEBT-THINKING-UI.md` | Thinking UI and checkpoint V1 exist; richer diff, transaction restore, malformed stream tests, provider-token integration, and WebView smoke remain. |
