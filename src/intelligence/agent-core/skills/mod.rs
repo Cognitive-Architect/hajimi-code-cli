@@ -25,9 +25,9 @@ pub use runtime::{
 pub use scoring::score_skill;
 pub use types::{
     LoadedSkill, SkillAllowedToolsReport, SkillEvalCase, SkillEvalCriterion, SkillEvalFixture,
-    SkillEvalReport, SkillEvalReportEntry, SkillManifest, SkillMatch, SkillMatchScore,
-    SkillPermissions, SkillRiskLevel, SkillRouteReceipt, SkillRouteResult, SkillRouterConfig,
-    SkillToolConstraint, SkillToolConstraints, SkillToolPermissionLevel, BB_ACTIVE_SKILLS,
-    BB_SKILL_EVAL_CRITERIA, BB_SKILL_INSTRUCTIONS, BB_SKILL_ROUTE_RECEIPT,
-    BB_SKILL_TOOL_CONSTRAINTS, HAJIMI_AGENT_SKILL_RUNTIME_ENV,
+    SkillEvalReport, SkillEvalReportEntry, SkillExecutionReceipt, SkillManifest, SkillMatch,
+    SkillMatchScore, SkillPermissions, SkillRiskLevel, SkillRouteReceipt, SkillRouteResult,
+    SkillRouterConfig, SkillToolConstraint, SkillToolConstraints, SkillToolPermissionLevel,
+    BB_ACTIVE_SKILLS, BB_SKILL_EVAL_CRITERIA, BB_SKILL_EXECUTION_RECEIPTS, BB_SKILL_INSTRUCTIONS,
+    BB_SKILL_ROUTE_RECEIPT, BB_SKILL_TOOL_CONSTRAINTS, HAJIMI_AGENT_SKILL_RUNTIME_ENV,
 };

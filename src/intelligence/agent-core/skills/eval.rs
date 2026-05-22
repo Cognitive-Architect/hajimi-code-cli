@@ -4,7 +4,8 @@
 use crate::skills::loader::SkillLoader;
 use crate::skills::registry::SkillRegistry;
 use crate::skills::types::{
-    SkillEvalCriterion, SkillEvalFixture, SkillEvalReport, SkillEvalReportEntry, SkillMatch,
+    LoadedSkill, SkillEvalCriterion, SkillEvalFixture, SkillEvalReport, SkillEvalReportEntry,
+    SkillExecutionReceipt, SkillMatch, SkillRouteReceipt,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +160,60 @@ pub fn evaluate_output(
     }
 }
 
+/// Generates execution receipts from evaluation reports, active skills and routing receipt.
+pub fn generate_execution_receipts(
+    report: &SkillEvalReport,
+    route_receipt: &SkillRouteReceipt,
+    active_skills: &[LoadedSkill],
+) -> Vec<SkillExecutionReceipt> {
+    let mut receipts = Vec::new();
+    for entry in &report.skill_reports {
+        let matched_skill = route_receipt
+            .selected
+            .iter()
+            .find(|m| m.name == entry.skill_name);
+        let loaded = active_skills
+            .iter()
+            .find(|s| s.manifest.name == entry.skill_name);
+
+        let skill_version = loaded
+            .map(|s| s.manifest.version.clone())
+            .unwrap_or_else(|| "0.1.0".to_string());
+        let matched_score = matched_skill.map(|m| m.score).unwrap_or(0.0);
+
+        let next_revision_hint = if !entry.passed {
+            let mut hints = Vec::new();
+            if !entry.missing_must_include.is_empty() {
+                hints.push(format!(
+                    "Add missing required markers: {:?}",
+                    entry.missing_must_include
+                ));
+            }
+            if !entry.matched_must_not_include.is_empty() {
+                hints.push(format!(
+                    "Remove forbidden markers: {:?}",
+                    entry.matched_must_not_include
+                ));
+            }
+            Some(hints.join("; "))
+        } else {
+            None
+        };
+
+        receipts.push(SkillExecutionReceipt {
+            skill_name: entry.skill_name.clone(),
+            skill_version,
+            input_hash: route_receipt.input_hash.clone(),
+            matched_score,
+            success: entry.passed,
+            failure_reason: entry.failure_reason.clone(),
+            next_revision_hint,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+    receipts
+}
+
 pub fn parse_eval_fixture(raw: &str) -> Result<SkillEvalFixture, serde_json::Error> {
     serde_json::from_str(raw)
 }
@@ -228,5 +283,81 @@ mod tests {
             .expect("fixture should include a passing output case");
         let result = evaluate_output_single(&passing_case.output, &fixture.criteria);
         assert!(result.passed, "complete output should satisfy criteria");
+    }
+
+    #[test]
+    fn test_skill_receipt() {
+        use crate::skills::types::{
+            SkillManifest, SkillMatch, SkillPermissions, SkillRiskLevel, SkillRouteReceipt,
+        };
+
+        let report = SkillEvalReport {
+            passed: false,
+            skill_reports: vec![SkillEvalReportEntry {
+                skill_name: "auto-save".to_string(),
+                passed: false,
+                failure_reason: Some("missing required marker: === AUTO SAVE".to_string()),
+                matched_must_include: vec![],
+                missing_must_include: vec!["=== AUTO SAVE".to_string()],
+                matched_must_not_include: vec![],
+            }],
+            failure_reason: Some("missing required marker: === AUTO SAVE".to_string()),
+        };
+
+        let route_receipt = SkillRouteReceipt {
+            input_hash: "abc123hash".to_string(),
+            router_version: "hajimi.skill.router.v0".to_string(),
+            selected: vec![SkillMatch {
+                name: "auto-save".to_string(),
+                score: 0.85,
+                reason: "matched triggers".to_string(),
+                matched_terms: vec![],
+                risk_level: SkillRiskLevel::Low,
+                category: None,
+                exclusive_group: None,
+            }],
+            rejected: vec![],
+            timestamp: "2026-05-22T00:00:00Z".to_string(),
+        };
+
+        let active_skills = vec![LoadedSkill {
+            manifest: SkillManifest {
+                schema_version: "hajimi.skill.v0".to_string(),
+                version: "1.2.3".to_string(),
+                name: "auto-save".to_string(),
+                title: "Auto Save".to_string(),
+                description: "desc".to_string(),
+                enabled: true,
+                category: None,
+                exclusive_group: None,
+                triggers: vec![],
+                risk_level: SkillRiskLevel::Low,
+                entry: "SKILL.md".to_string(),
+                eval_entry: None,
+                context_budget_tokens: None,
+                allowed_tools: vec![],
+                permissions: SkillPermissions::default(),
+            },
+            instructions: "instructions".to_string(),
+            token_estimate: 100,
+        }];
+
+        let receipts = generate_execution_receipts(&report, &route_receipt, &active_skills);
+        assert_eq!(receipts.len(), 1);
+        let receipt = &receipts[0];
+        assert_eq!(receipt.skill_name, "auto-save");
+        assert_eq!(receipt.skill_version, "1.2.3");
+        assert_eq!(receipt.input_hash, "abc123hash");
+        assert_eq!(receipt.matched_score, 0.85);
+        assert!(!receipt.success);
+        assert_eq!(
+            receipt.failure_reason,
+            Some("missing required marker: === AUTO SAVE".to_string())
+        );
+        assert!(receipt
+            .next_revision_hint
+            .as_ref()
+            .unwrap()
+            .contains("Add missing required markers"));
     }
 }

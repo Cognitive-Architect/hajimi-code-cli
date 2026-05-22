@@ -1,0 +1,23 @@
+{
+  "schema_version": "hajimi.skill.v0",
+  "version": "0.1.0",
+  "name": "plain-language",
+  "title": "自然语言输出",
+  "description": "强制 Agent 使用纯自然语言、无冗余 Markdown 代码块包裹或 JSON 形式回答用户，适用于交互式聊天。",
+  "enabled": false,
+  "category": "communication",
+  "exclusive_group": "output-style",
+  "triggers": ["自然语言", "大白话", "用中文回答", "人话", "解释一下"],
+  "risk_level": "low",
+  "entry": "SKILL.md",
+  "eval_entry": "evals/output_cases.json",
+  "context_budget_tokens": 800,
+  "allowed_tools": [],
+  "permissions": {
+    "read_workspace": true,
+    "write_workspace": false,
+    "run_shell": false,
+    "network": false,
+    "delete": false
+  }
+}

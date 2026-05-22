@@ -528,6 +528,13 @@ impl AgentLoop {
             "Reflecting on goal {} with success={}",
             goal_id, result.success
         );
+        let agent_id = "agent_loop".to_string();
+        if let Err(e) = self
+            .evaluate_and_record_skills_receipts(&agent_id, &result.output)
+            .await
+        {
+            warn!("Failed to evaluate and record skill receipts: {}", e);
+        }
         let iter = *self.iteration_count.lock().await;
         self.emit_trace(
             LoopState::Reflecting,
@@ -713,6 +720,70 @@ impl AgentLoop {
                 )
                 .await;
         }
+
+        Ok(())
+    }
+
+    async fn evaluate_and_record_skills_receipts(
+        &self,
+        agent_id: &AgentId,
+        output: &str,
+    ) -> Result<(), String> {
+        if !crate::prompts::is_agent_skills_v0_enabled() {
+            return Ok(());
+        }
+
+        let registry = match &self.skill_registry {
+            Some(r) => r,
+            None => return Ok(()),
+        };
+
+        // Read BB_SKILL_ROUTE_RECEIPT from blackboard
+        let route_receipt_entry = self
+            .blackboard
+            .read(crate::skills::BB_SKILL_ROUTE_RECEIPT)
+            .await;
+        let Some(entry) = route_receipt_entry else {
+            return Ok(());
+        };
+
+        let route_receipt: crate::skills::SkillRouteReceipt = serde_json::from_str(&entry.value)
+            .map_err(|e| format!("Failed to deserialize route receipt: {}", e))?;
+
+        if route_receipt.selected.is_empty() {
+            return Ok(());
+        }
+
+        // Read BB_ACTIVE_SKILLS from blackboard
+        let active_skills_entry = self.blackboard.read(crate::skills::BB_ACTIVE_SKILLS).await;
+        let active_skills: Vec<crate::skills::LoadedSkill> = if let Some(e) = active_skills_entry {
+            serde_json::from_str(&e.value).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Evaluate output using evaluate_output
+        let report =
+            crate::skills::eval::evaluate_output(&route_receipt.selected, output, registry);
+
+        // Generate receipts
+        let receipts = crate::skills::eval::generate_execution_receipts(
+            &report,
+            &route_receipt,
+            &active_skills,
+        );
+
+        // Serialize and write to blackboard under BB_SKILL_EXECUTION_RECEIPTS
+        let receipts_json = serde_json::to_string(&receipts)
+            .map_err(|e| format!("Failed to serialize execution receipts: {}", e))?;
+
+        self.blackboard
+            .write(
+                crate::skills::BB_SKILL_EXECUTION_RECEIPTS,
+                &receipts_json,
+                agent_id,
+            )
+            .await;
 
         Ok(())
     }

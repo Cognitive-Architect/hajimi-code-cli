@@ -131,6 +131,7 @@ pub const BB_SKILL_ROUTE_RECEIPT: &str = "__hajimi_skill_route_receipt";
 pub const BB_SKILL_INSTRUCTIONS: &str = "__hajimi_skill_instructions";
 pub const BB_SKILL_EVAL_CRITERIA: &str = "__hajimi_skill_eval_criteria";
 pub const BB_SKILL_TOOL_CONSTRAINTS: &str = "__hajimi_skill_tool_constraints";
+pub const BB_SKILL_EXECUTION_RECEIPTS: &str = "__hajimi_skill_execution_receipts";
 pub const HAJIMI_AGENT_SKILL_RUNTIME_ENV: &str = "HAJIMI_AGENT_SKILL_RUNTIME";
 
 /// Runtime-level tool permission after intersecting a Skill's allowed_tools and permissions.
@@ -277,6 +278,19 @@ pub struct SkillEvalReport {
     pub passed: bool,
     pub skill_reports: Vec<SkillEvalReportEntry>,
     pub failure_reason: Option<String>,
+}
+
+/// Execution receipt representing the result of evaluating output for an active skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillExecutionReceipt {
+    pub skill_name: String,
+    pub skill_version: String,
+    pub input_hash: String,
+    pub matched_score: f32,
+    pub success: bool,
+    pub failure_reason: Option<String>,
+    pub next_revision_hint: Option<String>,
+    pub timestamp: String,
 }
 
 #[cfg(test)]

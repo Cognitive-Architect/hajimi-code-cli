@@ -2,9 +2,9 @@
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 
-> Status: V0a partial / V0b constrained runtime integrated
+> Status: V0a cleared / V0b constrained runtime integrated / V0c integrated
 > Debt record: `docs/debt/DEBT-AGENT-SKILLS-V0.md`
-> Feature gate: `HAJIMI_AGENT_SKILLS_V0=true`
+> Gate: `HAJIMI_AGENT_SKILLS_V0=true`
 > Runtime gate: `HAJIMI_AGENT_SKILL_RUNTIME=true`
 
 ## Purpose
@@ -15,9 +15,9 @@ V0 is split into three stages:
 
 | Stage | Status | Scope |
 |---|---|---|
-| V0a | Initiated / planned | Local Skill Pack schema, Registry, Loader, Router, Planner injection, and `auto-save` output evaluation. |
+| V0a | Cleared | Local Skill Pack schema, Registry, Loader, Router, Planner injection, and `auto-save` output evaluation. |
 | V0b | Integrated | Constrained runtime tool constraints, Blackboard handoff, and ActExecutor/Governance filtering. Runtime is not a script executor. |
-| V0c | Planned | Skill execution receipts, Memory handoff, and read-only Interface management. |
+| V0c | Integrated | Skill execution receipts, success/failure blackboard writes, and standard disabled skeleton templates (plain-language/project-handoff). |
 
 ## Directory Model
 

@@ -645,4 +645,62 @@ mod tests {
         let eval_criteria = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await;
         assert!(eval_criteria.is_none());
     }
+
+    #[tokio::test]
+    async fn test_skills_execution_receipt_written() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
+        env_guard.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("skills_receipt_test")));
+        let base_dir = std::env::current_dir().unwrap();
+        let mut root = base_dir.join("tests/fixtures/skills");
+        if !root.exists() {
+            root = base_dir.join("../../../tests/fixtures/skills");
+        }
+        let registry = Arc::new(crate::skills::SkillRegistry::scan(&root).unwrap());
+        let router = Arc::new(crate::skills::SkillRouter::new(
+            registry.clone(),
+            Default::default(),
+        ));
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_skill_registry(Some(registry))
+            .with_skill_router(Some(router))
+            .build()
+            .unwrap();
+
+        let outcome = agent_loop
+            .run("agent1".to_string(), "自动存档 准备下一步并分析风险")
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        ));
+
+        let bb = agent_loop.blackboard();
+        let execution_receipts = bb
+            .read(crate::skills::BB_SKILL_EXECUTION_RECEIPTS)
+            .await
+            .expect("BB_SKILL_EXECUTION_RECEIPTS should be present after reflecting");
+
+        assert!(execution_receipts.value.contains("auto-save"));
+        assert!(execution_receipts.value.contains("success"));
+        assert!(execution_receipts.value.contains("timestamp"));
+    }
 }
