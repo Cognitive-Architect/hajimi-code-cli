@@ -126,6 +126,54 @@ impl SkillManifest {
     }
 }
 
+/// Represents the result of matching a Skill against an input.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillMatch {
+    pub name: String,
+    pub score: f32,
+    pub reason: String,
+    pub matched_terms: Vec<String>,
+    pub risk_level: SkillRiskLevel,
+    pub category: Option<String>,
+    pub exclusive_group: Option<String>,
+}
+
+/// Detailed breakdown of a Skill score computation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillMatchScore {
+    pub score: f32,
+    pub matched_triggers: Vec<String>,
+    pub matched_name_or_title: Option<String>,
+    pub matched_description_terms: Vec<String>,
+    pub reason: String,
+}
+
+/// The receipt containing routing details and selected/rejected skills breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillRouteReceipt {
+    pub input_hash: String,
+    pub router_version: String,
+    pub selected: Vec<SkillMatch>,
+    pub rejected: Vec<SkillMatch>,
+    pub timestamp: String,
+}
+
+/// Configuration for the SkillRouter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillRouterConfig {
+    pub threshold: f32,
+    pub max_active_skills: usize,
+}
+
+impl Default for SkillRouterConfig {
+    fn default() -> Self {
+        Self {
+            threshold: 0.55,
+            max_active_skills: 3,
+        }
+    }
+}
+
 /// A fully loaded skill containing the manifest, resolved instruction content, and token estimates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadedSkill {

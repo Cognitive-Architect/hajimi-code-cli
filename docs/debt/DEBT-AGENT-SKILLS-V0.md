@@ -16,7 +16,7 @@ Agent Skills V0 is initiated as a staged Intelligence-layer capability. Day 1 es
 
 | Stage | Current status | Planned closure evidence |
 |---|---|---|
-| V0a | Initiated / in progress | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
+| V0a | V0a partial: Manifest / Registry / Loader / Router completed; Route Receipt Blackboard, Planner injection, Reflector criteria, Output Eval pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
 | V0b | Planned / not started | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
 | V0c | Planned / not started | Skill execution receipt enters Blackboard and Memory; Interface provides read-only list/validate views only. |
 
@@ -79,7 +79,8 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 
 | ID | Status | Description |
 |---|---|---|
-| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, and SkillLoader are completed. Router, Planner injection, and output evaluation are planned follow-up work. |
+| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter and deterministic Scoring matches are completed. Route Receipt Blackboard, Planner injection, Reflector criteria, and Output Eval are planned follow-up work. |
+| AGENT-SKILLS-V0A-002 | active | The description keyword matching in `scoring.rs` utilizes a 2-character sliding window for robust Chinese segment matching. This has a potential risk of false-positive triggers on common 2-character overlaps. |
 | AGENT-SKILLS-V0B-001 | not started | Runtime permissions and tool constraints are not wired. |
 | AGENT-SKILLS-V0C-001 | not started | Skill execution receipts and Memory handoff are not wired. |
 | AGENT-SKILLS-STORE-001 | out of scope | Store, marketplace, URL install, automatic update, and cloud sync are intentionally excluded from V0. |
@@ -137,6 +138,20 @@ Commit / SHA: feat(intelligence/agent-core): restore standard registry and loade
 验证结果: All lint, compile, and 9 registry & loader unit tests passed successfully.
 未完成 / 风险: SkillRouter, Planner injection, AgentLoop routing, and references deep loading are pending.
 下一步: Implement SkillRouter to grade triggers and dynamically score context weight for Planner injection in Day 4 (B-04/13).
+=====================
+```
+
+## Day 4 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-04/13
+Commit / SHA: docs(agent-skills): correct Day 4 receipt after routing scope cleanup (SHA: 0ccddc2)
+做了什么: Implemented scoring.rs with 100% deterministic, zero-LLM score matching logic (+0.60 trigger, +0.25 name/title, +0.15 description keywords). Implemented router.rs (SkillRouter) executing complete routing pipeline including exclusive_group conflict resolution (retaining highest score, rejecting rest) and Top-K active skill cap (default max 3). Generated detailed SkillRouteReceipt tracking input_hash, timestamp, and audit trail reasons. Added robust unit tests verifying top-k limits, exclusive group conflicts, scoring rules, and dynamically validated all route_cases.json triggers.
+验证命令: cargo check -p intelligence-agent-core; cargo test -p intelligence-agent-core --lib skills; cargo fmt -- --check; cargo clippy -p intelligence-agent-core -- -D warnings -A clippy::field_reassign_with_default
+验证结果: skills tests 24 passed (including route_cases fixture test), fmt passed, agent-core check passed. Clippy successfully passed after allowing pre-existing field_reassign_with_default legacy debt. Workspace full test was not run as blocking evidence due to known local doctest pgvector environment exceptions.
+未完成 / 风险: B-05 Route Receipt Blackboard / Router Golden / Planner injection remain pending. Description 2-character sliding window registered as active false trigger risk under AGENT-SKILLS-V0A-002. Pre-existing clippy field_reassign_with_default is pre-existing legacy debt, not introduced by Day 4.
+下一步: Implement runtime integration, planner instruction injection, and feature gate controls in Day 5.
 =====================
 ```
 

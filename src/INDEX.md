@@ -36,7 +36,8 @@ src/
 ├── intelligence/        # 智能层 - 依赖foundation+engine（7模块）
 │   ├── agent-core/      # 自主Agent系统（7步循环/Swarm/可插拔治理/LLM桥接）⭐
 │   │   ├── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
-│   │   └── prompts/     #   Prompt resources + feature gates, including default-off Agent Skills V0 gate
+│   │   ├── prompts/     #   Prompt resources + feature gates, including default-off Agent Skills V0 gate
+│   │   └── skills/      #   本地技能包协议 + 注册中心 + 路由与评分（V0a）⭐
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐
@@ -580,6 +581,7 @@ interface/mcp-server/
 1. `intelligence/chimera/chimera-repl/src/repl.rs` - REPL 引擎
 2. `intelligence/memory/src/session.rs` - Session 记忆
 3. `intelligence/knowledge/src/adr_index.rs` - ADR索引（185行）⭐
+4. `intelligence/agent-core/skills/router.rs` - 智能技能路由与评分匹配机制 ⭐
 
 **4. Interface 层（用户界面）**:
 
