@@ -2,9 +2,10 @@
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 
-> Status: Initiated / V0a in progress
+> Status: V0a partial / V0b constrained runtime initiated
 > Debt record: `docs/debt/DEBT-AGENT-SKILLS-V0.md`
 > Feature gate: `HAJIMI_AGENT_SKILLS_V0=true`
+> Runtime gate: `HAJIMI_AGENT_SKILL_RUNTIME=true`
 
 ## Purpose
 
@@ -15,7 +16,7 @@ V0 is split into three stages:
 | Stage | Status | Scope |
 |---|---|---|
 | V0a | Initiated / planned | Local Skill Pack schema, Registry, Loader, Router, Planner injection, and `auto-save` output evaluation. |
-| V0b | Planned | Runtime tool constraints and Governance mapping. |
+| V0b | Initiated | Constrained runtime tool constraints and Governance mapping. Runtime is not a script executor. |
 | V0c | Planned | Skill execution receipts, Memory handoff, and read-only Interface management. |
 
 ## Directory Model
@@ -104,6 +105,39 @@ templates/
 6. One user turn may activate at most three Skills.
 7. V0a must not scan `templates/skills/` as runtime state.
 
+## Constrained Runtime V0b
+
+`SkillRuntime` is a constraint builder, not a tool runner or script executor. It reads a selected Skill manifest and produces a deterministic `SkillToolConstraints` report for later Tool System and Governance wiring.
+
+The Day9 runtime gate is default-off:
+
+```text
+HAJIMI_AGENT_SKILL_RUNTIME=true
+```
+
+Unset, empty, `false`, `TRUE`, or any other value keeps the constrained runtime path disabled. This is separate from the V0 routing gate so Day9 can land without changing tool execution behavior.
+
+### Permission Intersections
+
+`allowed_tools` and `permissions` are intersected. A tool must be both listed in `allowed_tools` and permitted by the matching permission field before it can appear in the allowed constraint set. Unknown tools are filtered out and recorded as warnings in the report.
+
+| Tool family | Required permission | Runtime decision |
+|---|---|---|
+| Read workspace tools | `read_workspace=true` | `Allow` with `ApprovalLevel::Auto` |
+| Write workspace tools | `write_workspace=true` | `Ask` with `ApprovalLevel::Advisory` |
+| Shell tools | `run_shell=true` | `Ask` with `ApprovalLevel::Required`; `run_shell=false` denies shell tools |
+| Network tools | `network=true` | `Ask` with `ApprovalLevel::Required`; `network=false` denies network tools |
+| Delete tools | `delete=true` | Still `Deny` by default in V0b Day9 with `ApprovalLevel::Critical` |
+
+The constrained runtime must never:
+
+- execute commands
+- execute files from `scripts/`
+- perform network requests
+- delete files directly
+- bypass ToolRegistry, ToolPermissions, or Governance
+- create Interface commands
+
 ## Eval Fixture V0 Shape
 
 When `skill.json` declares `eval_entry`, it points to a deterministic output evaluation fixture such as `evals/output_cases.json`. The fixture is read only after the Skill is selected, and only lightweight criteria are written to Blackboard as `__hajimi_skill_eval_criteria`.
@@ -146,7 +180,7 @@ Agent Skills are workflow instructions, not executable capabilities. V0 explicit
 - direct bypass of ToolRegistry, ToolPermissions, or Governance
 - full-context injection of every installed Skill
 
-V0b may translate Skill permissions into stricter tool constraints, but actual tool execution must still go through the existing Tool System and Governance approval path.
+V0b translates Skill permissions into stricter constrained runtime reports, but actual tool execution must still go through the existing Tool System and Governance approval path.
 
 ## Initial Built-In Skill Target
 

@@ -130,6 +130,42 @@ pub const BB_ACTIVE_SKILLS: &str = "__hajimi_active_skills";
 pub const BB_SKILL_ROUTE_RECEIPT: &str = "__hajimi_skill_route_receipt";
 pub const BB_SKILL_INSTRUCTIONS: &str = "__hajimi_skill_instructions";
 pub const BB_SKILL_EVAL_CRITERIA: &str = "__hajimi_skill_eval_criteria";
+pub const HAJIMI_AGENT_SKILL_RUNTIME_ENV: &str = "HAJIMI_AGENT_SKILL_RUNTIME";
+
+/// Runtime-level tool permission after intersecting a Skill's allowed_tools and permissions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillToolPermissionLevel {
+    Deny,
+    Ask,
+    Allow,
+}
+
+/// Single tool decision produced by SkillRuntime. It is declarative only and never executes tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillToolConstraint {
+    pub tool_name: String,
+    pub permission: SkillToolPermissionLevel,
+    pub approval_level: crate::governance::ApprovalLevel,
+    pub reason: String,
+}
+
+/// Full constrained runtime report for one Skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillToolConstraints {
+    pub skill_name: String,
+    pub allowed: Vec<SkillToolConstraint>,
+    pub denied: Vec<SkillToolConstraint>,
+    pub warnings: Vec<String>,
+}
+
+/// Result of validating manifest allowed_tools against known tool names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillAllowedToolsReport {
+    pub valid_tools: Vec<String>,
+    pub unknown_tools: Vec<String>,
+    pub warnings: Vec<String>,
+}
 
 /// Represents the result of matching a Skill against an input.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
