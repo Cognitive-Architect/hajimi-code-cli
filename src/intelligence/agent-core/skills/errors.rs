@@ -30,6 +30,10 @@ pub enum SkillError {
     #[error("Token budget exceeded: {0}")]
     TokenBudgetExceeded(String),
 
+    /// The specified skill was not found.
+    #[error("Skill not found: {0}")]
+    NotFound(String),
+
     /// Serde JSON errors.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),

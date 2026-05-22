@@ -3571,6 +3571,7 @@ dependencies = [
  "memory",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.64",
  "tokio",
  "tracing",
