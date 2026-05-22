@@ -38,8 +38,11 @@ This directory contains deterministic **Golden Fixtures** for the Hajimi IDE Age
   - `planner_no_skill_no_injection.json` — Asserts the no-skill path keeps only the P0 `system_prompt` and `user_prompt` blocks.
 - `reflector/` — Golden cases for lightweight Reflector criteria:
   - `skill_eval_criteria.json` — Defines the auto-save `must_include`, `must_not_include`, and optional `expected_structure` checks.
+- `output/` — Positive E2E-like output validation cases:
+  - `auto_save_output_required.json` — Asserts a complete auto-save output containing all five required archive block fields passes criteria evaluation.
 - `failure/` — Negative output cases:
   - `auto_save_missing_block.json` — Proves an output without `=== AUTO SAVE` fails with a readable reason.
+  - `auto_save_missing_archive.json` — Asserts an auto-save output missing the critical AUTO SAVE block fails criteria evaluation.
 - `runtime/` — Golden cases for constrained runtime tool constraints:
   - `write_requires_approval.json` — Proves write tools become `Ask` constraints with Governance approval.
   - `shell_denied_by_default.json` — Proves shell tools are denied when `run_shell=false`.

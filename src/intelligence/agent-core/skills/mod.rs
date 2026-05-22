@@ -13,7 +13,7 @@ pub mod scoring;
 pub mod types;
 
 pub use errors::SkillError;
-pub use eval::{evaluate_output, parse_eval_fixture, SkillEvalResult};
+pub use eval::{evaluate_output, evaluate_output_single, parse_eval_fixture, SkillEvalResult};
 pub use loader::SkillLoader;
 pub use permissions::{map_skill_permissions_to_approval, SkillToolAction};
 pub use registry::SkillRegistry;
@@ -25,9 +25,9 @@ pub use runtime::{
 pub use scoring::score_skill;
 pub use types::{
     LoadedSkill, SkillAllowedToolsReport, SkillEvalCase, SkillEvalCriterion, SkillEvalFixture,
-    SkillManifest, SkillMatch, SkillMatchScore, SkillPermissions, SkillRiskLevel,
-    SkillRouteReceipt, SkillRouteResult, SkillRouterConfig, SkillToolConstraint,
-    SkillToolConstraints, SkillToolPermissionLevel, BB_ACTIVE_SKILLS, BB_SKILL_EVAL_CRITERIA,
-    BB_SKILL_INSTRUCTIONS, BB_SKILL_ROUTE_RECEIPT, BB_SKILL_TOOL_CONSTRAINTS,
-    HAJIMI_AGENT_SKILL_RUNTIME_ENV,
+    SkillEvalReport, SkillEvalReportEntry, SkillManifest, SkillMatch, SkillMatchScore,
+    SkillPermissions, SkillRiskLevel, SkillRouteReceipt, SkillRouteResult, SkillRouterConfig,
+    SkillToolConstraint, SkillToolConstraints, SkillToolPermissionLevel, BB_ACTIVE_SKILLS,
+    BB_SKILL_EVAL_CRITERIA, BB_SKILL_INSTRUCTIONS, BB_SKILL_ROUTE_RECEIPT,
+    BB_SKILL_TOOL_CONSTRAINTS, HAJIMI_AGENT_SKILL_RUNTIME_ENV,
 };

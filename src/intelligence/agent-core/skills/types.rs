@@ -260,6 +260,25 @@ pub struct SkillEvalFixture {
     pub cases: Vec<SkillEvalCase>,
 }
 
+/// Detailed evaluation report entry for a single Skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalReportEntry {
+    pub skill_name: String,
+    pub passed: bool,
+    pub failure_reason: Option<String>,
+    pub matched_must_include: Vec<String>,
+    pub missing_must_include: Vec<String>,
+    pub matched_must_not_include: Vec<String>,
+}
+
+/// Detailed evaluation report for all active Skills.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalReport {
+    pub passed: bool,
+    pub skill_reports: Vec<SkillEvalReportEntry>,
+    pub failure_reason: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

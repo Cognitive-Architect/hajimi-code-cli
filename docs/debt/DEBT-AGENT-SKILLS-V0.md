@@ -2,7 +2,7 @@
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 
-> Status: V0a partial / V0b constrained runtime integrated / V0c not started
+> Status: V0a cleared / V0b constrained runtime integrated / V0c not started
 > Created: 2026-05-22
 > Scope: Agent Skills V0 local Skill Pack integration
 > Spec: `docs/agent-skills/SKILL-PACK-SPEC.md`
@@ -17,7 +17,7 @@ Agent Skills V0 is a staged Intelligence-layer capability. V0a now covers local 
 
 | Stage | Current status | Planned closure evidence |
 |---|---|---|
-| V0a | V0a partial: Manifest / Registry / Loader / Router / Blackboard / Planner ContextBlock injection / Reflector eval criteria completed; full Output Evaluator E2E pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
+| V0a | V0a cleared: Manifest / Registry / Loader / Router / Blackboard / Planner ContextBlock injection / Reflector eval criteria / E2E Output Evaluator completed. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
 | V0b | Constrained runtime integrated: permission mapping, tool constraint reports, Blackboard handoff, and ActExecutor filtering completed; Interface management pending. | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
 | V0c | Planned / not started | Skill execution receipt enters Blackboard and Memory; Interface provides read-only list/validate views only. |
 
@@ -90,11 +90,11 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 
 | ID | Status | Description |
 |---|---|---|
-| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter, Scoring, Blackboard integration, Planner ContextBlock injection, and Reflector eval criteria are completed. Full Output Evaluator E2E remains planned follow-up work. |
+| AGENT-SKILLS-V0A-001 | resolved | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter, Scoring, Blackboard integration, Planner ContextBlock injection, Reflector eval criteria, and full Output Evaluator E2E are completed. |
 | AGENT-SKILLS-V0A-002 | active | The description keyword matching in `scoring.rs` utilizes a 2-character sliding window for robust Chinese segment matching. This has a potential risk of false-positive triggers on common 2-character overlaps. |
 | AGENT-SKILLS-V0A-003 | active | Planner active skill injection is implemented only for the `HAJIMI_CONTEXT_WINDOW_ENABLED=true` ContextWindowManager path. If the context window gate is disabled, the legacy simple prompt path does not receive `active_skill_instructions`. |
 | AGENT-SKILLS-V0A-004 | active | No real-device click validation was performed in B-07 because the deliverable is backend Planner context injection plus golden tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
-| AGENT-SKILLS-V0A-005 | active | Full Output Evaluator E2E remains out of B-08 scope. B-08 adds deterministic criteria parsing/evaluation and lightweight Reflector criteria injection only. |
+| AGENT-SKILLS-V0A-005 | resolved | Full Output Evaluator E2E is completed and verified using static compilation-linked golden fixtures. |
 | AGENT-SKILLS-V0A-006 | active | No real-device click validation was performed in B-08 because the deliverable is backend Reflector criteria plus golden tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
 | AGENT-SKILLS-V0B-001 | resolved | Runtime permissions and tool constraints can now be built as constrained reports and are read by ActExecutor before tool dispatch. |
 | AGENT-SKILLS-V0B-002 | resolved | ActExecutor wiring completed in B-10: denied and out-of-scope tools are rejected before execution, and Ask constraints mark ToolCallV1 for Governance approval. |
@@ -254,6 +254,20 @@ Commit / SHA: prepared on branch codex/agent-skills-v0b; final commit recorded i
 验证结果: fmt passed. workspace check passed with pre-existing desktop deprecated warnings. skill_runtime passed 16/16 with runtime gate true/default and also with HAJIMI_AGENT_SKILL_RUNTIME=false. agent_skills_golden passed 1/1 including runtime fixtures. engine-tool-system shell allow-list passed 1/1. Full intelligence-agent-core lib suite passed 275/275. Blade rg checks found BB_SKILL_TOOL_CONSTRAINTS, ActExecutor filtering, runtime gate, runtime golden fixtures, and no Shell whitelist diff. cargo clippy -p intelligence-agent-core -- -D warnings remains blocked by pre-existing engine-tool-system manual_contains lint; --no-deps remains blocked by pre-existing long-context lints outside Day10 scope.
 未完成 / 风险: Interface list/validate remains V0c scope. Runtime still does not execute scripts, install URLs, bypass Shell allow-list, or perform direct network/delete operations. Real-device click validation was skipped per user instruction and tracked as AGENT-SKILLS-V0B-004.
 下一步: B-11 should continue Skill runtime/output evaluation integration without introducing Skill Store or URL installation.
+=====================
+```
+
+## Day 11 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-11/13
+Commit / SHA: feat(intelligence/agent-core): implement SkillEvalReport and E2E output evaluator (final commit in branch)
+做了什么: Defined SkillEvalReport and SkillEvalReportEntry types, implemented evaluate_output for multi-skill report generation, integrated auto_save_output_required and auto_save_missing_archive compilation-linked golden fixtures, and updated README documentation.
+验证命令: cargo fmt; cargo check --workspace; cargo test -p intelligence-agent-core --lib; cargo test -p intelligence-agent-core --lib agent_skills_golden
+验证结果: fmt passed; workspace check passed cleanly with 0 errors; lib tests passed 275/275; agent_skills_golden passed cleanly.
+未完成 / 风险: Memory receipt (V0c) remains not started.
+下一步: Day 12 should implement Memory receipts (V0c) and final skeleton templates.
 =====================
 ```
 
