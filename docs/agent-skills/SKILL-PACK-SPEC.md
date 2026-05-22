@@ -104,6 +104,34 @@ templates/
 6. One user turn may activate at most three Skills.
 7. V0a must not scan `templates/skills/` as runtime state.
 
+## Eval Fixture V0 Shape
+
+When `skill.json` declares `eval_entry`, it points to a deterministic output evaluation fixture such as `evals/output_cases.json`. The fixture is read only after the Skill is selected, and only lightweight criteria are written to Blackboard as `__hajimi_skill_eval_criteria`.
+
+```json
+{
+  "schema_version": "hajimi.skill.eval.v0",
+  "skill_name": "auto-save",
+  "criteria": {
+    "skill_name": "auto-save",
+    "must_include": ["=== AUTO SAVE", "做了什么", "当前状态", "下一步", "风险"],
+    "must_not_include": ["TODO", "simulation", "mock"],
+    "expected_structure": ["做了什么", "当前状态", "下一步", "风险"],
+    "failure_reason": "missing required auto-save archive block"
+  },
+  "cases": [
+    {
+      "name": "missing_auto_save_block",
+      "output": "已完成本轮修改，但没有附加存档块。",
+      "expected_pass": false,
+      "expected_failure_reason": "missing required marker: === AUTO SAVE"
+    }
+  ]
+}
+```
+
+`must_include` and `must_not_include` are required arrays. `expected_structure` and `failure_reason` are optional. V0a criteria must not embed the full `SKILL.md`; Reflector receives only the concise acceptance markers.
+
 ## Safety Boundary
 
 Agent Skills are workflow instructions, not executable capabilities. V0 explicitly does not provide:

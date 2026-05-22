@@ -195,6 +195,34 @@ pub struct LoadedSkill {
     pub token_estimate: usize,
 }
 
+/// Lightweight output acceptance criteria derived from a Skill eval fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalCriterion {
+    pub skill_name: String,
+    pub must_include: Vec<String>,
+    pub must_not_include: Vec<String>,
+    pub expected_structure: Option<Vec<String>>,
+    pub failure_reason: Option<String>,
+}
+
+/// Deterministic output evaluation case used by golden tests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalCase {
+    pub name: String,
+    pub output: String,
+    pub expected_pass: bool,
+    pub expected_failure_reason: Option<String>,
+}
+
+/// On-disk V0 eval fixture format referenced by `SkillManifest::eval_entry`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalFixture {
+    pub schema_version: String,
+    pub skill_name: String,
+    pub criteria: SkillEvalCriterion,
+    pub cases: Vec<SkillEvalCase>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

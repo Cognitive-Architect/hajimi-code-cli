@@ -396,6 +396,8 @@ mod tests {
         assert!(receipt.is_none());
         let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
         assert!(instructions.is_none());
+        let eval_criteria = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await;
+        assert!(eval_criteria.is_none());
     }
 
     #[tokio::test]
@@ -464,6 +466,13 @@ mod tests {
             .await
             .expect("BB_SKILL_INSTRUCTIONS should be present");
         assert!(instructions.value.contains("=== AUTO SAVE"));
+
+        let eval_criteria = bb
+            .read(crate::skills::BB_SKILL_EVAL_CRITERIA)
+            .await
+            .expect("BB_SKILL_EVAL_CRITERIA should be present");
+        assert!(eval_criteria.value.contains("=== AUTO SAVE"));
+        assert!(eval_criteria.value.contains("must_include"));
     }
 
     #[tokio::test]
@@ -521,6 +530,8 @@ mod tests {
         assert!(receipt.is_none());
         let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
         assert!(instructions.is_none());
+        let eval_criteria = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await;
+        assert!(eval_criteria.is_none());
     }
 
     #[tokio::test]
@@ -570,5 +581,7 @@ mod tests {
         assert!(receipt.is_none());
         let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
         assert!(instructions.is_none());
+        let eval_criteria = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await;
+        assert!(eval_criteria.is_none());
     }
 }

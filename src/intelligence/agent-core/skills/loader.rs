@@ -4,7 +4,7 @@
 use crate::context_window_manager::estimate_tokens;
 use crate::skills::errors::SkillError;
 use crate::skills::registry::SkillRegistry;
-use crate::skills::types::LoadedSkill;
+use crate::skills::types::{LoadedSkill, SkillEvalCriterion, SkillEvalFixture};
 use std::fs;
 
 /// Handles loading individual Skill pack contents on-demand.
@@ -69,6 +69,77 @@ impl SkillLoader {
             instructions,
             token_estimate,
         })
+    }
+
+    /// Loads lightweight output evaluation criteria for a selected Skill.
+    pub fn load_eval_criteria(&self, name: &str) -> Result<Option<SkillEvalCriterion>, SkillError> {
+        let manifest = self
+            .registry
+            .get(name)
+            .ok_or_else(|| SkillError::NotFound(name.to_string()))?
+            .clone();
+
+        let Some(eval_entry) = manifest.eval_entry.as_ref() else {
+            return Ok(None);
+        };
+
+        if eval_entry.is_empty()
+            || eval_entry.starts_with('/')
+            || eval_entry.starts_with('\\')
+            || eval_entry.contains("..")
+            || eval_entry.contains(':')
+        {
+            return Err(SkillError::InvalidPath(format!(
+                "Unsafe eval_entry relative path '{}' detected in manifest '{}'",
+                eval_entry, manifest.name
+            )));
+        }
+
+        let skill_dir = self.registry.root.join(&manifest.name);
+        let eval_path = skill_dir.join(eval_entry);
+
+        if !eval_path.exists() {
+            return Err(SkillError::MissingEntry(format!(
+                "Eval entry '{}' not found in skill directory '{}'",
+                eval_entry,
+                skill_dir.display()
+            )));
+        }
+
+        let canonical_skill_dir = fs::canonicalize(&skill_dir)?;
+        let canonical_eval_path = fs::canonicalize(&eval_path)?;
+        if !canonical_eval_path.starts_with(&canonical_skill_dir) {
+            return Err(SkillError::InvalidPath(format!(
+                "Path traversal detected: eval entry '{}' resolves outside skill directory '{}'",
+                eval_entry,
+                skill_dir.display()
+            )));
+        }
+
+        let fixture_raw = fs::read_to_string(&eval_path)?;
+        let mut fixture: SkillEvalFixture = serde_json::from_str(&fixture_raw).map_err(|e| {
+            SkillError::InvalidManifest(format!(
+                "Failed to parse eval fixture '{}': {}",
+                eval_path.display(),
+                e
+            ))
+        })?;
+
+        if fixture.schema_version != "hajimi.skill.eval.v0" {
+            return Err(SkillError::InvalidManifest(format!(
+                "Invalid eval schema version '{}'. Expected 'hajimi.skill.eval.v0'.",
+                fixture.schema_version
+            )));
+        }
+        if fixture.skill_name != manifest.name {
+            return Err(SkillError::InvalidManifest(format!(
+                "Eval skill_name '{}' does not match manifest '{}'.",
+                fixture.skill_name, manifest.name
+            )));
+        }
+
+        fixture.criteria.skill_name = manifest.name;
+        Ok(Some(fixture.criteria))
     }
 }
 
@@ -163,6 +234,22 @@ mod tests {
                 || loaded.instructions.contains("当前状态")
         );
         assert!(loaded.token_estimate > 0);
+    }
+
+    #[test]
+    fn test_skills_loader_loads_eval_criteria_from_output_cases() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/skills");
+
+        let registry = SkillRegistry::scan(&root).unwrap();
+        let loader = SkillLoader::new(registry);
+        let criteria = loader
+            .load_eval_criteria("auto-save")
+            .unwrap()
+            .expect("auto-save should have output criteria");
+
+        assert_eq!(criteria.skill_name, "auto-save");
+        assert!(criteria.must_include.iter().any(|v| v == "=== AUTO SAVE"));
+        assert!(criteria.must_not_include.iter().any(|v| v == "TODO"));
     }
 
     #[test]

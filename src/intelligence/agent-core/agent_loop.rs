@@ -631,11 +631,20 @@ impl AgentLoop {
 
         let loader = crate::skills::SkillLoader::new(registry.as_ref().clone());
         let mut loaded_skills = Vec::new();
+        let mut eval_criteria = Vec::new();
         let mut instructions_combined = String::new();
 
         for m in &selected_matches {
             match loader.load(&m.name) {
                 Ok(loaded) => {
+                    match loader.load_eval_criteria(&m.name) {
+                        Ok(Some(criteria)) => eval_criteria.push(criteria),
+                        Ok(None) => {}
+                        Err(e) => warn!(
+                            "Failed to load skill eval criteria for '{}': {}. Continuing.",
+                            m.name, e
+                        ),
+                    }
                     instructions_combined.push_str(&loaded.instructions);
                     instructions_combined.push('\n');
                     loaded_skills.push(loaded);
@@ -673,6 +682,18 @@ impl AgentLoop {
                 agent_id,
             )
             .await;
+
+        if !eval_criteria.is_empty() {
+            let eval_criteria_json = serde_json::to_string(&eval_criteria)
+                .map_err(|e| format!("Failed to serialize skill eval criteria: {}", e))?;
+            self.blackboard
+                .write(
+                    crate::skills::BB_SKILL_EVAL_CRITERIA,
+                    &eval_criteria_json,
+                    agent_id,
+                )
+                .await;
+        }
 
         Ok(())
     }

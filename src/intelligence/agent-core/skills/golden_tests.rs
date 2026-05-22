@@ -16,6 +16,10 @@ mod tests {
         include_str!("../../../../tests/agent_skills_golden/router/below_threshold.json");
     const FIXTURE_MAX_ACTIVE_ZERO: &str =
         include_str!("../../../../tests/agent_skills_golden/router/max_active_zero.json");
+    const FIXTURE_AUTO_SAVE_MISSING_BLOCK: &str =
+        include_str!("../../../../tests/agent_skills_golden/failure/auto_save_missing_block.json");
+    const FIXTURE_SKILL_EVAL_CRITERIA: &str =
+        include_str!("../../../../tests/agent_skills_golden/reflector/skill_eval_criteria.json");
 
     #[derive(serde::Deserialize)]
     struct ConfigOverride {
@@ -36,6 +40,15 @@ mod tests {
         config_override: Option<ConfigOverride>,
         expected_selected: Vec<ExpectedMatch>,
         expected_rejected: Vec<ExpectedMatch>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct FailureGoldenCase {
+        description: String,
+        criterion: crate::skills::types::SkillEvalCriterion,
+        output: String,
+        expected_pass: bool,
+        expected_failure_reason: String,
     }
 
     fn run_case(case_json: &str) {
@@ -129,5 +142,25 @@ mod tests {
         run_case(FIXTURE_NO_SKILL);
         run_case(FIXTURE_BELOW_THRESHOLD);
         run_case(FIXTURE_MAX_ACTIVE_ZERO);
+
+        let criteria: crate::skills::types::SkillEvalCriterion =
+            serde_json::from_str(FIXTURE_SKILL_EVAL_CRITERIA)
+                .expect("Failed to parse skill eval criteria golden");
+        assert!(criteria.must_include.iter().any(|v| v == "=== AUTO SAVE"));
+        assert!(criteria.must_not_include.iter().any(|v| v == "TODO"));
+
+        let failure: FailureGoldenCase = serde_json::from_str(FIXTURE_AUTO_SAVE_MISSING_BLOCK)
+            .expect("Failed to parse auto-save failure golden");
+        let result = crate::skills::eval::evaluate_output(&failure.output, &failure.criterion);
+        assert_eq!(
+            result.passed, failure.expected_pass,
+            "{}",
+            failure.description
+        );
+        assert!(result
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains(&failure.expected_failure_reason));
     }
 }

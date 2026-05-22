@@ -1,0 +1,28 @@
+{
+  "description": "auto-save output without the required archive block must fail deterministic criteria evaluation.",
+  "criterion": {
+    "skill_name": "auto-save",
+    "must_include": [
+      "=== AUTO SAVE",
+      "做了什么",
+      "当前状态",
+      "下一步",
+      "风险"
+    ],
+    "must_not_include": [
+      "TODO",
+      "simulation",
+      "mock"
+    ],
+    "expected_structure": [
+      "做了什么",
+      "当前状态",
+      "下一步",
+      "风险"
+    ],
+    "failure_reason": "missing required auto-save archive block"
+  },
+  "output": "本轮完成了修改和测试，但输出中没有标准自动存档块。",
+  "expected_pass": false,
+  "expected_failure_reason": "missing required marker: === AUTO SAVE"
+}
