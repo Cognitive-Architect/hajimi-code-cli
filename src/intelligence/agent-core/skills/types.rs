@@ -126,6 +126,11 @@ impl SkillManifest {
     }
 }
 
+pub const BB_ACTIVE_SKILLS: &str = "__hajimi_active_skills";
+pub const BB_SKILL_ROUTE_RECEIPT: &str = "__hajimi_skill_route_receipt";
+pub const BB_SKILL_INSTRUCTIONS: &str = "__hajimi_skill_instructions";
+pub const BB_SKILL_EVAL_CRITERIA: &str = "__hajimi_skill_eval_criteria";
+
 /// Represents the result of matching a Skill against an input.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillMatch {
@@ -156,6 +161,14 @@ pub struct SkillRouteReceipt {
     pub selected: Vec<SkillMatch>,
     pub rejected: Vec<SkillMatch>,
     pub timestamp: String,
+}
+
+/// The output result of a SkillRouter operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillRouteResult {
+    pub selected: Vec<SkillMatch>,
+    pub rejected: Vec<SkillMatch>,
+    pub receipt: SkillRouteReceipt,
 }
 
 /// Configuration for the SkillRouter.

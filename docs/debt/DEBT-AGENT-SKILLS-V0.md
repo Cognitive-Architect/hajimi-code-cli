@@ -155,6 +155,21 @@ Commit / SHA: docs(agent-skills): correct Day 4 receipt after routing scope clea
 =====================
 ```
 
+## Day 5 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-05/13
+Commit / SHA: feat(intelligence/agent-core): add skill route receipts and golden cases (Branch HEAD at submission: 0640214)
+做了什么: Standardized SkillRouteReceipt and SkillRouteResult structures in types.rs and exported them. Defined standard Blackboard key constants (BB_ACTIVE_SKILLS, BB_SKILL_ROUTE_RECEIPT, BB_SKILL_INSTRUCTIONS, BB_SKILL_EVAL_CRITERIA). Implemented a robust, compilation-linked golden test suite in golden_tests.rs using include_str! to statically compile 4 golden router fixtures (auto_save_trigger, no_skill_needed, below_threshold, max_active_zero) ensuring zero silent test skipping and strict count assertions on the rejected list. Documented test methodology and zero-LLM/network policy in tests/agent_skills_golden/README.md.
+验证命令: cargo check -p intelligence-agent-core; cargo test -p intelligence-agent-core --lib skills_router; cargo test -p intelligence-agent-core --lib agent_skills_golden; cargo test -p intelligence-agent-core --lib prompt_golden; cargo fmt -- --check; cargo clippy -p intelligence-agent-core -- -D warnings -A clippy::field_reassign_with_default -A clippy::manual_contains
+验证结果: skills tests (including router tests and test_agent_skills_golden) passed cleanly with 25/25 green. prompt_golden tests passed cleanly with 6/6 green. fmt and clippy checked cleanly. Workspace pgvector doctest exception remains active due to local PG env.
+未完成 / 风险: B-06 Blackboard integration, B-07 Planner instruction injection, and Reflector criteria remain pending.
+下一步: Implement runtime blackboard integrations in Day 6.
+=====================
+```
+
+
 ## Closure Rules
 
 The total V0 debt can close only after V0a, V0b, and V0c evidence is present. Intermediate updates must use segmented status such as `V0a partial`, `V0b not started`, and `V0c not started`.

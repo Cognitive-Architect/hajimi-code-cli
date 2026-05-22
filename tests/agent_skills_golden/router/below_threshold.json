@@ -1,0 +1,12 @@
+{
+  "description": "Below threshold case with low description match score",
+  "input": "我们要开始推进项目了",
+  "config_override": null,
+  "expected_selected": [],
+  "expected_rejected": [
+    {
+      "name": "auto-save",
+      "reason_contains": "below threshold"
+    }
+  ]
+}

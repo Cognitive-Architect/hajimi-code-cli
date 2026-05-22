@@ -3,18 +3,10 @@
 
 use crate::skills::registry::SkillRegistry;
 use crate::skills::scoring::score_skill;
-use crate::skills::types::{SkillMatch, SkillRouteReceipt, SkillRouterConfig};
+use crate::skills::types::{SkillMatch, SkillRouteReceipt, SkillRouteResult, SkillRouterConfig};
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-
-/// The output result of a SkillRouter operation.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct SkillRouteResult {
-    pub selected: Vec<SkillMatch>,
-    pub rejected: Vec<SkillMatch>,
-    pub receipt: SkillRouteReceipt,
-}
 
 /// Router that evaluates user inputs and schedules active skills.
 pub struct SkillRouter {

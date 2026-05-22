@@ -1,0 +1,12 @@
+{
+  "description": "No skill needed casual conversation case",
+  "input": "你好，今天天气真不错",
+  "config_override": null,
+  "expected_selected": [],
+  "expected_rejected": [
+    {
+      "name": "auto-save",
+      "reason_contains": "below threshold"
+    }
+  ]
+}
