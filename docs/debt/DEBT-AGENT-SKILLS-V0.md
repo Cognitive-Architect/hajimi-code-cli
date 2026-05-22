@@ -16,7 +16,7 @@ Agent Skills V0 is initiated as a staged Intelligence-layer capability. Day 1 es
 
 | Stage | Current status | Planned closure evidence |
 |---|---|---|
-| V0a | V0a partial: Manifest / Registry / Loader / Router / Blackboard completed; Planner injection, Reflector criteria, Output Eval pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
+| V0a | V0a partial: Manifest / Registry / Loader / Router / Blackboard / Planner ContextBlock injection completed; Reflector criteria and Output Eval pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
 | V0b | Planned / not started | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
 | V0c | Planned / not started | Skill execution receipt enters Blackboard and Memory; Interface provides read-only list/validate views only. |
 
@@ -79,8 +79,9 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 
 | ID | Status | Description |
 |---|---|---|
-| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter, Scoring, and Blackboard integration are completed. Planner injection, Reflector criteria, and Output Eval are planned follow-up work. |
+| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter, Scoring, Blackboard integration, and Planner ContextBlock injection are completed. Reflector criteria and Output Eval are planned follow-up work. |
 | AGENT-SKILLS-V0A-002 | active | The description keyword matching in `scoring.rs` utilizes a 2-character sliding window for robust Chinese segment matching. This has a potential risk of false-positive triggers on common 2-character overlaps. |
+| AGENT-SKILLS-V0A-003 | active | Planner active skill injection is implemented only for the `HAJIMI_CONTEXT_WINDOW_ENABLED=true` ContextWindowManager path. If the context window gate is disabled, the legacy simple prompt path does not receive `active_skill_instructions`. |
 | AGENT-SKILLS-V0B-001 | not started | Runtime permissions and tool constraints are not wired. |
 | AGENT-SKILLS-V0C-001 | not started | Skill execution receipts and Memory handoff are not wired. |
 | AGENT-SKILLS-STORE-001 | out of scope | Store, marketplace, URL install, automatic update, and cloud sync are intentionally excluded from V0. |
@@ -180,6 +181,20 @@ Commit / SHA: feat(intelligence/agent-core): integrate Skill Router and Blackboa
 验证结果: agent_loop tests including new test_skills_routing_enabled, test_skills_routing_disabled, test_skills_routing_unset_gate_disabled, and test_skills_routing_enabled_missing_components_degrades passed cleanly (4 passed, 0 failed). Full agent-core test suite passed cleanly (ok. 55 passed). fmt checked cleanly. Clippy checked cleanly. Workspace pgvector doctest exception remains active due to local PG env.
 未完成 / 风险: B-07 Planner instruction injection remains pending (仍留 B-07), and Reflector criteria remain pending.
 下一步: Implement Planner instruction injection in Day 7.
+=====================
+```
+
+## Day 7 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-07/13
+Commit / SHA: prepared on branch codex/agent-skills-v0a; final commit recorded in Git history for this receipt
+做了什么: Added PlannerLlmBridge active skill instruction injection from Blackboard key BB_SKILL_INSTRUCTIONS into the ContextWindowManager block list as active_skill_instructions with priority P1 and truncatable=true. Added two compilation-linked injection golden fixtures for auto-save injected and no-skill paths. Added bridge tests proving Blackboard -> Planner assembly, no-skill equivalence, and P0 preservation when the P1 skill block exceeds budget.
+验证命令: cargo fmt -- --check; cargo check -p intelligence-agent-core; cargo test -p intelligence-agent-core --lib planner_skill_injection; cargo test -p intelligence-agent-core --lib agent_skills_golden; cargo test -p intelligence-agent-core --lib prompt_golden; cargo clippy -p intelligence-agent-core -- -D warnings; rg blade checks
+验证结果: fmt/check passed. planner_skill_injection passed 3/3. agent_skills_golden passed 1/1. prompt_golden passed 6/6. Blade rg checks found BB_SKILL_INSTRUCTIONS, active_skill_instructions, ContextBlock, ContextPriority::P1, estimate_tokens, and README injection docs. cargo clippy -p intelligence-agent-core -- -D warnings remains blocked by pre-existing engine-tool-system manual_contains lint; --no-deps also shows pre-existing long-context lints outside Day7 scope.
+未完成 / 风险: Reflector eval remains B-08 scope. Skill Runtime and Memory receipt remain out of scope. ContextWindow disabled legacy fallback does not inject active_skill_instructions and is tracked as AGENT-SKILLS-V0A-003.
+下一步: B-08 should inject/evaluate skill output criteria in the Reflector path without adding Runtime or Memory receipts.
 =====================
 ```
 

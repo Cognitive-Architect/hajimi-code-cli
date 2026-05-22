@@ -1,0 +1,26 @@
+{
+  "description": "Planner keeps the legacy two P0 message context when no active skill instructions are present.",
+  "skill_instructions": null,
+  "expected": {
+    "message_count": 2,
+    "included_blocks": [
+      {
+        "name": "system_prompt",
+        "priority": "P0",
+        "content_contains": "System:",
+        "truncatable": false
+      },
+      {
+        "name": "user_prompt",
+        "priority": "P0",
+        "content_contains": "Decompose",
+        "truncatable": false
+      }
+    ],
+    "absent_block_names": [
+      "active_skill_instructions",
+      "Active Skill Instructions",
+      "AUTO SAVE"
+    ]
+  }
+}
