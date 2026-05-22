@@ -63,3 +63,12 @@ pub fn is_long_context_enabled() -> bool {
         .map(|v| v != "false" && v != "0")
         .unwrap_or(true)
 }
+
+/// Feature-gate for Agent Skills V0.
+/// Reads from environment variable `HAJIMI_AGENT_SKILLS_V0`.
+/// Defaults to `false` if unset. Only enabled when exactly `true`.
+pub fn is_agent_skills_v0_enabled() -> bool {
+    std::env::var("HAJIMI_AGENT_SKILLS_V0")
+        .map(|v| v == "true")
+        .unwrap_or(false)
+}

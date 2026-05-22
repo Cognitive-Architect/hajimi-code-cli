@@ -119,6 +119,8 @@ pub struct AgentLoop {
     paused: Arc<AtomicBool>,
     pub resource_monitor: Arc<ResourceMonitor>,
     edit_applier: Option<Arc<EditApplier>>,
+    pub skill_registry: Option<Arc<crate::skills::SkillRegistry>>,
+    pub skill_router: Option<Arc<crate::skills::SkillRouter>>,
 }
 
 impl AgentLoop {
@@ -149,6 +151,8 @@ impl AgentLoop {
             paused: Arc::new(AtomicBool::new(false)),
             resource_monitor: Arc::new(ResourceMonitor::new()),
             edit_applier: None,
+            skill_registry: config.skill_registry,
+            skill_router: config.skill_router,
         }
     }
 
@@ -179,6 +183,16 @@ impl AgentLoop {
             None,
             thinking_content,
         );
+        if crate::prompts::is_agent_skills_v0_enabled() {
+            if self.skill_router.is_none() || self.skill_registry.is_none() {
+                warn!("Agent skills V0 is enabled but skill_router or skill_registry is None; continuing without skills");
+            } else if let Err(e) = self.route_and_load_skills(&agent_id, initial_goal).await {
+                warn!(
+                    "route_and_load_skills failed: {}. continuing without skills",
+                    e
+                );
+            }
+        }
         let goal_id = self.plan_initial_goal(initial_goal).await?;
         info!("Initial goal created: {}", goal_id);
         let mut outcome = LoopOutcome::InProgress;
@@ -584,6 +598,83 @@ impl AgentLoop {
             self.reflector.lock().await.reflect(&goal, result).await?
         };
         Ok(reflection)
+    }
+
+    async fn route_and_load_skills(
+        &self,
+        agent_id: &AgentId,
+        initial_goal: &str,
+    ) -> Result<(), String> {
+        if !crate::prompts::is_agent_skills_v0_enabled() {
+            return Ok(());
+        }
+
+        let router = self
+            .skill_router
+            .as_ref()
+            .ok_or_else(|| "skill_router is None".to_string())?;
+        let registry = self
+            .skill_registry
+            .as_ref()
+            .ok_or_else(|| "skill_registry is None".to_string())?;
+
+        let route_result = router.route(initial_goal);
+
+        // Keep at most 3 selected skills
+        let selected_matches: Vec<_> = route_result.selected.iter().take(3).cloned().collect();
+
+        info!(
+            "Skill routing selected {} active skills. Route receipt details: {:?}",
+            selected_matches.len(),
+            route_result.receipt
+        );
+
+        let loader = crate::skills::SkillLoader::new(registry.as_ref().clone());
+        let mut loaded_skills = Vec::new();
+        let mut instructions_combined = String::new();
+
+        for m in &selected_matches {
+            match loader.load(&m.name) {
+                Ok(loaded) => {
+                    instructions_combined.push_str(&loaded.instructions);
+                    instructions_combined.push('\n');
+                    loaded_skills.push(loaded);
+                }
+                Err(e) => {
+                    warn!("Failed to load skill '{}': {}. Continuing.", m.name, e);
+                }
+            }
+        }
+
+        let active_skills_json = serde_json::to_string(&loaded_skills)
+            .map_err(|e| format!("Failed to serialize active skills: {}", e))?;
+        self.blackboard
+            .write(
+                crate::skills::BB_ACTIVE_SKILLS,
+                &active_skills_json,
+                agent_id,
+            )
+            .await;
+
+        let receipt_json = serde_json::to_string(&route_result.receipt)
+            .map_err(|e| format!("Failed to serialize route receipt: {}", e))?;
+        self.blackboard
+            .write(
+                crate::skills::BB_SKILL_ROUTE_RECEIPT,
+                &receipt_json,
+                agent_id,
+            )
+            .await;
+
+        self.blackboard
+            .write(
+                crate::skills::BB_SKILL_INSTRUCTIONS,
+                &instructions_combined,
+                agent_id,
+            )
+            .await;
+
+        Ok(())
     }
 
     async fn store(&self, agent_id: &AgentId) -> ReplResult<()> {
@@ -1065,6 +1156,7 @@ enum DecisionOutcome {
 pub use crate::planner::extract_thinking as extract_thinking_content;
 
 #[cfg(test)]
+#[allow(clippy::useless_vec)]
 mod tests {
     use super::*;
     use crate::agent_loop_builder::AgentLoopConfig;
@@ -1096,6 +1188,8 @@ mod tests {
             sync_gateway: None,
             provider_id: None,
             edit_applier: None,
+            skill_registry: None,
+            skill_router: None,
         })
     }
 

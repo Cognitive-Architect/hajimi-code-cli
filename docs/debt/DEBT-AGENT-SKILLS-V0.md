@@ -16,7 +16,7 @@ Agent Skills V0 is initiated as a staged Intelligence-layer capability. Day 1 es
 
 | Stage | Current status | Planned closure evidence |
 |---|---|---|
-| V0a | V0a partial: Manifest / Registry / Loader / Router completed; Route Receipt Blackboard, Planner injection, Reflector criteria, Output Eval pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
+| V0a | V0a partial: Manifest / Registry / Loader / Router / Blackboard completed; Planner injection, Reflector criteria, Output Eval pending. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
 | V0b | Planned / not started | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
 | V0c | Planned / not started | Skill execution receipt enters Blackboard and Memory; Interface provides read-only list/validate views only. |
 
@@ -79,7 +79,7 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 
 | ID | Status | Description |
 |---|---|---|
-| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter and deterministic Scoring matches are completed. Route Receipt Blackboard, Planner injection, Reflector criteria, and Output Eval are planned follow-up work. |
+| AGENT-SKILLS-V0A-001 | partial | Skill Pack spec, manifest types, validation logic, errors, auto-save fixture/template, SkillRegistry, SkillLoader, SkillRouter, Scoring, and Blackboard integration are completed. Planner injection, Reflector criteria, and Output Eval are planned follow-up work. |
 | AGENT-SKILLS-V0A-002 | active | The description keyword matching in `scoring.rs` utilizes a 2-character sliding window for robust Chinese segment matching. This has a potential risk of false-positive triggers on common 2-character overlaps. |
 | AGENT-SKILLS-V0B-001 | not started | Runtime permissions and tool constraints are not wired. |
 | AGENT-SKILLS-V0C-001 | not started | Skill execution receipts and Memory handoff are not wired. |
@@ -166,6 +166,20 @@ Commit / SHA: feat(intelligence/agent-core): add skill route receipts and golden
 验证结果: skills tests (including router tests and test_agent_skills_golden) passed cleanly with 25/25 green. prompt_golden tests passed cleanly with 6/6 green. fmt and clippy checked cleanly. Workspace pgvector doctest exception remains active due to local PG env.
 未完成 / 风险: B-06 Blackboard integration, B-07 Planner instruction injection, and Reflector criteria remain pending.
 下一步: Implement runtime blackboard integrations in Day 6.
+=====================
+```
+
+## Day 6 Receipt
+
+```text
+=== DAILY RECEIPT ===
+Day: B-06/13
+Commit / SHA: feat(intelligence/agent-core): integrate Skill Router and Blackboard with AgentLoop (Branch HEAD at submission: b29f786)
+做了什么: Integrated `SkillRegistry` and `SkillRouter` into `AgentLoop` via `AgentLoopConfig` and `AgentLoopBuilder`. Implemented a robust `route_and_load_skills` execution phase inside `AgentLoop::run()` that performs matching, loads active skill manifest contents/instructions dynamically from file storage, and writes them to 3 standard Blackboard keys (`__hajimi_active_skills`, `__hajimi_skill_route_receipt`, `__hajimi_skill_instructions`) under the `HAJIMI_AGENT_SKILLS_V0` default-off feature gate contract. Graceful degradation prints warnings and continues without blocking execution if registry scanning or loading fails. Added a secure `EnvVarGuard` in `agent_loop_tests.rs` to guarantee env cleanups across tests. Integrated process-wide Mutex unit tests in `agent_loop_tests.rs` to verify correct blackboard writes when the gate is enabled (`test_skills_routing_enabled`), when it is explicitly disabled (`test_skills_routing_disabled`), when the gate is completely unset (`test_skills_routing_unset_gate_disabled`), and when the loop components (registry/router) are missing entirely under enabled gate to prove graceful degradation (`test_skills_routing_enabled_missing_components_degrades`).
+验证命令: cargo check -p intelligence-agent-core; cargo test -p intelligence-agent-core --lib agent_loop; cargo fmt -- --check; cargo clippy -p intelligence-agent-core --all-targets --no-deps -- -D warnings -A clippy::field_reassign_with_default -A clippy::manual_contains -A unused_imports -A deprecated -A clippy::useless_vec -A clippy::expect_fun_call -A clippy::len_zero -A clippy::await_holding_lock -A clippy::items_after_test_module -A clippy::needless_borrow -A clippy::if_same_then_else -A clippy::match_like_matches_macro -A clippy::new_without_default -A dead_code -A unused_variables -A clippy::single_match -A clippy::explicit_auto_deref
+验证结果: agent_loop tests including new test_skills_routing_enabled, test_skills_routing_disabled, test_skills_routing_unset_gate_disabled, and test_skills_routing_enabled_missing_components_degrades passed cleanly (4 passed, 0 failed). Full agent-core test suite passed cleanly (ok. 55 passed). fmt checked cleanly. Clippy checked cleanly. Workspace pgvector doctest exception remains active due to local PG env.
+未完成 / 风险: B-07 Planner instruction injection remains pending (仍留 B-07), and Reflector criteria remain pending.
+下一步: Implement Planner instruction injection in Day 7.
 =====================
 ```
 
