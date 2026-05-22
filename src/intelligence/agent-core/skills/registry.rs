@@ -39,9 +39,24 @@ impl SkillRegistry {
             if path.is_dir() {
                 let skill_json_path = path.join("skill.json");
                 if skill_json_path.exists() && skill_json_path.is_file() {
+                    let dir_name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+                        SkillError::InvalidPath(format!(
+                            "Invalid directory name for path '{}'",
+                            path.display()
+                        ))
+                    })?;
+
                     let content = fs::read_to_string(&skill_json_path)?;
                     let manifest: SkillManifest = serde_json::from_str(&content)?;
                     manifest.validate()?;
+
+                    if dir_name != manifest.name {
+                        return Err(SkillError::InvalidManifest(format!(
+                            "Directory name '{}' does not match manifest name '{}'",
+                            dir_name, manifest.name
+                        )));
+                    }
+
                     manifests.insert(manifest.name.clone(), manifest);
                 }
             }
@@ -147,5 +162,46 @@ mod tests {
 
         let res = SkillRegistry::scan(dir.path());
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_skills_registry_directory_name_mismatch_fails() {
+        let dir = tempdir().unwrap();
+        // folder is "foo"
+        let skill_dir = dir.path().join("foo");
+        fs::create_dir(&skill_dir).unwrap();
+
+        // manifest name is "bar"
+        let json = r#"{
+            "schema_version": "hajimi.skill.v0",
+            "version": "0.1.0",
+            "name": "bar",
+            "title": "自动存档",
+            "description": "当任务推进时，生成存档。",
+            "enabled": true,
+            "exclusive_group": "handoff",
+            "triggers": ["存档"],
+            "risk_level": "low",
+            "entry": "SKILL.md",
+            "permissions": {
+                "read_workspace": true,
+                "write_workspace": false,
+                "run_shell": false,
+                "network": false,
+                "delete": false
+            },
+            "allowed_tools": []
+        }"#;
+
+        let mut file = File::create(skill_dir.join("skill.json")).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+
+        let res = SkillRegistry::scan(dir.path());
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(err, SkillError::InvalidManifest(_)));
+        assert!(err
+            .to_string()
+            .contains("Directory name 'foo' does not match manifest name 'bar'"));
     }
 }

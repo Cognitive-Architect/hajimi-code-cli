@@ -3,7 +3,7 @@
 
 use crate::context_window_manager::estimate_tokens;
 use crate::skills::errors::SkillError;
-use crate::skills::skills_registry::SkillRegistry;
+use crate::skills::registry::SkillRegistry;
 use crate::skills::types::LoadedSkill;
 use std::fs;
 
@@ -25,6 +25,19 @@ impl SkillLoader {
             .get(name)
             .ok_or_else(|| SkillError::NotFound(name.to_string()))?
             .clone();
+
+        // Safety verification of the entry relative path
+        if manifest.entry.is_empty()
+            || manifest.entry.starts_with('/')
+            || manifest.entry.starts_with('\\')
+            || manifest.entry.contains("..")
+            || manifest.entry.contains(':')
+        {
+            return Err(SkillError::InvalidPath(format!(
+                "Unsafe entry relative path '{}' detected in manifest '{}'",
+                manifest.entry, manifest.name
+            )));
+        }
 
         let skill_dir = self.registry.root.join(&manifest.name);
         let entry_path = skill_dir.join(&manifest.entry);
@@ -67,6 +80,7 @@ mod tests {
     use crate::skills::types::SkillRiskLevel;
     use std::fs::File;
     use std::io::Write;
+    use std::path::Path;
     use tempfile::tempdir;
 
     fn build_test_manifest(name: &str, entry: &str) -> SkillManifest {
@@ -129,5 +143,80 @@ mod tests {
         let res = loader.load("test-skill");
 
         assert!(matches!(res, Err(SkillError::MissingEntry(_))));
+    }
+
+    #[test]
+    fn test_skills_loader_real_fixture_e2e() {
+        // Construct deterministic workspace absolute path using CARGO_MANIFEST_DIR
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/skills");
+
+        let registry = SkillRegistry::scan(&root).unwrap();
+        assert!(registry.get("auto-save").is_some());
+
+        let loader = SkillLoader::new(registry);
+        let loaded = loader.load("auto-save").unwrap();
+
+        // Verify loaded instructions match specifications
+        assert!(
+            loaded.instructions.contains("AUTO SAVE")
+                || loaded.instructions.contains("做了什么")
+                || loaded.instructions.contains("当前状态")
+        );
+        assert!(loaded.token_estimate > 0);
+    }
+
+    #[test]
+    fn test_skills_loader_traversal_escape_denied() {
+        let dir = tempdir().unwrap();
+        let skill_dir = dir.path().join("test-skill");
+        fs::create_dir(&skill_dir).unwrap();
+
+        // 1. entry = "../SKILL.md"
+        let manifest = build_test_manifest("test-skill", "../SKILL.md");
+        let mut registry = SkillRegistry {
+            root: dir.path().to_path_buf(),
+            manifests: std::collections::HashMap::new(),
+        };
+        registry.manifests.insert(manifest.name.clone(), manifest);
+
+        let loader = SkillLoader::new(registry);
+        let res = loader.load("test-skill");
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), SkillError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn test_skills_loader_absolute_paths_denied() {
+        let dir = tempdir().unwrap();
+        let skill_dir = dir.path().join("test-skill");
+        fs::create_dir(&skill_dir).unwrap();
+
+        // 1. starts_with('/')
+        let manifest1 = build_test_manifest("test-skill", "/tmp/SKILL.md");
+        let mut registry1 = SkillRegistry {
+            root: dir.path().to_path_buf(),
+            manifests: std::collections::HashMap::new(),
+        };
+        registry1
+            .manifests
+            .insert(manifest1.name.clone(), manifest1);
+        let loader1 = SkillLoader::new(registry1);
+        let res1 = loader1.load("test-skill");
+        assert!(res1.is_err());
+        assert!(matches!(res1.unwrap_err(), SkillError::InvalidPath(_)));
+
+        // 2. contains(':')
+        let manifest2 = build_test_manifest("test-skill", "C:\\SKILL.md");
+        let mut registry2 = SkillRegistry {
+            root: dir.path().to_path_buf(),
+            manifests: std::collections::HashMap::new(),
+        };
+        registry2
+            .manifests
+            .insert(manifest2.name.clone(), manifest2);
+        let loader2 = SkillLoader::new(registry2);
+        let res2 = loader2.load("test-skill");
+        assert!(res2.is_err());
+        assert!(matches!(res2.unwrap_err(), SkillError::InvalidPath(_)));
     }
 }
