@@ -117,11 +117,11 @@ Commit / SHA: base e8226da202dff8284af115e9b5d786a825b24053; local changes not c
 ```text
 === DAILY RECEIPT ===
 Day: B-02/13
-Commit / SHA: feat(intelligence/agent-core): add skill manifest types and auto-save fixture
-做了什么: Defined SkillManifest, SkillPermissions, SkillRiskLevel, LoadedSkill and SkillError with full JSON deserialization and path/kebab-case name validations. Created first test fixture auto-save in tests/fixtures/skills/auto-save and templates in templates/skills/auto-save.
+Commit / SHA: feat(intelligence/agent-core): refactor skill manifest validations and add real fixture tests (SHA: 72a55e6)
+做了什么: Defined SkillManifest, SkillPermissions, SkillRiskLevel, LoadedSkill and SkillError with full JSON deserialization. Created first test fixture auto-save in tests/fixtures/skills/auto-save and templates in templates/skills/auto-save. Refactored path and kebab-case validation helpers, added test_real_fixture_deserialization, test_invalid_exclusive_group, and test_path_with_drive_letter_denied unit tests.
 验证命令: cargo fmt -- --check; cargo clippy -p intelligence-agent-core -- -D warnings; cargo test -p intelligence-agent-core --lib skills::types::tests; cargo check --workspace
-验证结果: Formatting, clippy, and unit tests all passed perfectly. Entire workspace compiled successfully.
-未完成 / 风险: Day 3 tasks (Registry, Loader scanning of workspace skills) are pending. No runtime scans or execution wired.
+验证结果: Formatting, clippy, and all 9 unit tests passed perfectly. Workspace compiles cleanly.
+未完成 / 风险: Day 3 tasks (Registry, Loader scanning of workspace skills) are pending. Registry, Loader, and Router are still out of scope for Day 2.
 下一步: Implement SkillRegistry and SkillLoader to scan and load local skill packs in the workspace.
 =====================
 ```
