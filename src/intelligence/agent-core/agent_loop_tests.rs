@@ -34,6 +34,8 @@ mod tests {
             sync_gateway: None,
             provider_id: None,
             edit_applier: None,
+            skill_registry: None,
+            skill_router: None,
         })
     }
 
@@ -302,5 +304,271 @@ mod tests {
             r2.unwrap().unwrap(),
             LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
         ));
+    }
+
+    static ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original_value: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn new(key: &'static str) -> Self {
+            let original_value = std::env::var(key).ok();
+            Self {
+                key,
+                original_value,
+            }
+        }
+
+        fn set(&self, value: &str) {
+            std::env::set_var(self.key, value);
+        }
+
+        fn unset(&self) {
+            std::env::remove_var(self.key);
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(ref val) = self.original_value {
+                std::env::set_var(self.key, val);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_skills_routing_disabled() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
+        env_guard.set("false");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("skills_disabled_test")));
+        let base_dir = std::env::current_dir().unwrap();
+        let mut root = base_dir.join("tests/fixtures/skills");
+        if !root.exists() {
+            root = base_dir.join("../../../tests/fixtures/skills");
+        }
+        let registry = Arc::new(crate::skills::SkillRegistry::scan(&root).unwrap());
+        let router = Arc::new(crate::skills::SkillRouter::new(
+            registry.clone(),
+            Default::default(),
+        ));
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_skill_registry(Some(registry))
+            .with_skill_router(Some(router))
+            .build()
+            .unwrap();
+
+        let outcome = agent_loop
+            .run("agent1".to_string(), "自动存档 准备下一步并分析风险")
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        ));
+
+        // When disabled, no skill keys should be written to the blackboard
+        let bb = agent_loop.blackboard();
+        let active = bb.read(crate::skills::BB_ACTIVE_SKILLS).await;
+        assert!(active.is_none());
+        let receipt = bb.read(crate::skills::BB_SKILL_ROUTE_RECEIPT).await;
+        assert!(receipt.is_none());
+        let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
+        assert!(instructions.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_skills_routing_enabled() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
+        env_guard.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("skills_enabled_test")));
+        let base_dir = std::env::current_dir().unwrap();
+        let mut root = base_dir.join("tests/fixtures/skills");
+        if !root.exists() {
+            root = base_dir.join("../../../tests/fixtures/skills");
+        }
+        let registry = Arc::new(crate::skills::SkillRegistry::scan(&root).unwrap());
+        let router = Arc::new(crate::skills::SkillRouter::new(
+            registry.clone(),
+            Default::default(),
+        ));
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_skill_registry(Some(registry))
+            .with_skill_router(Some(router))
+            .build()
+            .unwrap();
+
+        let outcome = agent_loop
+            .run("agent1".to_string(), "自动存档 准备下一步并分析风险")
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        ));
+
+        // When enabled, the skill keys must be correctly routed and loaded to the blackboard
+        let bb = agent_loop.blackboard();
+        let active = bb
+            .read(crate::skills::BB_ACTIVE_SKILLS)
+            .await
+            .expect("BB_ACTIVE_SKILLS should be present");
+        assert!(active.value.contains("auto-save"));
+
+        let receipt = bb
+            .read(crate::skills::BB_SKILL_ROUTE_RECEIPT)
+            .await
+            .expect("BB_SKILL_ROUTE_RECEIPT should be present");
+        assert!(receipt.value.contains("auto-save"));
+
+        let instructions = bb
+            .read(crate::skills::BB_SKILL_INSTRUCTIONS)
+            .await
+            .expect("BB_SKILL_INSTRUCTIONS should be present");
+        assert!(instructions.value.contains("=== AUTO SAVE"));
+    }
+
+    #[tokio::test]
+    async fn test_skills_routing_unset_gate_disabled() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
+        env_guard.unset();
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("skills_unset_test")));
+        let base_dir = std::env::current_dir().unwrap();
+        let mut root = base_dir.join("tests/fixtures/skills");
+        if !root.exists() {
+            root = base_dir.join("../../../tests/fixtures/skills");
+        }
+        let registry = Arc::new(crate::skills::SkillRegistry::scan(&root).unwrap());
+        let router = Arc::new(crate::skills::SkillRouter::new(
+            registry.clone(),
+            Default::default(),
+        ));
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_skill_registry(Some(registry))
+            .with_skill_router(Some(router))
+            .build()
+            .unwrap();
+
+        let outcome = agent_loop
+            .run("agent1".to_string(), "自动存档 准备下一步并分析风险")
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        ));
+
+        // When unset, no skill keys should be written to the blackboard
+        let bb = agent_loop.blackboard();
+        let active = bb.read(crate::skills::BB_ACTIVE_SKILLS).await;
+        assert!(active.is_none());
+        let receipt = bb.read(crate::skills::BB_SKILL_ROUTE_RECEIPT).await;
+        assert!(receipt.is_none());
+        let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
+        assert!(instructions.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_skills_routing_enabled_missing_components_degrades() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
+        env_guard.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("skills_degrade_test")));
+
+        // Construct AgentLoop without skill registry and router (both are None)
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_skill_registry(None)
+            .with_skill_router(None)
+            .build()
+            .unwrap();
+
+        // Running the loop should not error, but degrade gracefully
+        let outcome = agent_loop
+            .run("agent1".to_string(), "自动存档 准备下一步并分析风险")
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        ));
+
+        // Assert no blackboard keys are populated
+        let bb = agent_loop.blackboard();
+        let active = bb.read(crate::skills::BB_ACTIVE_SKILLS).await;
+        assert!(active.is_none());
+        let receipt = bb.read(crate::skills::BB_SKILL_ROUTE_RECEIPT).await;
+        assert!(receipt.is_none());
+        let instructions = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await;
+        assert!(instructions.is_none());
     }
 }

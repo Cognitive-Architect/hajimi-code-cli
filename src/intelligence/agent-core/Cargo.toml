@@ -25,3 +25,6 @@ engine-llm-core = { path = "../../engine/llm-core" }
 [lib]
 name = "agent_core"
 path = "lib.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

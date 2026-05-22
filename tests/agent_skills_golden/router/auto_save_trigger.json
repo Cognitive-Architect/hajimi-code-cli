@@ -1,0 +1,12 @@
+{
+  "description": "Auto-save trigger case matching trigger keywords",
+  "input": "请帮我自动存档，记录当前项目状态",
+  "config_override": null,
+  "expected_selected": [
+    {
+      "name": "auto-save",
+      "reason_contains": "triggers matched"
+    }
+  ],
+  "expected_rejected": []
+}

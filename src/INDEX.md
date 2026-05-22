@@ -35,7 +35,9 @@ src/
 │
 ├── intelligence/        # 智能层 - 依赖foundation+engine（7模块）
 │   ├── agent-core/      # 自主Agent系统（7步循环/Swarm/可插拔治理/LLM桥接）⭐
-│   │   └── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
+│   │   ├── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
+│   │   ├── prompts/     #   Prompt resources + feature gates, including default-off Agent Skills V0 gate
+│   │   └── skills/      #   本地技能包协议 + 注册中心 + 路由与评分（V0a）⭐
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐
@@ -248,6 +250,10 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `edit_applier.rs` | EditApplier: hunk-level diff, conflict detection, atomic apply, true undo (unique `.bak`), size/hunk/concurrency guards, ResourceMonitor integration (Phase 4 Day 1+6) | ~564 |
 | `workflow_orchestrator.rs` | Test→Fix→Commit closed loop, SmartCommit, PR description, auto-checkpoint (Phase 4 Day 4) | ~220 |
 | `lsp_integration.rs` | `LspContextProvider` / `ASTContextProvider`, `enhance_retrieve_with_ast()` (Phase 4 Day 2) | ~120 |
+| `prompts/mod.rs` | Prompt resources and feature gates; `is_agent_skills_v0_enabled()` reads `HAJIMI_AGENT_SKILLS_V0` and defaults to false | ~70 |
+
+<!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
+**Agent Skills V0 status**: `DEBT-AGENT-SKILLS-V0` is initiated. Day 1 adds only `docs/agent-skills/SKILL-PACK-SPEC.md`, debt/index documentation, and the default-off `HAJIMI_AGENT_SKILLS_V0` gate. V0a / V0b / V0c remain planned follow-up work; no `src/intelligence/agent-core/skills/` Registry, Router, Runtime, AgentLoop wiring, or `.hajimi/skills` scan exists in this Day 1 baseline.
 
 **新增特性 (Phase 1)**:
 - **SyncMemoryGateway**: `memory/src/sync_gateway.rs` — 跨层记忆检索与持久化抽象（Session→Auto→Dream→Graph→Cloud）
@@ -575,6 +581,7 @@ interface/mcp-server/
 1. `intelligence/chimera/chimera-repl/src/repl.rs` - REPL 引擎
 2. `intelligence/memory/src/session.rs` - Session 记忆
 3. `intelligence/knowledge/src/adr_index.rs` - ADR索引（185行）⭐
+4. `intelligence/agent-core/skills/router.rs` - 智能技能路由与评分匹配机制 ⭐
 
 **4. Interface 层（用户界面）**:
 
@@ -607,11 +614,14 @@ interface/mcp-server/
 | **Agent Core E2E** | `src/intelligence/agent-core/tests/agent_core_e2e.rs` |
 | **Agent Core 治理** | `src/intelligence/agent-core/governance.rs` |
 | **Agent Core 循环** | `src/intelligence/agent-core/agent_loop.rs` |
+| **Agent Skills V0 Gate** | `src/intelligence/agent-core/prompts/mod.rs` (`is_agent_skills_v0_enabled`) |
+| **Agent Skills V0 Spec** | `docs/agent-skills/SKILL-PACK-SPEC.md` |
 | **SyncMemoryGateway** | `src/intelligence/memory/src/sync_gateway.rs` |
 
 | **zstd-sys 补丁** | `src/patches/zstd-sys/` |
 | **技术约束文档** | `docs/debt/DEBT-P0-001.md` |
 | **技术约束文档** | `docs/debt/SHELL-FEATURE-DEBT-002.md` |
+| **Agent Skills V0 债务** | `docs/debt/DEBT-AGENT-SKILLS-V0.md` |
 | **历史约束记录** | `docs/debt/agent-core-debt-history.md` |
 | **活跃约束声明** | `docs/debt/DEBT-ACTIVE-DECLARATION.md` |
 | **UI交互约束声明** | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` |

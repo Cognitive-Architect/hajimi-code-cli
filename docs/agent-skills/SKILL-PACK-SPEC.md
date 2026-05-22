@@ -1,0 +1,143 @@
+# Hajimi Agent Skills V0 Skill Pack Specification
+
+<!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
+
+> Status: Initiated / V0a in progress
+> Debt record: `docs/debt/DEBT-AGENT-SKILLS-V0.md`
+> Feature gate: `HAJIMI_AGENT_SKILLS_V0=true`
+
+## Purpose
+
+Agent Skills V0 defines a local, reusable workflow layer for Hajimi Agent Core. A Skill describes when a reusable workflow should apply, what instructions should be loaded, and how the output can be checked. Skills do not replace Tools, MCP, Memory, or Governance.
+
+V0 is split into three stages:
+
+| Stage | Status | Scope |
+|---|---|---|
+| V0a | Initiated / planned | Local Skill Pack schema, Registry, Loader, Router, Planner injection, and `auto-save` output evaluation. |
+| V0b | Planned | Runtime tool constraints and Governance mapping. |
+| V0c | Planned | Skill execution receipts, Memory handoff, and read-only Interface management. |
+
+## Directory Model
+
+Runtime skills live in the workspace and are scanned only when the V0 gate is enabled:
+
+```text
+.hajimi/
+└── skills/
+    └── auto-save/
+        ├── skill.json
+        ├── SKILL.md
+        ├── references/
+        ├── scripts/
+        └── evals/
+```
+
+Deterministic tests must not write to runtime `.hajimi/skills`. Test fixtures live under `tests/fixtures/skills/`:
+
+```text
+tests/
+└── fixtures/
+    └── skills/
+        └── auto-save/
+            ├── skill.json
+            ├── SKILL.md
+            └── evals/
+```
+
+Optional built-in examples may live under `templates/skills/`, but they are templates only. They are copied or activated only by an explicit future action and are not scanned as runtime state in V0a.
+
+```text
+templates/
+└── skills/
+    └── auto-save/
+        ├── skill.json
+        ├── SKILL.md
+        └── evals/
+```
+
+## Skill Pack Files
+
+| File or directory | V0 requirement |
+|---|---|
+| `skill.json` | Required manifest. Registry loads this metadata first. |
+| `SKILL.md` | Required instruction entry loaded only after Router selects the Skill. |
+| `references/` | Optional supporting material. V0a treats it as reference-only and loads it only when a later task explicitly implements selective reference loading. |
+| `evals/` | Optional route or output evaluation cases. V0a uses this for deterministic checks. |
+| `scripts/` | Reference-only in V0a. Scripts are never executed directly by the Skill layer. |
+
+## Manifest V0 Shape
+
+```json
+{
+  "schema_version": "hajimi.skill.v0",
+  "version": "0.1.0",
+  "name": "auto-save",
+  "title": "自动存档",
+  "description": "当任务推进、状态变化、出现风险或即将停止时，生成标准 AUTO SAVE 存档块。",
+  "enabled": true,
+  "category": "handoff",
+  "exclusive_group": "handoff-output",
+  "triggers": ["自动存档", "存档", "项目状态", "下一步", "handoff", "风险"],
+  "risk_level": "low",
+  "entry": "SKILL.md",
+  "eval_entry": "evals/output_cases.json",
+  "context_budget_tokens": 1200,
+  "allowed_tools": [],
+  "permissions": {
+    "read_workspace": true,
+    "write_workspace": false,
+    "run_shell": false,
+    "network": false,
+    "delete": false
+  }
+}
+```
+
+## Loading Rules
+
+1. `HAJIMI_AGENT_SKILLS_V0` must be exactly `true` before any V0a routing or injection path can run.
+2. Registry keeps only `skill.json` metadata resident.
+3. Loader reads `SKILL.md` only after Router selects a Skill.
+4. `entry` and `eval_entry` must be relative paths inside the Skill directory.
+5. `..` path segments and absolute paths are invalid.
+6. One user turn may activate at most three Skills.
+7. V0a must not scan `templates/skills/` as runtime state.
+
+## Safety Boundary
+
+Agent Skills are workflow instructions, not executable capabilities. V0 explicitly does not provide:
+
+- Skill Store or marketplace
+- URL installation
+- automatic update
+- cloud sync
+- Runtime direct shell execution
+- Runtime direct network access
+- direct file deletion
+- direct bypass of ToolRegistry, ToolPermissions, or Governance
+- full-context injection of every installed Skill
+
+V0b may translate Skill permissions into stricter tool constraints, but actual tool execution must still go through the existing Tool System and Governance approval path.
+
+## Initial Built-In Skill Target
+
+`auto-save` is the first V0a validation Skill. Its expected behavior is to require a final archive block containing:
+
+- `=== AUTO SAVE`
+- `做了什么`
+- `当前状态`
+- `下一步`
+- `风险`
+
+`plain-language` and `project-handoff` are planned for later skeleton/template work and must not become default active runtime Skills in Day 1.
+
+## Documentation Markers
+
+All V0 documents and indexes use this marker while the work is active:
+
+```text
+AGENT-SKILLS-V0-2026-05-19
+DEBT-AGENT-SKILLS-V0
+SKILL-PACK-SPEC
+```

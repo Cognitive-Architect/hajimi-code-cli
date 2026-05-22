@@ -1,0 +1,17 @@
+[
+  {
+    "input": "现在任务推进得差不多了，帮我存档一下，记录下一步",
+    "should_trigger": true,
+    "matched_triggers": ["存档", "下一步"]
+  },
+  {
+    "input": "检查当前项目状态并进行 handoff 移交",
+    "should_trigger": true,
+    "matched_triggers": ["项目状态", "handoff"]
+  },
+  {
+    "input": "告诉我什么是 Rust 语言中的生命周期",
+    "should_trigger": false,
+    "matched_triggers": []
+  }
+]

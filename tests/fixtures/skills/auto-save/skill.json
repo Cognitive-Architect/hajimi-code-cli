@@ -1,0 +1,23 @@
+{
+  "schema_version": "hajimi.skill.v0",
+  "version": "0.1.0",
+  "name": "auto-save",
+  "title": "自动存档",
+  "description": "当任务推进、状态变化、出现风险、等待用户输入或即将停止时，生成标准 AUTO SAVE 存档块。",
+  "enabled": true,
+  "category": "handoff",
+  "exclusive_group": "handoff-output",
+  "triggers": ["自动存档", "存档", "项目状态", "下一步", "handoff", "风险"],
+  "risk_level": "low",
+  "entry": "SKILL.md",
+  "eval_entry": "evals/route_cases.json",
+  "context_budget_tokens": 1200,
+  "allowed_tools": [],
+  "permissions": {
+    "read_workspace": true,
+    "write_workspace": false,
+    "run_shell": false,
+    "network": false,
+    "delete": false
+  }
+}
