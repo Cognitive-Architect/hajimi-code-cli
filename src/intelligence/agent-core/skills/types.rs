@@ -45,6 +45,36 @@ pub struct SkillManifest {
     pub permissions: SkillPermissions,
 }
 
+/// Validates that a string is a valid lowercase kebab-case format.
+/// Must be non-empty, and consist of lowercase ASCII alphanumeric characters and hyphens only.
+fn validate_kebab_case(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Validates that a path is relative, non-empty, and safe (no leading slashes, path traversal, or drive letters).
+fn is_safe_relative_skill_path(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    if s.starts_with('/') || s.starts_with('\\') {
+        return false;
+    }
+    if Path::new(s).is_absolute() {
+        return false;
+    }
+    if s.contains("..") {
+        return false;
+    }
+    if s.contains(':') {
+        return false;
+    }
+    true
+}
+
 impl SkillManifest {
     /// Validates the structure and constraints of the loaded manifest.
     pub fn validate(&self) -> Result<(), SkillError> {
@@ -55,36 +85,25 @@ impl SkillManifest {
             )));
         }
 
-        if self.name.is_empty() {
-            return Err(SkillError::InvalidManifest(
-                "Name cannot be empty".to_string(),
-            ));
+        if !validate_kebab_case(&self.name) {
+            return Err(SkillError::InvalidManifest(format!(
+                "Invalid skill name '{}'. Must be lowercase kebab-case.",
+                self.name
+            )));
         }
 
-        // Validate kebab-case name: lowercase ASCII alphanumeric and hyphens only
-        for c in self.name.chars() {
-            if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' {
+        if let Some(ref group) = self.exclusive_group {
+            if !validate_kebab_case(group) {
                 return Err(SkillError::InvalidManifest(format!(
-                    "Invalid character '{}' in skill name '{}'. Must be lowercase kebab-case.",
-                    c, self.name
+                    "Invalid exclusive_group '{}'. Must be lowercase kebab-case and non-empty.",
+                    group
                 )));
             }
         }
 
-        if self.entry.is_empty() {
-            return Err(SkillError::MissingEntry(
-                "Entry cannot be empty".to_string(),
-            ));
-        }
-
-        let entry_path = Path::new(&self.entry);
-        if entry_path.is_absolute()
-            || self.entry.starts_with('/')
-            || self.entry.starts_with('\\')
-            || self.entry.contains("..")
-        {
+        if !is_safe_relative_skill_path(&self.entry) {
             return Err(SkillError::InvalidPath(format!(
-                "Invalid entry path '{}'. Must be a relative path without '..'.",
+                "Invalid entry path '{}'. Must be a safe relative path without '..', leading slashes, or drive letters.",
                 self.entry
             )));
         }
@@ -95,14 +114,9 @@ impl SkillManifest {
                     "eval_entry cannot be empty when specified".to_string(),
                 ));
             }
-            let eval_path = Path::new(eval);
-            if eval_path.is_absolute()
-                || eval.starts_with('/')
-                || eval.starts_with('\\')
-                || eval.contains("..")
-            {
+            if !is_safe_relative_skill_path(eval) {
                 return Err(SkillError::InvalidPath(format!(
-                    "Invalid eval_entry path '{}'. Must be a relative path without '..'.",
+                    "Invalid eval_entry path '{}'. Must be a safe relative path without '..', leading slashes, or drive letters.",
                     eval
                 )));
             }
@@ -155,6 +169,14 @@ mod tests {
         assert_eq!(manifest.risk_level, SkillRiskLevel::Low);
         assert!(manifest.permissions.read_workspace);
         assert!(!manifest.permissions.delete);
+        assert!(manifest.validate().is_ok());
+    }
+
+    #[test]
+    fn test_real_fixture_deserialization() {
+        let json = include_str!("../../../../tests/fixtures/skills/auto-save/skill.json");
+        let manifest: SkillManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.name, "auto-save");
         assert!(manifest.validate().is_ok());
     }
 
@@ -234,6 +256,33 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_exclusive_group() {
+        let json = r#"{
+            "schema_version": "hajimi.skill.v0",
+            "version": "0.1.0",
+            "name": "auto-save",
+            "title": "自动存档",
+            "description": "描述",
+            "enabled": true,
+            "exclusive_group": "Handoff_Output",
+            "triggers": [],
+            "risk_level": "low",
+            "entry": "SKILL.md",
+            "permissions": {
+                "read_workspace": true,
+                "write_workspace": false,
+                "run_shell": false,
+                "network": false,
+                "delete": false
+            },
+            "allowed_tools": []
+        }"#;
+
+        let manifest: SkillManifest = serde_json::from_str(json).unwrap();
+        assert!(manifest.validate().is_err());
+    }
+
+    #[test]
     fn test_absolute_entry_path_denied() {
         let manifest = SkillManifest {
             schema_version: "hajimi.skill.v0".to_string(),
@@ -270,6 +319,29 @@ mod tests {
             triggers: vec![],
             risk_level: SkillRiskLevel::Low,
             entry: "../SKILL.md".to_string(),
+            eval_entry: None,
+            context_budget_tokens: None,
+            allowed_tools: vec![],
+            permissions: SkillPermissions::default(),
+        };
+
+        assert!(manifest.validate().is_err());
+    }
+
+    #[test]
+    fn test_path_with_drive_letter_denied() {
+        let manifest = SkillManifest {
+            schema_version: "hajimi.skill.v0".to_string(),
+            version: "0.1.0".to_string(),
+            name: "auto-save".to_string(),
+            title: "自动存档".to_string(),
+            description: "描述".to_string(),
+            enabled: true,
+            category: None,
+            exclusive_group: None,
+            triggers: vec![],
+            risk_level: SkillRiskLevel::Low,
+            entry: "C:\\SKILL.md".to_string(),
             eval_entry: None,
             context_budget_tokens: None,
             allowed_tools: vec![],
