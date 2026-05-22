@@ -1,6 +1,6 @@
 # Hajimi Debt Documentation Index
 
-> Updated: 2026-05-17
+> Updated: 2026-05-22
 > Current source of truth: `docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md`
 
 ## Active Summary
@@ -13,6 +13,7 @@ Use this file first:
 
 | Document | Current status |
 |---|---|
+| `DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is initiated; V0a documentation baseline and default-off gate exist, while Registry, Router, Runtime, and Memory receipt remain planned. |
 | `DEBT-FRONTEND-B13-UI-SMOKE-BLOCKED.md` | Manual Tauri/WebView UI smoke remains blocked. |
 | `DEBT-P0-UI-INTERACTION-REMEDIATION.md` | Frontend modularization and global Tauri API migration remain partial. |
 | `DEBT-THINKING-UI.md` | Thinking UI and checkpoint V1 exist; richer diff, transaction restore, malformed stream tests, provider-token integration, and WebView smoke remain. |

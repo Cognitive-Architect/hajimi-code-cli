@@ -32,6 +32,7 @@ pub mod reflection_persistence;
 pub mod reflector;
 pub mod reflector_dto;
 pub mod resource_monitor;
+pub mod skills;
 pub mod swarm;
 pub mod swarm_delegate;
 pub mod tool_manifest;

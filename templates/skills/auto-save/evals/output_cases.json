@@ -1,0 +1,19 @@
+[
+  {
+    "id": "auto-save-output-001",
+    "title": "auto-save skill requires final archive block",
+    "input": "帮我设计一个 Agent Skills 接入方案，并记录下一步",
+    "active_skills": ["auto-save"],
+    "expected": {
+      "must_include": [
+        "=== AUTO SAVE",
+        "做了什么",
+        "当前状态",
+        "下一步",
+        "风险"
+      ],
+      "must_not_include": []
+    },
+    "expected_failure_reason": "final answer omitted AUTO SAVE block"
+  }
+]

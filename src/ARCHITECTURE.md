@@ -123,6 +123,9 @@
 | `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud + **semantic embedding (fastembed)** ⭐ + **EpisodicMemory JSONL 持久化** + **HNSW 索引** | ✅ Phase 3b 完成 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
 
+<!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
+> **Agent Skills V0 状态**: `DEBT-AGENT-SKILLS-V0` 已登记，`docs/agent-skills/SKILL-PACK-SPEC.md` 定义本地 Skill Pack V0a 草案；`HAJIMI_AGENT_SKILLS_V0` 默认关闭。V0a / V0b / V0c 仍处于 initiated / planned 状态，尚未接入 AgentLoop、Registry、Router、Runtime 或 Memory receipt。
+
 > <!-- P0-CONTEXT-REMEDIATION-2026-04-30 -->
 > **P0 Context Debt Cleared ✅**
 >
@@ -467,6 +470,8 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 | 源代码索引 | `src/INDEX.md` | 详细文件索引 |
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发指南 |
 | 技术文档 | `docs/debt/` | 技术约束与限制说明 |
+| Agent Skills V0 规格 | `docs/agent-skills/SKILL-PACK-SPEC.md` | 本地 Skill Pack V0a 目录、manifest、fixture 与安全边界草案 |
+| Agent Skills V0 债务 | `docs/debt/DEBT-AGENT-SKILLS-V0.md` | V0a / V0b / V0c 分段状态与每日 receipt 模板 |
 | 技术约束文档 | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` | UI交互核心重构期间无框架约束声明 |
 
 ---
