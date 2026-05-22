@@ -2,7 +2,7 @@
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 
-> Status: V0a cleared / V0b constrained runtime integrated / V0c integrated
+> Status: V0a cleared / V0b constrained runtime integrated / V0c partial
 > Created: 2026-05-22
 > Scope: Agent Skills V0 local Skill Pack integration
 > Spec: `docs/agent-skills/SKILL-PACK-SPEC.md`
@@ -19,7 +19,7 @@ Agent Skills V0 is a staged Intelligence-layer capability. V0a now covers local 
 |---|---|---|
 | V0a | V0a cleared: Manifest / Registry / Loader / Router / Blackboard / Planner ContextBlock injection / Reflector eval criteria / E2E Output Evaluator completed. | Skill Pack schema, Registry, Loader, Router, Planner injection, `auto-save` output evaluation, and default-off rollback evidence. |
 | V0b | Constrained runtime integrated: permission mapping, tool constraint reports, Blackboard handoff, and ActExecutor filtering completed; Interface management pending. | Skill Runtime maps allowed tools and permissions into stricter Tool System and Governance constraints. |
-| V0c | V0c cleared: Skill execution receipts, success/failure blackboard writes, and standard disabled skeleton skill templates (plain-language/project-handoff) completed; Graph memory and Cloud sync intentionally out-of-scope (partial blackboard-only closed). | Skill execution receipt enters Blackboard and Memory (partial blackboard-only Closed). |
+| V0c | V0c partial: Blackboard-only execution receipts integrated; Graph memory / Cloud sync / Interface list-validate deferred. | Skill execution receipt enters Blackboard (partial blackboard-only closed). |
 
 ## Day 1 Boundary
 
@@ -100,8 +100,10 @@ Tests must use `tests/fixtures/skills/`. Day 1 does not create runtime fixture d
 | AGENT-SKILLS-V0B-002 | resolved | ActExecutor wiring completed in B-10: denied and out-of-scope tools are rejected before execution, and Ask constraints mark ToolCallV1 for Governance approval. |
 | AGENT-SKILLS-V0B-003 | active | No real-device click validation was performed in B-09 because the deliverable is backend constrained runtime permission logic plus unit and shell safety tests. Any later Interface exposure for Skills must add a separate real-click validation pass. |
 | AGENT-SKILLS-V0B-004 | active | No real-device click validation was performed in B-10 because the deliverable is backend ActExecutor/Governance filtering plus golden tests. Interface list/validate remains V0c scope. |
-| AGENT-SKILLS-V0C-001 | resolved | Skill execution receipts, success/failure blackboard writes, and standard disabled skeleton skill templates (plain-language/project-handoff) are completed. |
+| AGENT-SKILLS-V0C-001 | partial | Skill execution receipts, success/failure blackboard writes, and standard disabled skeleton skill templates (plain-language/project-handoff) are completed. Graph memory / Cloud sync / Interface list-validate are deferred. |
 | DEBT-SCOPE-B12-MEMORY-PARTIAL | active | Graph memory and cloud sync for receipts are intentionally excluded/planned for V1 scope; V0c implements Blackboard-only execution receipts. |
+| DEBT-B12-RECEIPT-NON-BLOCKING | active | Receipt compilation/writing failures currently log a warning/trace instead of blocking the main AgentLoop execution. |
+| DEBT-B12-CI-CLIPPY | active | GitHub CI/workflow runs are empty/disabled, and clippy has not been fully verified/back-filled on target CI. |
 | AGENT-SKILLS-STORE-001 | out of scope | Store, marketplace, URL install, automatic update, and cloud sync are intentionally excluded from V0. |
 
 ## DAILY RECEIPT Template
@@ -282,7 +284,7 @@ Commit / SHA: feat(intelligence/agent-core): add skill execution receipts and te
 做了什么: Defined SkillExecutionReceipt struct and exported BB_SKILL_EXECUTION_RECEIPTS blackboard key. Implemented generate_execution_receipts in eval.rs and wired evaluate_and_record_skills_receipts in AgentLoop::reflect to evaluate output and write success/failure execution receipts to Blackboard. Created plain-language and project-handoff skeleton templates in templates/skills with "enabled": false. Developed robust test_skill_receipt unit test and test_skills_execution_receipt_written integration test.
 验证命令: cargo fmt -- --check; cargo check --workspace; cargo test -p intelligence-agent-core; cargo test -p intelligence-agent-core --lib skill_receipt; cargo test -p intelligence-agent-core --lib agent_skills_golden
 验证结果: Fmt passed; workspace compiles with 0 errors; all 277 intelligence-agent-core unit and integration tests passed cleanly (including skill_receipt, test_skills_execution_receipt_written, and agent_skills_golden).
-未完成 / 风险: Graph memory and cloud sync are out of scope for V0c and documented under DEBT-SCOPE-B12-MEMORY-PARTIAL. Skeleton templates remain disabled by default. Real-device click validation was skipped per user instruction.
+未完成 / 风险: V0c is partial: Blackboard-only execution receipts integrated; Graph memory, Cloud sync, and Interface list-validate deferred under DEBT-SCOPE-B12-MEMORY-PARTIAL, DEBT-B12-RECEIPT-NON-BLOCKING, and DEBT-B12-CI-CLIPPY. Skeleton templates remain disabled by default. Real-device click validation was skipped per user instruction.
 下一步: Day 13 should proceed to next phase integration tasks.
 =====================
 ```
