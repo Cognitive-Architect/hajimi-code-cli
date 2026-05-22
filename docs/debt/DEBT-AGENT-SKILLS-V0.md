@@ -131,12 +131,12 @@ Commit / SHA: feat(intelligence/agent-core): refactor skill manifest validations
 ```text
 === DAILY RECEIPT ===
 Day: B-03/13
-Commit / SHA: feat(intelligence/agent-core): add skill registry and loader (SHA: 8d1b2f4)
-做了什么: Implemented metadata-only SkillRegistry to scan subdirectories for skill.json and catalog valid SkillManifests, sorting them deterministically by name. Implemented SkillLoader to load raw instruction contents from SKILL.md on-demand and compute token estimates using estimate_tokens. Wired both modules under src/intelligence/agent-core/skills/mod.rs. Developed comprehensive unit tests for scanning valid, malformed, and invalid manifests, loading instructions successfully, and path boundary traversal validation.
+Commit / SHA: feat(intelligence/agent-core): restore standard registry and loader file names and add e2e fixture tests (SHA: 21c9790)
+做了什么: Implemented metadata-only SkillRegistry to scan subdirectories for skill.json and catalog valid SkillManifests, enforcing directory-to-manifest name consistency. Implemented SkillLoader to load raw instruction contents from SKILL.md on-demand and compute token estimates using estimate_tokens. Restored clean mod structure (registry.rs/loader.rs). Developed comprehensive unit tests for scanning valid/invalid manifests, directory mismatches, real fixture e2e loading, and multi-layered path boundary traversal validation.
 验证命令: cargo fmt -- --check; cargo clippy -p intelligence-agent-core -- -D warnings; cargo test -p intelligence-agent-core --lib skills_registry; cargo test -p intelligence-agent-core --lib skills_loader; cargo check --workspace
-验证结果: All lint, compile, and 5 registry & loader unit tests passed successfully.
-未完成 / 风险: Router, Planner injection, and AgentLoop routing remain planned follow-up work for Day 4 (B-04/13).
-下一步: Implement SkillRouter to grade triggers and dynamically score context weight for Planner injection.
+验证结果: All lint, compile, and 9 registry & loader unit tests passed successfully.
+未完成 / 风险: SkillRouter, Planner injection, AgentLoop routing, and references deep loading are pending.
+下一步: Implement SkillRouter to grade triggers and dynamically score context weight for Planner injection in Day 4 (B-04/13).
 =====================
 ```
 
