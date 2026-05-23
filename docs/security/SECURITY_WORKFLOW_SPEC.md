@@ -1,6 +1,6 @@
 # Hajimi Security Workflow Spec
 
-> Status: Day 2 contract skeleton for B-17/02.
+> Status: Day 5 Rust schema implemented for B-17/05.
 > Updated: 2026-05-23.
 > Scope: local repository security review workflow only.
 
@@ -19,7 +19,7 @@ This is not a complete SAST platform or an automated attack system.
 |---|---:|---|
 | Execution branch | `codex/security-workflow-day01` | `git switch -c codex/security-workflow-day01` succeeded after initial baseline refresh |
 | Baseline HEAD | `b0e2b5bff326b4bd4530f3d176f855efd62fb1e1` | `git rev-parse HEAD` |
-| Existing security tool | `EXISTS` | `src/engine/tool-system/src/security.rs:11` `SecurityAuditTool`; `security.rs:39` `Finding`; `security.rs:56` `AuditResult`; `security.rs:188` tool name `security_audit` |
+| Existing security tool | `EXISTS / STRUCTURED SCHEMA` | `src/engine/tool-system/src/security.rs:11` `SecurityAuditTool`; `FindingStatus`; `Evidence`; `Finding`; `AuditResult`; tool name `security_audit` |
 | Existing security gate | `EXISTS` | `tests/security/security_audit_gate.js`; `package.json:12` `test:security-gate` |
 | Existing CI hook | `EXISTS` | `.github/workflows/security.yml:25` runs `npm run test:security-gate` |
 | B18 security closure | `EXISTS` | `docs/debt/DEBT-B18-SECURITY-HARDENING-CLOSURE.md:9` closes `withGlobalTauri=true`; line 11 closes naked `run_command` |
@@ -27,7 +27,7 @@ This is not a complete SAST platform or an automated attack system.
 | Tauri CSP | `CONFIGURED` | `src/interface/desktop/tauri.conf.json:25` has non-null CSP string |
 | Legacy DOM HTML API | `WARN BASELINE` | `npm run test:security-gate` reported 108 allowlisted warnings and 0 failures |
 | Shell allow-list | `HARDENED / NEEDS V1 RULE IDS` | `src/engine/tool-system/src/shell.rs:21` `ALLOWED_COMMANDS`; tests at lines 332-333 reject `bash` / `sh` as user command |
-| Day 2 input schema | `LIGHT SCHEMA` | `src/engine/tool-system/src/security.rs:39` currently has old fields `severity`, `type_`, `file`, `line`, `snippet` |
+| Day 5 Rust schema | `IMPLEMENTED / PARTIAL SCAN` | `src/engine/tool-system/src/security.rs` preserves old fields `severity`, `type`, `file`, `line`, `snippet` and adds `rule_id`, `category`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence` |
 
 ## V1 Scope
 
@@ -171,6 +171,50 @@ Compatibility rule: Day 5 Rust work must preserve old fields `severity`, `type`,
 `file`, `line`, and `snippet` in `security_audit` output. New fields should be
 additive; no new crate is required by this contract.
 
+## SecurityAuditTool Rust Output
+
+B-17/05 implements the additive Rust `security_audit` finding schema in
+`src/engine/tool-system/src/security.rs` while keeping the tool name and old
+JSON fields stable.
+
+Implemented DTOs:
+
+- `FindingStatus`
+- `Evidence`
+- `ValidationReceipt`
+- `Finding`
+- `AuditResult`
+
+Implemented finding fields:
+
+| Field | Status | Notes |
+|---|---:|---|
+| `severity` | `preserved` | Existing lower-case severity output remains. |
+| `type` | `preserved` | Rust keeps `type_` with `#[serde(rename = "type")]`. |
+| `file` | `preserved` | Existing file path output remains. |
+| `line` | `preserved` | Existing 1-based line output remains. |
+| `snippet` | `preserved` | Secret-like snippets are redacted/truncated. |
+| `finding_id` | `added` | Report-local ID derived from rule/file/line. |
+| `rule_id` | `added` | Examples: `SECRET-AWS-001`, `PANIC-UNWRAP-001`, `PANIC-TODO-001`. |
+| `title` | `added` | Short human-readable finding title. |
+| `category` | `added` | Current categories: `secret`, `panic_safety`; `unknown` reserved. |
+| `status` | `added` | Static findings default to `unverified`, not `confirmed`. |
+| `confidence` | `added` | Constructed through a `0.0-1.0` clamp. |
+| `evidence` | `added` | Code evidence includes file, line, snippet, and note. |
+| `recommendation` | `added` | Mitigation guidance per detector family. |
+| `regression_test` | `added` | Currently points to `cargo test -p engine-tool-system security`. |
+| `human_review_required` | `added` | True for high/critical findings. |
+| `validation_receipts` | `added` | Empty until a validation workflow runs. |
+| `residual_risk` | `added` | Empty until report-level risk review runs. |
+
+Current detector families covered by B-17/05:
+
+- `secret`: AWS key, GitHub token, Stripe live key, private key patterns.
+- `panic_safety`: `todo!`, `.unwrap()`, and `panic!`.
+
+This remains a lightweight local scanner, not a complete SAST engine. Additional
+categories from the Day 2 contract remain reserved for later workflow phases.
+
 ## Evidence Schema
 
 `Evidence` is intentionally small enough for Rust, JS gate, Agent Core, and UI
@@ -296,7 +340,8 @@ Every finding must carry at least one evidence item:
 
 - Real WebView click validation is `PENDING-WEBVIEW-SMOKE`; no manual click path
   was executed for this baseline.
-- `SecurityAuditTool` output is still lightweight and needs Day 5 schema work.
+- `SecurityAuditTool` output was lightweight at Day 1; Day 5 enhanced the Rust
+  schema while leaving scan coverage partial.
 - Legacy DOM warning count is real gate output, but individual warnings remain
   allowlisted debt until safe rendering migration is scheduled.
 
@@ -307,3 +352,11 @@ Every finding must carry at least one evidence item:
 - Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
 - Day 5 may choose serde defaults / rename for compatibility if adding fields to
   `security.rs` exposes legacy caller constraints.
+
+## Day 5 Debt
+
+- `DEBT-SECURITY-SCHEMA-B17-05`: Rust `SecurityAuditTool` schema is enhanced,
+  but scanning remains partial and limited to secrets plus panic-safety patterns.
+- `validation_receipts` are present in the DTO but remain empty until a later
+  validation workflow records real command receipts.
+- Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.

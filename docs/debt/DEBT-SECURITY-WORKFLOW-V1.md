@@ -1,8 +1,8 @@
 # DEBT-SECURITY-WORKFLOW-V1
 
-> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE RULES PARTIAL/GATED.
+> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE RULES PARTIAL/GATED / TOOL SCHEMA ENHANCED.
 > Updated: 2026-05-23.
-> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary; B-17/04 Gate Rules CSP/DOM/Shell/File Ops.
+> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary; B-17/04 Gate Rules CSP/DOM/Shell/File Ops; B-17/05 SecurityAuditTool Finding Schema.
 
 ## Baseline
 
@@ -16,6 +16,7 @@
 | Day 2 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day02-Contract-Finding-Schema.md` |
 | Day 3 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day03-Gate-Allowlist-Enhancement.md` |
 | Day 4 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day04-Gate-Rules-CSP-DOM-Shell-FileOps.md` |
+| Day 5 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day05-SecurityAuditTool-Schema.md` |
 | Plan docs read | `SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md`; `SECURITY-WORKFLOW-V1-V3-ROADMAP.md` |
 
 ## Command Evidence
@@ -35,7 +36,7 @@
 | Shell allow-list | `rg -n "ALLOWED_COMMANDS|bash|sh|pwsh|powershell" src/engine/tool-system/src` | `shell.rs` contains allow-list and tests rejecting shell interpreters as user command payloads |
 | Node syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
 | Gate smoke | `npm run test:security-gate` | exit 0; `failures: 0`; `warnings: 108`; `Security Audit Gate V1: PASS` |
-| Day 2 source schema baseline | `rg -n "struct Finding|severity|snippet|SecurityAuditTool" src/engine/tool-system/src/security.rs` | Current `security.rs` still has lightweight fields: `severity`, `type_`, `file`, `line`, `snippet` |
+| Day 2 source schema baseline | `rg -n "struct Finding|severity|snippet|SecurityAuditTool" src/engine/tool-system/src/security.rs` | At Day 2, `security.rs` still had lightweight fields: `severity`, `type_`, `file`, `line`, `snippet` |
 | Day 3 gate syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
 | Day 3 gate run | `node tests/security/security_audit_gate.js` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; `allowlisted: 108`; JSON summary emitted |
 | Day 3 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
@@ -46,14 +47,18 @@
 | Day 4 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
 | Day 4 rule IDs | `rg -n "TAURI-CSP-001|TAURI-GLOBAL-001|DOM-INLINE-001|DOM-HTML-001|SHELL-ALLOW-001|FILE-OPS-001|ALLOWLIST-001" tests/security/security_audit_gate.js` | All seven B-17/04 rule IDs found |
 | Day 4 scope check | `git diff --name-only -- src/interface/desktop/tauri.conf.json src/interface/web src/engine/tool-system/src` | empty; no business config or source code modified |
+| Day 5 engine check | `cargo check -p engine-tool-system` | exit 0 |
+| Day 5 engine tests | `cargo test -p engine-tool-system security` | exit 0; 5 security tests passed |
+| Day 5 schema evidence | `rg -n "rule_id|FindingStatus|Evidence|recommendation|regression_test|confidence" src/engine/tool-system/src/security.rs` | Structured fields and DTOs found |
+| Day 5 compatibility evidence | `rg -n "severity|type_|file|line|snippet" src/engine/tool-system/src/security.rs` | Old fields preserved; `type_` still serializes as `type` |
 
 ## Current Security Capability
 
 | Capability | Status | Notes |
 |---|---:|---|
-| SecurityAuditTool | `EXISTS / LIGHT SCHEMA` | Current Rust output has `Finding` and `AuditResult`, but Day 5 still needs `rule_id`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence`. |
+| SecurityAuditTool | `EXISTS / STRUCTURED SCHEMA / PARTIAL SCAN` | Rust output preserves old fields and now adds `rule_id`, `category`, `status`, `evidence`, `recommendation`, `regression_test`, `confidence`, and related report metadata. |
 | Security Gate V1 | `EXISTS / RULES PARTIAL/GATED` | Gate is runnable, can fail on hard regressions, validates allowlist reasons, emits structured findings, prints JSON summary, and has explicit CSP/DOM/Shell/File Ops rule IDs. Coverage is still not a complete security audit. |
-| Security Workflow contract | `DEFINED / NOT IMPLEMENTED` | Day 2 defines `FindingStatus`, `Evidence`, `ValidationReceipt`, workflow kinds, confidence, and feature-gate rules in docs only. |
+| Security Workflow contract | `DEFINED / TOOL SCHEMA PARTIAL` | Day 5 implements the Engine `security_audit` finding DTO subset; Agent workflow kinds, feature gates, and validation workflows remain pending. |
 | B18 anti-regression | `CLEARED / GATED` | `withGlobalTauri=true` and naked `run_command` are fail-level regressions. |
 | Security CI | `EXISTS` | Existing workflow runs `npm run test:security-gate`. |
 | DOM rendering debt | `WARN / ALLOWLISTED` | 108 current warnings are tracked as legacy dangerous HTML API usage. |
@@ -73,7 +78,7 @@
 
 | Risk | Status | Next Step |
 |---|---:|---|
-| SecurityAuditTool schema is lightweight | `PENDING` | Day 5: implement structured finding schema while preserving old `severity/type/file/line/snippet` fields |
+| SecurityAuditTool scan coverage is partial | `PARTIAL` | Schema is enhanced, but detectors remain limited to secrets and panic-safety patterns |
 | Security gate coverage is still limited | `PARTIAL/GATED` | Day 4: add CSP/DOM/Shell/File Ops rule expansion without claiming full security audit coverage |
 | Legacy DOM `innerHTML` debt remains | `PENDING` | Later UI safe-render migration; do not claim cleared |
 | Real WebView/manual click validation absent | `PENDING-WEBVIEW-SMOKE` | Record as debt until a human or browser session validates UI paths |
@@ -81,6 +86,7 @@
 | DEBT-SCHEMA-B17-02 | `CONTRACT ONLY` | Contract is documented; Rust/JS implementation remains pending |
 | DEBT-SECURITY-GATE-B17-03 | `PASS WITH NOTES / PARTIAL/GATED` | Gate now has allowlist reason validation, trimmed string checks, allowlisted count, and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
 | DEBT-SECURITY-GATE-B17-04 | `PARTIAL/GATED` | Explicit CSP/DOM/Shell/File Ops rule IDs now exist; this is a focused regression gate, not a full SAST engine |
+| DEBT-SECURITY-SCHEMA-B17-05 | `SCHEMA ENHANCED / PARTIAL SCAN` | `security_audit` has structured findings and tests, while validation receipts remain empty until later workflow validation |
 
 ## Security Gate V1 Rule Coverage
 
@@ -175,3 +181,28 @@ B-17/04 Security Gate V1 rule IDs:
 No Tauri config, frontend business code, engine source code, package script, or
 CI workflow was changed for Day 4. Real WebView/manual click validation remains
 `PENDING-WEBVIEW-SMOKE` per user instruction.
+
+## Day 5 Closure
+
+Day 5 enhanced Engine-layer `SecurityAuditTool` output in
+`src/engine/tool-system/src/security.rs` without changing the `security_audit`
+tool name or the `Tool` trait. The output now preserves legacy
+`severity/type/file/line/snippet` fields and adds:
+
+- `finding_id`
+- `rule_id`
+- `title`
+- `category`
+- `status`
+- `confidence`
+- `evidence`
+- `recommendation`
+- `regression_test`
+- `human_review_required`
+- `validation_receipts`
+- `residual_risk`
+
+Covered detector families are currently `secret` and `panic_safety`. Static
+findings default to `unverified`; validation receipts are intentionally empty
+until a later real validation workflow records command receipts. No Interface or
+Intelligence layer code was modified, and no new crate was added.
