@@ -2,7 +2,7 @@
 
 > Status: INTEGRATED SECURITY PANEL / SAFE RENDERING / PENDING WEBVIEW SMOKE.
 > Updated: 2026-05-23.
-> Work items: B-17/07 Agent Core Security Workflow DTO + Orchestrator Skeleton; B-17/08 Security Workflow V2 Core Implementation; B-17/09 Desktop Command + Slash Contract; B-17/10 Security Panel + V2 Smoke Closure.
+> Work items: B-17/07 Agent Core Security Workflow DTO + Orchestrator Skeleton; B-17/08 Security Workflow V2 Core Implementation; B-17/09 Desktop Command + Slash Contract; B-17/10 Security Panel + V2 Smoke Remediation.
 
 ## Scope
 
@@ -10,8 +10,8 @@ V2 starts the Intelligence-layer security workflow contract. Day 7 added DTOs
 and a minimal report assembly orchestrator in Agent Core only. Day 8 implements
 the core report-only workflow branches without connecting ToolRegistry execution.
 Day 9 exposes that report-only contract through a dedicated desktop command and
-vanilla `/security` slash commands. Day 10 implements the full, interactive UI Security Panel
-within the Right Inspector, utilizing absolute textContent safe rendering (no innerHTML) and closing V2 Smoke validation.
+vanilla `/security` slash commands. Day 10 implements the interactive UI Security Panel
+within the Right Inspector, utilizing textContent safe rendering (no innerHTML) with PENDING-WEBVIEW-SMOKE active debt remaining.
 
 | Item | Status | Evidence |
 |---|---:|---|
@@ -67,7 +67,7 @@ within the Right Inspector, utilizing absolute textContent safe rendering (no in
 | DEBT-WORKFLOW-SKELETON-B17-07 | `PARTIAL` | DTO and report assembly skeleton exist; real workflow execution waits for later V2 tasks. |
 | DEBT-INTEGRATION-B17-08 | `PARTIAL` | ToolRegistry is not connected; V2 currently accepts supplied gate/report findings and emits report-only receipts. |
 | DEBT-BRIDGE-B17-09 | `DONE` | Interface calls Agent Core DTOs directly through `run_security_workflow`. |
-| DEBT-PANEL-B17-10 | `DONE` | Security Panel is fully implemented in Right Inspector with complete textContent safety (no innerHTML). |
+| DEBT-PANEL-B17-10 | `DONE` | Security Panel is implemented in Right Inspector with complete textContent safety (no innerHTML). PENDING-WEBVIEW-SMOKE remains active. |
 | PENDING-WORKFLOW-EXECUTION | `PENDING` | `SecurityWorkflowOrchestrator::run` does not call tools or record executed validation commands. |
 | PENDING-WEBVIEW-SMOKE | `PENDING` | Real WebView/manual click validation remains unexecuted per task instruction. |
 

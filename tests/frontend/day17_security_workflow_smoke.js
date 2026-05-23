@@ -111,22 +111,47 @@ const app = {
   },
   async invokeTauri(command, args) {
     invoked.push({ command, args });
+    const findings = args.request.findings.map(f => {
+      return {
+        ...f,
+        evidence: [
+          "Safe evidence text",
+          "<script>alert(1)</script><div id='bad'>html injected</div>",
+          "Another piece of evidence"
+        ]
+      };
+    });
     return {
       kind: args.request.kind,
       scope: args.request.scope,
       dry_run: args.request.dry_run,
       feature_enabled: false,
       summary: {
-        total_findings: args.request.findings.length,
+        total_findings: findings.length,
         confirmed: 0,
-        unverified: args.request.findings.length,
+        unverified: findings.length,
       },
-      findings: args.request.findings,
+      findings: findings,
       validation_receipts: [],
       workflow_notes: ['smoke contract exercised'],
     };
   },
 };
+
+// Fix 3 test: HAJIMI_SECURITY_UI_ENABLED defaults to false in sandbox, check behavior
+sandbox.window.__HAJIMI_FLAGS__ = { securityUiEnabled: false };
+assert.strictEqual(workflow.isUiEnabled(), false);
+assert.strictEqual(workflow.commands.length, 0); // commands must return empty array
+
+// Exercise setupSecurityPanel when UI is disabled
+const tabEl = sandbox.document.getElementById('securityPanelTab');
+tabEl.style.display = 'block'; // set initial visible display
+workflow.setupSecurityPanel(app);
+assert.strictEqual(tabEl.style.display, 'none'); // must be hidden
+
+// Re-enable UI flags to run full active rendering test
+sandbox.window.__HAJIMI_FLAGS__ = { securityUiEnabled: true };
+assert.strictEqual(workflow.isUiEnabled(), true);
 
 workflow.runSlash(app, '/security scan').then((result) => {
   assert.strictEqual(result.ok, true);
@@ -140,14 +165,48 @@ workflow.runSlash(app, '/security scan').then((result) => {
   assert.strictEqual(typeof workflow.setupSecurityPanel, 'function');
   assert.strictEqual(typeof workflow.safeRenderSecurityPanel, 'function');
 
-  // Exercise setupSecurityPanel and safeRenderSecurityPanel
+  // Exercise setupSecurityPanel and safeRenderSecurityPanel with a custom report containing HTML injection payload in evidence
   workflow.setupSecurityPanel(app);
-  workflow.lastReport = result.report;
+
+  const mockReport = {
+    summary: { high: 0, medium: 1, low: 0, unverified: 1 },
+    findings: [{
+      finding_id: 'FIND-TEST',
+      title: 'XSS in evidence test',
+      severity: 'medium',
+      status: 'unverified',
+      confidence: 0.8,
+      snippet: 'const x = 1;',
+      evidence: [
+        "Safe evidence text",
+        "<script>alert(1)</script><div id='bad'>html injected</div>",
+        "Another piece of evidence"
+      ]
+    }],
+    validation_receipts: [],
+    residual_risks: []
+  };
+
+  workflow.lastReport = mockReport;
   workflow.safeRenderSecurityPanel(app);
 
   // Verify elements are updated
-  const highCounter = sandbox.document.getElementById('securitySummaryHigh');
-  assert.strictEqual(highCounter.textContent, '0');
+  const mediumCounter = sandbox.document.getElementById('securitySummaryMedium');
+  assert.strictEqual(mediumCounter.textContent, '1');
+
+  // Verify evidence rendering limits & safe text content
+  const findingsList = sandbox.document.getElementById('securityFindingsList');
+  assert.strictEqual(findingsList.children.length, 1);
+  const card = findingsList.children[0];
+
+  const evidenceContainers = card.children.filter(child => child.className === 'finding-evidence-container');
+  assert.strictEqual(evidenceContainers.length, 1);
+  const evList = evidenceContainers[0].children.find(child => child.className === 'finding-evidence-list');
+  assert(evList);
+  assert.strictEqual(evList.children.length, 3);
+
+  // Assert the HTML payload is rendered strictly as plain text (escaped/stored in textContent)
+  assert.strictEqual(evList.children[1].textContent, "<script>alert(1)</script><div id='bad'>html injected</div>");
 
   // Strict check: verify no innerHTML/insertAdjacentHTML are used in the source code
   const hasInnerHTML = source.includes('innerHTML') || source.includes('insertAdjacentHTML');

@@ -272,6 +272,35 @@
       card.appendChild(code);
     }
 
+    if (Array.isArray(finding.evidence) && finding.evidence.length > 0) {
+      const evidenceContainer = document.createElement('div');
+      evidenceContainer.className = 'finding-evidence-container';
+      evidenceContainer.style.marginTop = '6px';
+
+      const evLabel = document.createElement('strong');
+      evLabel.textContent = 'Evidence:';
+      evLabel.style.fontSize = '9px';
+      evLabel.style.color = 'var(--fg-dim)';
+      evLabel.style.display = 'block';
+      evidenceContainer.appendChild(evLabel);
+
+      const evList = document.createElement('ul');
+      evList.className = 'finding-evidence-list';
+      evList.style.margin = '4px 0 0 0';
+      evList.style.paddingLeft = '14px';
+      evList.style.fontSize = '9px';
+      evList.style.color = 'var(--fg-dim)';
+
+      finding.evidence.slice(0, 5).forEach(evText => {
+        const item = document.createElement('li');
+        item.textContent = String(evText);
+        evList.appendChild(item);
+      });
+
+      evidenceContainer.appendChild(evList);
+      card.appendChild(evidenceContainer);
+    }
+
     if (finding.recommendation) {
       const rec = document.createElement('div');
       rec.className = 'finding-recommendation';
@@ -324,6 +353,18 @@
   }
 
   function setupSecurityPanel(app) {
+    const tabEl = document.getElementById('securityPanelTab');
+    if (!isUiEnabled()) {
+      if (tabEl) {
+        tabEl.style.display = 'none';
+      }
+      return;
+    } else {
+      if (tabEl) {
+        tabEl.style.display = '';
+      }
+    }
+
     const scanBtn = document.getElementById('runSecurityScanBtn');
     if (scanBtn) {
       scanBtn.addEventListener('click', async () => {
@@ -361,6 +402,10 @@
   }
 
   function safeRenderSecurityPanel(app) {
+    if (!isUiEnabled()) {
+      return;
+    }
+
     const summaryHighEl = document.getElementById('securitySummaryHigh');
     const summaryMediumEl = document.getElementById('securitySummaryMedium');
     const summaryLowEl = document.getElementById('securitySummaryLow');
@@ -516,7 +561,7 @@
 
   global.HajimiSecurityWorkflow = Object.freeze({
     UI_FLAG_NAME,
-    commands: COMMANDS,
+    get commands() { return isUiEnabled() ? COMMANDS : []; },
     isUiEnabled,
     usage,
     parseSlash,

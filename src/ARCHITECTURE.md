@@ -647,13 +647,13 @@ Hajimi Agent Skills 系统用于将 Agent 动作模式从单一的工具调用�
 
 ---
 
-## Security Workflow & Panel (Day 10 Smoke Closure)
+## Security Workflow & Panel (Day 10 Smoke)
 
 <!-- SECURITY-PANEL-B17-10: Day 10 Security Panel completed -->
 
-**当前状态**: 🔄 **Day 10 安全展示面板与 V2 smoke validation 开发与闭环全部完成（测试全通过）**
+**当前状态**: 🔄 **Day 10 安全展示面板与 V2 smoke validation 架构及基础渲染开发完成（保留 PENDING-WEBVIEW-SMOKE 活跃债务，本地集成测试通过）**
 
-Hajimi 安全工作流（Security Workflow）打通了底层安全引擎（Engine）、智能调度器（Intelligence）与前端可视化展示（Interface）的三层链条。用户可以通过 Command Palette 输入或侧边栏点击一键运行安全扫描，交互式查看漏洞摘要（Summary）、安全发现（Findings）、复测凭证（Validation Receipts）与残余风险（Residual Risks），并能一键发起 dry-run 修复计划。
+Hajimi 安全工作流（Security Workflow）打通了底层安全引擎（Engine）、智能调度器（Intelligence）与前端可视化展示（Interface）的三层链条。用户可以通过 Command Palette 输入或侧边栏点击运行安全扫描，交互式查看漏洞摘要（Summary）、安全发现（Findings）、证据细节（Evidence）、复测凭证（Validation Receipts）与残余风险（Residual Risks），并能一键发起 dry-run 修复计划。
 
 ### 1. 三层安全数据流架构 (Engine -> Intelligence -> Interface)
 
