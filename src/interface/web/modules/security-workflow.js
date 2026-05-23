@@ -384,9 +384,25 @@
       statusBadge.style.fontSize = '8px';
       statusBadge.style.fontWeight = 'bold';
 
+      const receipts = Array.isArray(finding.validation_receipts) ? finding.validation_receipts : [];
+      const hasPassReceipt = receipts.some(r => String(r.status).toLowerCase() === 'pass')
+        || (finding.revalidation_receipt && String(finding.revalidation_receipt.status).toLowerCase() === 'pass');
+      const hasFailReceipt = receipts.some(r => String(r.status).toLowerCase() === 'fail')
+        || (finding.revalidation_receipt && String(finding.revalidation_receipt.status).toLowerCase() === 'fail');
+
       if (finding.status === 'fixed') {
-        statusBadge.textContent = 'REVALIDATED / PASS';
-        statusBadge.style.background = 'var(--accent-success, #2e7d32)';
+        if (hasPassReceipt) {
+          statusBadge.textContent = 'REVALIDATED / PASS';
+          statusBadge.style.background = 'var(--accent-success, #2e7d32)';
+          statusBadge.style.color = '#fff';
+        } else {
+          statusBadge.textContent = 'BLOCKED / MISSING RECEIPT';
+          statusBadge.style.background = 'var(--accent-error, #c62828)';
+          statusBadge.style.color = '#fff';
+        }
+      } else if (hasFailReceipt) {
+        statusBadge.textContent = 'REVALIDATION / FAIL';
+        statusBadge.style.background = 'var(--accent-error, #c62828)';
         statusBadge.style.color = '#fff';
       } else {
         statusBadge.textContent = 'NOT RUN / PENDING';

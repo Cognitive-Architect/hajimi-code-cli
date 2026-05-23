@@ -66,8 +66,14 @@ impl Default for SecurityFixPlanner {
 }
 
 pub fn is_validation_command_allowed(command: &str) -> bool {
-    let c_lower = command.to_lowercase();
-    // Reject dangerous commands/patterns per strict safety criteria
+    // 1. Reject shell concatenation / redirection / command substitution tokens
+    let rejected_tokens = &["&&", ";", "|", "`", "$(", ">", "<"];
+    if rejected_tokens.iter().any(|&token| command.contains(token)) {
+        return false;
+    }
+
+    let c_lower = command.trim().to_lowercase();
+    // 2. Reject dangerous commands/patterns per strict safety criteria
     if c_lower.contains("curl")
         || c_lower.contains("wget")
         || c_lower.contains("rm ")
@@ -81,7 +87,7 @@ pub fn is_validation_command_allowed(command: &str) -> bool {
         return false;
     }
 
-    // Only allow local commands from safe whitelist
+    // 3. Only allow local commands from safe whitelist (precise exact matching)
     let allowed_commands = &[
         "npm run test:security-gate",
         "npm run security:report",
@@ -90,7 +96,7 @@ pub fn is_validation_command_allowed(command: &str) -> bool {
         "git diff",
     ];
 
-    allowed_commands.iter().any(|&cmd| c_lower.contains(cmd))
+    allowed_commands.contains(&c_lower.as_str())
 }
 
 impl SecurityFixPlanner {
@@ -113,8 +119,12 @@ impl SecurityFixPlanner {
     ) -> String {
         match current_status {
             "planned" => {
-                if receipt.is_some() {
-                    "applied".to_string()
+                if let Some(r) = receipt {
+                    if r.status == RevalidationStatus::Pass || r.status == RevalidationStatus::Fail {
+                        "applied".to_string()
+                    } else {
+                        "planned".to_string()
+                    }
                 } else {
                     "planned".to_string()
                 }
@@ -282,7 +292,15 @@ mod tests {
         assert!(!is_validation_command_allowed("bash -c malicious"));
         assert!(!is_validation_command_allowed("powershell -Command malicious"));
 
-        // Allowed safe local checks
+        // Injection payloads must be rejected
+        assert!(!is_validation_command_allowed("npm run test:security-gate && cat ~/.ssh/id_rsa"));
+        assert!(!is_validation_command_allowed("npm run test:security-gate; echo pwned"));
+        assert!(!is_validation_command_allowed("git diff | cat"));
+
+        // Non-exact match (substring or trailing chars) must be rejected
+        assert!(!is_validation_command_allowed("git diff malicious_append"));
+
+        // Allowed safe local checks (precise matching only)
         assert!(is_validation_command_allowed("npm run test:security-gate"));
         assert!(is_validation_command_allowed("cargo test -p engine-tool-system security"));
         assert!(is_validation_command_allowed("git diff"));
@@ -312,7 +330,7 @@ mod tests {
         let status1 = planner.transition_status("planned", &None);
         assert_eq!(status1, "planned");
 
-        // 2. planned -> applied (with any receipt)
+        // 2. planned -> planned (with NotRun receipt)
         let receipt_not_run = RevalidationReceipt {
             command: "npm run test:security-gate".to_string(),
             exit_code: None,
@@ -321,9 +339,9 @@ mod tests {
             status: RevalidationStatus::NotRun,
         };
         let status2 = planner.transition_status("planned", &Some(receipt_not_run.clone()));
-        assert_eq!(status2, "applied");
+        assert_eq!(status2, "planned");
 
-        // 3. applied -> revalidated (with passing receipt)
+        // 3. planned -> applied (with Pass or Fail receipt)
         let receipt_pass = RevalidationReceipt {
             command: "npm run test:security-gate".to_string(),
             exit_code: Some(0),
@@ -331,10 +349,14 @@ mod tests {
             stderr_summary: String::new(),
             status: RevalidationStatus::Pass,
         };
+        let status2_applied = planner.transition_status("planned", &Some(receipt_pass.clone()));
+        assert_eq!(status2_applied, "applied");
+
+        // 4. applied -> revalidated (with passing receipt)
         let status3 = planner.transition_status("applied", &Some(receipt_pass));
         assert_eq!(status3, "revalidated");
 
-        // 4. applied -> applied (with failing receipt)
+        // 5. applied -> applied (with failing receipt)
         let receipt_fail = RevalidationReceipt {
             command: "npm run test:security-gate".to_string(),
             exit_code: Some(1),
