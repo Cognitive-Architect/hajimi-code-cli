@@ -2560,6 +2560,7 @@ window.app = {
       { id: 'git', trigger: '/git', title: 'Git helper', description: 'Fill /git status/diff/commit', category: 'git', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/git ' },
       { id: 'extensions', trigger: '/extensions', title: 'List extensions', description: 'Show available extensions', category: 'extension', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['plugins'] },
       { id: 'compact', trigger: '/compact', title: 'Compact context', description: 'Fill compact command for explicit submit', category: 'context', riskLevel: 'medium', enabled: true, executeMode: 'fill' },
+      ...(window.HajimiSecurityWorkflow?.commands || []),
     ];
   },
 
@@ -2693,6 +2694,29 @@ window.app = {
   },
 
   async handleChatCommand(text) {
+    if (text === '/security' || text.startsWith('/security ')) {
+      if (!window.HajimiSecurityWorkflow) {
+        this.addChatMessage('ai', 'Security workflow module unavailable.');
+        return;
+      }
+      const parsed = window.HajimiSecurityWorkflow.parseSlash(text);
+      if (!parsed.ok) {
+        this.addChatMessage('ai', parsed.error);
+        return;
+      }
+      try {
+        const result = await window.HajimiSecurityWorkflow.runSlash(this, text);
+        if (!result.ok) {
+          this.addChatMessage('ai', result.error);
+          return;
+        }
+        this.addChatMessage('ai', window.HajimiSecurityWorkflow.formatReportText(result.report));
+      } catch (e) {
+        this.addChatMessage('ai', `Security workflow failed: ${e.message || e}`);
+      }
+      return;
+    }
+
     if (text === '/tools') {
       if (!this.isTauriAvailable()) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
       try {
@@ -2950,7 +2974,7 @@ window.app = {
     }
 
     // Unknown command
-    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\`, \`/compact\``);
+    this.addChatMessage('ai', `未知命令: \`${text.split(' ')[0]}\`\n\n可用命令: \`/tools\`, \`/providers\`, \`/tool <name> <args>\`, \`/chat <provider> <prompt>\`, \`/mcp <list|init|invoke>\`, \`/search <pattern>\`, \`/git <status|diff|commit>\`, \`/extensions\`, \`/compact\`, \`/security scan|threat-model|validate|fix <finding-id>\``);
   },
 
   /// Parse thinking tags from accumulated stream buffer (B-09/12).

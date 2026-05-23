@@ -5,6 +5,9 @@ use std::sync::Arc;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use agent_core::agent_loop::TraceStepType;
+use agent_core::security_workflow::{
+    SecurityWorkflowOrchestrator, SecurityWorkflowReport, SecurityWorkflowRequest,
+};
 use agent_core::{
     AgentContext, AgentLoopBuilder, AutonomousReflector, HierarchicalPlanner, TraceEvent,
 };
@@ -2671,6 +2674,15 @@ async fn run_agent_command(
     Err(format!("Unknown agent command: {}", cmd))
 }
 
+// B-17/09: dedicated security workflow command. It calls the Agent Core
+// report-only orchestrator directly instead of routing through command tools.
+#[tauri::command]
+async fn run_security_workflow(
+    request: SecurityWorkflowRequest,
+) -> Result<SecurityWorkflowReport, String> {
+    Ok(SecurityWorkflowOrchestrator::new().run(request))
+}
+
 #[tauri::command]
 async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<(), String> {
     on_event
@@ -2968,6 +2980,8 @@ fn main() {
             // Phase 4 Day 5: Command Palette & Observability
             get_edit_history,
             run_agent_command,
+            // B-17/09 Security Workflow desktop contract
+            run_security_workflow,
             // P1-03/05: Token cumulative stats
             get_cumulative_stats,
             // Day 12: Context capacity probe
