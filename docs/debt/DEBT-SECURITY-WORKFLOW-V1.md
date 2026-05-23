@@ -1,6 +1,6 @@
 # DEBT-SECURITY-WORKFLOW-V1
 
-> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE RULES PARTIAL/GATED / TOOL SCHEMA ENHANCED.
+> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE RULES PARTIAL/GATED / TOOL SCHEMA ENHANCED / V1 REPORT PARTIAL/GATED.
 > Updated: 2026-05-23.
 > Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary; B-17/04 Gate Rules CSP/DOM/Shell/File Ops; B-17/05 SecurityAuditTool Finding Schema.
 
@@ -17,6 +17,7 @@
 | Day 3 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day03-Gate-Allowlist-Enhancement.md` |
 | Day 4 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day04-Gate-Rules-CSP-DOM-Shell-FileOps.md` |
 | Day 5 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day05-SecurityAuditTool-Schema.md` |
+| Day 6 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day06-Report-Renderer-V1-Closure.md` |
 | Plan docs read | `SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md`; `SECURITY-WORKFLOW-V1-V3-ROADMAP.md` |
 
 ## Command Evidence
@@ -51,6 +52,13 @@
 | Day 5 engine tests | `cargo test -p engine-tool-system security` | exit 0; 5 security tests passed |
 | Day 5 schema evidence | `rg -n "rule_id|FindingStatus|Evidence|recommendation|regression_test|confidence" src/engine/tool-system/src/security.rs` | Structured fields and DTOs found |
 | Day 5 compatibility evidence | `rg -n "severity|type_|file|line|snippet" src/engine/tool-system/src/security.rs` | Old fields preserved; `type_` still serializes as `type` |
+| Day 6 report syntax | `node --check scripts/security-report.js` | exit 0 |
+| Day 6 gate run | `npm run test:security-gate` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; `allowlisted: 108`; `Security Audit Gate V1: PASS` |
+| Day 6 report run | `npm run security:report` | exit 0; wrote `docs/security/examples/SECURITY_REVIEW_SAMPLE.md` and `docs/security/examples/SECURITY_REVIEW_SAMPLE.json` |
+| Day 6 engine tests | `cargo test -p engine-tool-system security` | exit 0; 5 security tests passed |
+| Day 6 engine check | `cargo check -p engine-tool-system` | exit 0 |
+| Day 6 report structure | `rg -n "Security Review|Findings|Validation Receipts|Residual Risk" docs/security` | template and generated sample contain required sections |
+| Day 6 diff check | `git diff --check -- tests/security scripts docs/security docs/debt package.json src/engine/tool-system/src/security.rs` | exit 0 |
 
 ## Current Security Capability
 
@@ -59,6 +67,7 @@
 | SecurityAuditTool | `EXISTS / STRUCTURED SCHEMA / PARTIAL SCAN` | Rust output preserves old fields and now adds `rule_id`, `category`, `status`, `evidence`, `recommendation`, `regression_test`, `confidence`, and related report metadata. |
 | Security Gate V1 | `EXISTS / RULES PARTIAL/GATED` | Gate is runnable, can fail on hard regressions, validates allowlist reasons, emits structured findings, prints JSON summary, and has explicit CSP/DOM/Shell/File Ops rule IDs. Coverage is still not a complete security audit. |
 | Security Workflow contract | `DEFINED / TOOL SCHEMA PARTIAL` | Day 5 implements the Engine `security_audit` finding DTO subset; Agent workflow kinds, feature gates, and validation workflows remain pending. |
+| Security Report Renderer V1 | `EXISTS / PARTIAL/GATED` | `npm run security:report` runs the local gate, parses the structured JSON summary, and writes Markdown plus JSON report artifacts. This formats local evidence only and is not a complete security audit. |
 | B18 anti-regression | `CLEARED / GATED` | `withGlobalTauri=true` and naked `run_command` are fail-level regressions. |
 | Security CI | `EXISTS` | Existing workflow runs `npm run test:security-gate`. |
 | DOM rendering debt | `WARN / ALLOWLISTED` | 108 current warnings are tracked as legacy dangerous HTML API usage. |
@@ -87,6 +96,7 @@
 | DEBT-SECURITY-GATE-B17-03 | `PASS WITH NOTES / PARTIAL/GATED` | Gate now has allowlist reason validation, trimmed string checks, allowlisted count, and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
 | DEBT-SECURITY-GATE-B17-04 | `PARTIAL/GATED` | Explicit CSP/DOM/Shell/File Ops rule IDs now exist; this is a focused regression gate, not a full SAST engine |
 | DEBT-SECURITY-SCHEMA-B17-05 | `SCHEMA ENHANCED / PARTIAL SCAN` | `security_audit` has structured findings and tests, while validation receipts remain empty until later workflow validation |
+| DEBT-REPORT-B17-06 | `PASS WITH NOTES / PARTIAL/GATED` | Report renderer maps the current gate JSON to Markdown/JSON with Scope, Summary, Threat Model Summary, Findings, Validation Receipts, and Residual Risk. It does not run external scanning, does not claim complete coverage, and real WebView click validation remains pending. |
 
 ## Security Gate V1 Rule Coverage
 
@@ -206,3 +216,21 @@ Covered detector families are currently `secret` and `panic_safety`. Static
 findings default to `unverified`; validation receipts are intentionally empty
 until a later real validation workflow records command receipts. No Interface or
 Intelligence layer code was modified, and no new crate was added.
+
+## Day 6 Closure
+
+Day 6 added the V1 report renderer as a thin local formatting layer. The
+`security:report` package script runs `tests/security/security_audit_gate.js`,
+parses its JSON summary, and writes:
+
+- `docs/security/examples/SECURITY_REVIEW_SAMPLE.md`
+- `docs/security/examples/SECURITY_REVIEW_SAMPLE.json`
+
+The generated report includes Scope, Executive Summary, Threat Model Summary,
+Findings, Validation Receipts, and Residual Risk. The report keeps V1 status at
+`PARTIAL/GATED`, preserves accepted-risk DOM warnings as warnings, and does not
+claim full SAST or complete security audit coverage.
+
+Validation receipts for Day 6 were recorded only after the commands were run.
+Manual WebView/click validation was not executed per user instruction and
+remains `PENDING-WEBVIEW-SMOKE`.

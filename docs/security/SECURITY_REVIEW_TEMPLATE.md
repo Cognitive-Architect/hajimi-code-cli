@@ -31,7 +31,7 @@ Summary:
 - Contract version:
 - Feature gates:
 
-## 3. Threat Model
+## 3. Threat Model Summary
 
 | Area | Notes |
 |---|---|
@@ -40,6 +40,9 @@ Summary:
 | Trust boundaries | |
 | High-risk operations | |
 | Assumptions | |
+
+This template supports V1 local gate/report rendering. It must not be presented
+as a complete security audit or full SAST result.
 
 ## 4. Findings
 
