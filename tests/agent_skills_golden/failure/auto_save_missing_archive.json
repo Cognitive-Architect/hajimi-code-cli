@@ -1,0 +1,17 @@
+{
+  "description": "auto-save output missing the critical AUTO SAVE archive block must fail criteria evaluation.",
+  "active_skills": [
+    {
+      "name": "auto-save",
+      "score": 0.95,
+      "reason": "trigger matched",
+      "matched_terms": ["存档"],
+      "risk_level": "low",
+      "category": "handoff",
+      "exclusive_group": "handoff-output"
+    }
+  ],
+  "output": "修改已完成并验证，但是没有包含任何自动存档块内容。",
+  "expected_pass": false,
+  "expected_failure_reason": "missing required marker: === AUTO SAVE"
+}

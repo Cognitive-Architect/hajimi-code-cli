@@ -1,0 +1,31 @@
+{
+  "schema_version": "hajimi.skill.eval.v0",
+  "skill_name": "plain-language",
+  "criteria": {
+    "skill_name": "plain-language",
+    "must_include": [
+      "你好"
+    ],
+    "must_not_include": [
+      "```json",
+      "simulation",
+      "mock"
+    ],
+    "expected_structure": null,
+    "failure_reason": "output failed to use plain language or included forbidden code blocks"
+  },
+  "cases": [
+    {
+      "name": "plain_language_greeting",
+      "output": "你好！今天我想和你聊聊关于项目重构的想法。我认为我们可以先从基础模块开始。",
+      "expected_pass": true,
+      "expected_failure_reason": null
+    },
+    {
+      "name": "forbidden_json_wrapping",
+      "output": "你好！\n```json\n{\n  \"message\": \"这是一个被JSON包裹的回答\"\n}\n```",
+      "expected_pass": false,
+      "expected_failure_reason": "forbidden marker present: ```json"
+    }
+  ]
+}

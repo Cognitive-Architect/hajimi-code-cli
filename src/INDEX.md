@@ -37,7 +37,7 @@ src/
 │   ├── agent-core/      # 自主Agent系统（7步循环/Swarm/可插拔治理/LLM桥接）⭐
 │   │   ├── llm/         #   LLM适配器桥接（PlannerLlmBridge + ReflectorLlmBridge）
 │   │   ├── prompts/     #   Prompt resources + feature gates, including default-off Agent Skills V0 gate
-│   │   └── skills/      #   本地技能包协议 + 注册中心 + 路由与评分（V0a）⭐
+│   │   └── skills/      #   本地技能包协议 + 注册中心 + 路由评分（V0a） + 运行期安全（V0b） + 校验小票与模板（V0c partial）⭐
 │   ├── chimera/         # Chimera REPL引擎（Rust）⭐
 │   ├── cloud/           # 云端同步（批次同步）
 │   ├── codex-twist/     # AI内存管理（5级架构/双轨清理完成）⭐

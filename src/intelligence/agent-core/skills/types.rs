@@ -130,6 +130,44 @@ pub const BB_ACTIVE_SKILLS: &str = "__hajimi_active_skills";
 pub const BB_SKILL_ROUTE_RECEIPT: &str = "__hajimi_skill_route_receipt";
 pub const BB_SKILL_INSTRUCTIONS: &str = "__hajimi_skill_instructions";
 pub const BB_SKILL_EVAL_CRITERIA: &str = "__hajimi_skill_eval_criteria";
+pub const BB_SKILL_TOOL_CONSTRAINTS: &str = "__hajimi_skill_tool_constraints";
+pub const BB_SKILL_EXECUTION_RECEIPTS: &str = "__hajimi_skill_execution_receipts";
+pub const HAJIMI_AGENT_SKILL_RUNTIME_ENV: &str = "HAJIMI_AGENT_SKILL_RUNTIME";
+
+/// Runtime-level tool permission after intersecting a Skill's allowed_tools and permissions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillToolPermissionLevel {
+    Deny,
+    Ask,
+    Allow,
+}
+
+/// Single tool decision produced by SkillRuntime. It is declarative only and never executes tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillToolConstraint {
+    pub tool_name: String,
+    pub permission: SkillToolPermissionLevel,
+    pub approval_level: crate::governance::ApprovalLevel,
+    pub reason: String,
+}
+
+/// Full constrained runtime report for one Skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillToolConstraints {
+    pub skill_name: String,
+    pub allowed: Vec<SkillToolConstraint>,
+    pub denied: Vec<SkillToolConstraint>,
+    pub warnings: Vec<String>,
+}
+
+/// Result of validating manifest allowed_tools against known tool names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillAllowedToolsReport {
+    pub valid_tools: Vec<String>,
+    pub unknown_tools: Vec<String>,
+    pub warnings: Vec<String>,
+}
 
 /// Represents the result of matching a Skill against an input.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -193,6 +231,66 @@ pub struct LoadedSkill {
     pub manifest: SkillManifest,
     pub instructions: String,
     pub token_estimate: usize,
+}
+
+/// Lightweight output acceptance criteria derived from a Skill eval fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalCriterion {
+    pub skill_name: String,
+    pub must_include: Vec<String>,
+    pub must_not_include: Vec<String>,
+    pub expected_structure: Option<Vec<String>>,
+    pub failure_reason: Option<String>,
+}
+
+/// Deterministic output evaluation case used by golden tests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalCase {
+    pub name: String,
+    pub output: String,
+    pub expected_pass: bool,
+    pub expected_failure_reason: Option<String>,
+}
+
+/// On-disk V0 eval fixture format referenced by `SkillManifest::eval_entry`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalFixture {
+    pub schema_version: String,
+    pub skill_name: String,
+    pub criteria: SkillEvalCriterion,
+    pub cases: Vec<SkillEvalCase>,
+}
+
+/// Detailed evaluation report entry for a single Skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalReportEntry {
+    pub skill_name: String,
+    pub passed: bool,
+    pub failure_reason: Option<String>,
+    pub matched_must_include: Vec<String>,
+    pub missing_must_include: Vec<String>,
+    pub matched_must_not_include: Vec<String>,
+}
+
+/// Detailed evaluation report for all active Skills.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillEvalReport {
+    pub passed: bool,
+    pub skill_reports: Vec<SkillEvalReportEntry>,
+    pub failure_reason: Option<String>,
+}
+
+/// Execution receipt representing the result of evaluating output for an active skill.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillExecutionReceipt {
+    pub skill_name: String,
+    pub skill_version: String,
+    pub input_hash: String,
+    pub matched_score: f32,
+    pub success: bool,
+    pub failure_reason: Option<String>,
+    pub next_revision_hint: Option<String>,
+    pub timestamp: String,
 }
 
 #[cfg(test)]

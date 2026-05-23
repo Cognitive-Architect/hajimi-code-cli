@@ -10,7 +10,7 @@
   "triggers": ["自动存档", "存档", "项目状态", "下一步", "handoff", "风险"],
   "risk_level": "low",
   "entry": "SKILL.md",
-  "eval_entry": "evals/route_cases.json",
+  "eval_entry": "evals/output_cases.json",
   "context_budget_tokens": 1200,
   "allowed_tools": [],
   "permissions": {

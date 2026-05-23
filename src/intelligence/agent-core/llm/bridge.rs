@@ -446,6 +446,61 @@ impl crate::reflector::ReflectionLlmClient for ReflectorLlmBridge {
 }
 
 impl ReflectorLlmBridge {
+    async fn active_skill_eval_criteria_blocks(
+        &self,
+    ) -> Vec<crate::context_window_manager::ContextBlock> {
+        if !crate::prompts::is_agent_skills_v0_enabled() {
+            return Vec::new();
+        }
+
+        let Some(ref bb) = self.blackboard else {
+            return Vec::new();
+        };
+        let Some(entry) = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await else {
+            return Vec::new();
+        };
+        let Ok(criteria) =
+            serde_json::from_str::<Vec<crate::skills::SkillEvalCriterion>>(&entry.value)
+        else {
+            tracing::warn!("Failed to parse BB_SKILL_EVAL_CRITERIA for Reflector injection");
+            return Vec::new();
+        };
+        if criteria.is_empty() {
+            return Vec::new();
+        }
+
+        let mut content = String::from(
+            "Skill Eval Criteria:\nCheck active Skill output against these lightweight criteria.\n",
+        );
+        for criterion in criteria {
+            content.push_str(&format!(
+                "- Skill: {}\n  must_include: {}\n  must_not_include: {}",
+                criterion.skill_name,
+                criterion.must_include.join(", "),
+                criterion.must_not_include.join(", ")
+            ));
+            if let Some(expected_structure) = criterion.expected_structure {
+                content.push_str(&format!(
+                    "\n  expected_structure: {}",
+                    expected_structure.join(", ")
+                ));
+            }
+            if let Some(failure_reason) = criterion.failure_reason {
+                content.push_str(&format!("\n  failure_reason: {}", failure_reason));
+            }
+            content.push('\n');
+        }
+
+        vec![crate::context_window_manager::ContextBlock {
+            name: "skill_eval_criteria".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P1,
+            content_type: crate::context_window_manager::ContentType::Text,
+            token_estimate: crate::context_window_manager::estimate_tokens(&content),
+            content,
+            truncatable: true,
+        }]
+    }
+
     async fn chat_and_collect(&self, prompt: String) -> ReplResult<String> {
         let client = if let Some(ref bb) = self.blackboard {
             if let Some(entry) = bb.read("__hajimi_provider_id").await {
@@ -535,8 +590,14 @@ impl ReflectorLlmBridge {
             } else {
                 "System: Please assist.".to_string()
             };
+            let extra_blocks = self.active_skill_eval_criteria_blocks().await;
 
-            match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
+            match assemble_messages_for_bridge_with_blocks(
+                &prompt,
+                &sys_content,
+                &budget,
+                extra_blocks,
+            ) {
                 Ok((messages, estimated_input, included_meta, omitted_meta)) => {
                     tracing::info!(
                         "Reflector budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
@@ -847,6 +908,10 @@ mod tests {
 
     fn planner_v1_response() -> String {
         r#"{"schema_version":"PlannerSubgoalPlanV1","goal_id":"g1","summary":"test","subgoals":[{"id_hint":"sg1","description":"Analyze","priority":"High","depends_on":[],"suggested_tools":[],"expected_evidence":[],"validation_intent":"None","risk_level":"Low","requires_user_approval":false,"stop_conditions":[]}],"global_risks":[],"notes":[]}"#.to_string()
+    }
+
+    fn reflector_v1_response() -> String {
+        r#"{"schema_version":"ReflectorCritiqueV1","success":false,"severity":"High","confidence":0.7,"evidence":["missing AUTO SAVE"],"root_cause":{"category":"ValidationFailure","description":"skill output missing archive block","confidence":0.9},"issues":["missing auto-save block"],"new_risks":[],"suggestions":["add AUTO SAVE archive block"],"plan_adjustment":{"action":"Continue","reason":"output can be corrected","revised_subgoals":[]},"stop_loss":{"triggered":false,"reason":"none","escalation_target":"user"}}"#.to_string()
     }
 
     fn clear_planner_injection_env() {
@@ -1241,6 +1306,82 @@ mod tests {
         assert!(omitted_skill.4.contains("budget"));
     }
 
+    #[tokio::test]
+    async fn reflector_skill_eval_injects_lightweight_criteria_from_blackboard() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_planner_injection_env();
+        std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
+        std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
+        std::env::set_var("HAJIMI_PROMPT_PERSONA_ENABLED", "false");
+        std::env::set_var("HAJIMI_REFLECTOR_V1_ENABLED", "true");
+
+        let criteria = vec![crate::skills::SkillEvalCriterion {
+            skill_name: "auto-save".to_string(),
+            must_include: vec![
+                "=== AUTO SAVE".to_string(),
+                "做了什么".to_string(),
+                "当前状态".to_string(),
+                "下一步".to_string(),
+                "风险".to_string(),
+            ],
+            must_not_include: vec!["TODO".to_string(), "simulation".to_string()],
+            expected_structure: Some(vec![
+                "做了什么".to_string(),
+                "当前状态".to_string(),
+                "下一步".to_string(),
+                "风险".to_string(),
+            ]),
+            failure_reason: Some("missing required auto-save archive block".to_string()),
+        }];
+        let bb = Arc::new(crate::blackboard::Blackboard::new());
+        bb.write(
+            crate::skills::BB_SKILL_EVAL_CRITERIA,
+            &serde_json::to_string(&criteria).unwrap(),
+            "reflector_skill_eval_test",
+        )
+        .await;
+
+        let client = Arc::new(RecordingLlmClient::new(reflector_v1_response()));
+        let bridge = ReflectorLlmBridge::new(client.clone()).with_blackboard(bb);
+        let blocks = bridge.active_skill_eval_criteria_blocks().await;
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "skill_eval_criteria");
+        assert_eq!(
+            format!("{}", blocks[0].priority),
+            "P1",
+            "criteria block must be P1"
+        );
+        assert!(blocks[0].truncatable);
+        assert!(blocks[0].content.contains("Skill Eval Criteria"));
+        assert!(blocks[0].content.contains("=== AUTO SAVE"));
+        assert!(
+            !blocks[0].content.contains("# Auto-Save Skill"),
+            "Reflector criteria must not receive the full skill body"
+        );
+
+        let goal = mk_test_goal();
+        let result = crate::planner::TaskResult {
+            success: true,
+            output: "Task completed without archive block".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        bridge.llm_critique(&goal, &result).await.unwrap();
+        let captured = client.captured_messages();
+        assert_eq!(captured.len(), 1);
+        assert!(captured[0]
+            .iter()
+            .any(|m| m.content.contains("Skill Eval Criteria")));
+        assert!(captured[0]
+            .iter()
+            .any(|m| m.content.contains("must_include")));
+        assert!(!captured[0]
+            .iter()
+            .any(|m| m.content.contains("# Auto-Save Skill")));
+
+        clear_planner_injection_env();
+        std::env::remove_var("HAJIMI_REFLECTOR_V1_ENABLED");
+    }
+
     #[test]
     fn test_assemble_rich_messages_for_bridge_success() {
         let budget = crate::context_budget::fast_128k();
@@ -1286,6 +1427,7 @@ type AssembleBridgeResult = Result<
 /// ContextReceipt can record true block statistics without touching raw content.
 /// The `structured_summary` in included metadata is a privacy-safe structural label:
 ///   `"message role=<role> estimated_tokens=<n>"` — no prompt content.
+#[cfg(test)]
 pub(crate) fn assemble_messages_for_bridge(
     prompt: &str,
     sys_content: &str,
