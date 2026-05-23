@@ -1,6 +1,6 @@
 # Hajimi Security Workflow Spec
 
-> Status: Day 5 Rust schema implemented for B-17/05.
+> Status: Day 7 Agent Core DTO skeleton implemented for B-17/07.
 > Updated: 2026-05-23.
 > Scope: local repository security review workflow only.
 
@@ -28,6 +28,7 @@ This is not a complete SAST platform or an automated attack system.
 | Legacy DOM HTML API | `WARN BASELINE` | `npm run test:security-gate` reported 108 allowlisted warnings and 0 failures |
 | Shell allow-list | `HARDENED / NEEDS V1 RULE IDS` | `src/engine/tool-system/src/shell.rs:21` `ALLOWED_COMMANDS`; tests at lines 332-333 reject `bash` / `sh` as user command |
 | Day 5 Rust schema | `IMPLEMENTED / PARTIAL SCAN` | `src/engine/tool-system/src/security.rs` preserves old fields `severity`, `type`, `file`, `line`, `snippet` and adds `rule_id`, `category`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence` |
+| Day 7 Agent Core DTO | `IMPLEMENTED / SKELETON ONLY` | `src/intelligence/agent-core/security_workflow.rs` defines `SecurityWorkflowRequest`, `SecurityWorkflowReport`, `SecurityWorkflowKind`, `SecurityFinding`, `Evidence`, `ValidationReceipt`, and `SecurityWorkflowOrchestrator` |
 
 ## V1 Scope
 
@@ -293,6 +294,42 @@ Day 7 DTO names should align with this contract:
 - `Evidence`
 - `ValidationReceipt`
 
+## Agent Core Security Workflow DTO
+
+B-17/07 implements the Intelligence-layer DTO skeleton in
+`src/intelligence/agent-core/security_workflow.rs`. The module is registered
+from `src/intelligence/agent-core/lib.rs` and does not connect to the UI.
+
+Implemented DTOs:
+
+- `SecurityWorkflowKind`
+- `SecurityScope`
+- `SecurityWorkflowRequest`
+- `SecurityFinding`
+- `Evidence`
+- `ValidationReceipt`
+- `SecurityWorkflowSummary`
+- `SecurityWorkflowReport`
+- `SecurityWorkflowOrchestrator`
+
+Implemented request/report fields:
+
+| Field | Status | Notes |
+|---|---:|---|
+| `kind` | `added` | Uses lower snake_case workflow kinds. |
+| `scope` | `added` | Repository, branch, commit, paths, and out-of-scope notes. |
+| `dry_run` | `added` | Required on request and report; defaults are left to callers. |
+| `max_findings` | `added` | Orchestrator caps report assembly to this limit. |
+| `findings` | `added` | Uses the shared finding contract shape. |
+| `confidence` | `added` | Clamped to `0.0-1.0`; no evidence caps at `0.4`. |
+| `validation_receipts` | `added` | Aggregated from findings only; no command is executed here. |
+| `residual_risk` | `added` | Assembled from dry-run status, missing evidence, missing receipts, and finding risks. |
+
+The Day 7 orchestrator is a report assembly skeleton only. It does not apply
+fixes, does not connect to Tauri commands, and does not run validation commands.
+If a finding has no evidence but arrives as `confirmed` or `fixed`, report
+assembly downgrades it to `unverified`.
+
 ## Feature Gates
 
 | Gate | Default | Scope | Rollback |
@@ -359,4 +396,12 @@ Every finding must carry at least one evidence item:
   but scanning remains partial and limited to secrets plus panic-safety patterns.
 - `validation_receipts` are present in the DTO but remain empty until a later
   validation workflow records real command receipts.
+- Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
+
+## Day 7 Debt
+
+- `DEBT-WORKFLOW-SKELETON-B17-07`: Agent Core DTO and report assembly skeleton
+  are implemented, but workflow execution logic is pending.
+- The orchestrator only assembles local in-memory DTOs; it does not invoke
+  tools, does not apply fixes, and does not produce UI state.
 - Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
