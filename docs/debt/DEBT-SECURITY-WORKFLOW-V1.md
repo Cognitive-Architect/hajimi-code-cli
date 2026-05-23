@@ -1,8 +1,8 @@
 # DEBT-SECURITY-WORKFLOW-V1
 
-> Status: INITIATED / CONTRACT DEFINED / IMPLEMENTATION PENDING.
+> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE PARTIAL/GATED.
 > Updated: 2026-05-23.
-> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema.
+> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary.
 
 ## Baseline
 
@@ -14,6 +14,7 @@
 | Pre-existing dirty state | `.gitignore` modified; `docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md` deleted; `.codex/`, `docs/roadmap/Hajimi security workflow/`, and `target-ui-refresh/` untracked |
 | Day 1 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day01-Baseline-Audit-Docs.md` |
 | Day 2 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day02-Contract-Finding-Schema.md` |
+| Day 3 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day03-Gate-Allowlist-Enhancement.md` |
 | Plan docs read | `SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md`; `SECURITY-WORKFLOW-V1-V3-ROADMAP.md` |
 
 ## Command Evidence
@@ -34,13 +35,17 @@
 | Node syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
 | Gate smoke | `npm run test:security-gate` | exit 0; `failures: 0`; `warnings: 108`; `Security Audit Gate V1: PASS` |
 | Day 2 source schema baseline | `rg -n "struct Finding|severity|snippet|SecurityAuditTool" src/engine/tool-system/src/security.rs` | Current `security.rs` still has lightweight fields: `severity`, `type_`, `file`, `line`, `snippet` |
+| Day 3 gate syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
+| Day 3 gate run | `node tests/security/security_audit_gate.js` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; JSON summary emitted |
+| Day 3 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
+| Day 3 allowlist evidence | `rg -n "allowlist|reason|ALLOWLIST-001|findings|summary" tests/security/security_audit_gate.js tests/security/security_audit_allowlist.json` | Structured finding collection, reason validation, and allowlist entries found |
 
 ## Current Security Capability
 
 | Capability | Status | Notes |
 |---|---:|---|
 | SecurityAuditTool | `EXISTS / LIGHT SCHEMA` | Current Rust output has `Finding` and `AuditResult`, but Day 5 still needs `rule_id`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence`. |
-| Security Gate V1 | `EXISTS / PARTIAL` | Gate is runnable and fails on hard regressions, but Day 3-4 still need rule IDs and structured summary work. |
+| Security Gate V1 | `EXISTS / PARTIAL/GATED` | Gate is runnable, can fail on hard regressions, validates allowlist reasons, emits structured findings, and prints JSON summary. Coverage remains limited until Day 4 rule expansion. |
 | Security Workflow contract | `DEFINED / NOT IMPLEMENTED` | Day 2 defines `FindingStatus`, `Evidence`, `ValidationReceipt`, workflow kinds, confidence, and feature-gate rules in docs only. |
 | B18 anti-regression | `CLEARED / GATED` | `withGlobalTauri=true` and naked `run_command` are fail-level regressions. |
 | Security CI | `EXISTS` | Existing workflow runs `npm run test:security-gate`. |
@@ -55,17 +60,19 @@
 - Frontend file operations through shell `run_command` must fail.
 - Restoring complex shell interpreters to user command allow-lists must fail.
 - Allowlist entries without `reason` must fail.
+- Missing allowlist `path` or `pattern` must fail.
 
 ## Residual Risk
 
 | Risk | Status | Next Step |
 |---|---:|---|
 | SecurityAuditTool schema is lightweight | `PENDING` | Day 5: implement structured finding schema while preserving old `severity/type/file/line/snippet` fields |
-| Gate warnings are not machine-report JSON yet | `PENDING` | Day 3-4: rule IDs, allowlist metadata, structured summary |
+| Security gate coverage is still limited | `PARTIAL/GATED` | Day 4: add CSP/DOM/Shell/File Ops rule expansion without claiming full security audit coverage |
 | Legacy DOM `innerHTML` debt remains | `PENDING` | Later UI safe-render migration; do not claim cleared |
 | Real WebView/manual click validation absent | `PENDING-WEBVIEW-SMOKE` | Record as debt until a human or browser session validates UI paths |
 | Security Workflow Agent/UI/Fix modules absent | `PLANNED` | Day 7+ per roadmap |
 | DEBT-SCHEMA-B17-02 | `CONTRACT ONLY` | Contract is documented; Rust/JS implementation remains pending |
+| DEBT-SECURITY-GATE-B17-03 | `PARTIAL/GATED` | Gate now has allowlist reason validation and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
 
 ## Safety Boundary
 
@@ -106,3 +113,21 @@ changed.
 Day 2 defined the shared Security Workflow contract for later V1-V3
 implementation. No Rust, JavaScript, gate rule, package script, or CI behavior
 was changed.
+
+## Day 3 Closure
+
+Day 3 enhanced the existing Security Audit Gate in place. The gate now:
+
+- collects structured findings with `rule_id`, `severity`, `status`, `file`,
+  `line`, `evidence`, and `reason`;
+- validates allowlist entries with `ALLOWLIST-001` so every exception must carry
+  `path`, `pattern`, and `reason`;
+- supports allowlist entries shaped as `rule_id`, `path`, `pattern`, `reason`,
+  and optional `expires_at`;
+- skips build/dependency directories including `.git`, `target`,
+  `node_modules`, `dist`, and `target-ui-refresh`;
+- preserves the human-readable summary and appends a JSON summary report;
+- preserves `npm run test:security-gate` without adding dependencies.
+
+Real WebView/manual click validation remains `PENDING-WEBVIEW-SMOKE` per user
+instruction and is not claimed as completed.

@@ -7,7 +7,9 @@ const webRoot = 'src/interface/web';
 const shellPath = 'src/engine/tool-system/src/shell.rs';
 const desktopMainPath = 'src/interface/desktop/src/main.rs';
 const allowlistPath = 'tests/security/security_audit_allowlist.json';
+const scanSkipDirs = new Set(['.git', 'target', 'node_modules', 'dist', 'target-ui-refresh']);
 
+const findings = [];
 const failures = [];
 const warnings = [];
 
@@ -19,19 +21,73 @@ function readText(repoPath) {
   return fs.readFileSync(path.join(repoRoot, repoPath), 'utf8');
 }
 
-function addFailure(rule, file, line, message) {
-  failures.push({ rule, file, line, message });
+function readSnippet(file, line) {
+  if (!file || !line) return '';
+  const fullPath = path.join(repoRoot, file);
+  if (!fs.existsSync(fullPath)) return '';
+  return fs.readFileSync(fullPath, 'utf8').split(/\r?\n/)[line - 1]?.trim() || '';
 }
 
-function addWarning(rule, file, line, message) {
-  warnings.push({ rule, file, line, message });
+function makeEvidence(file, line, note, snippet) {
+  return [{
+    kind: 'code',
+    file,
+    line,
+    snippet: snippet || readSnippet(file, line),
+    command: null,
+    output_hash: null,
+    note,
+  }];
+}
+
+function addFinding(input) {
+  const finding = {
+    rule_id: input.rule_id,
+    severity: input.severity || 'medium',
+    status: input.status || 'unverified',
+    file: input.file || null,
+    line: input.line || null,
+    evidence: input.evidence || makeEvidence(input.file, input.line, input.message || input.reason),
+    reason: input.reason || input.message || null,
+    message: input.message || input.reason || '',
+  };
+  findings.push(finding);
+  return finding;
+}
+
+function addFailure(rule, file, line, message, options = {}) {
+  const finding = addFinding({
+    rule_id: rule,
+    severity: options.severity || 'high',
+    status: options.status || 'confirmed',
+    file,
+    line,
+    message,
+    reason: options.reason || message,
+    evidence: options.evidence,
+  });
+  failures.push(finding);
+}
+
+function addWarning(rule, file, line, message, options = {}) {
+  const finding = addFinding({
+    rule_id: rule,
+    severity: options.severity || 'low',
+    status: options.status || 'unverified',
+    file,
+    line,
+    message,
+    reason: options.reason || message,
+    evidence: options.evidence,
+  });
+  warnings.push(finding);
 }
 
 function walkFiles(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (['dist', 'node_modules'].includes(entry.name)) continue;
+      if (scanSkipDirs.has(entry.name)) continue;
       walkFiles(fullPath, out);
     } else if (/\.(html|js|css)$/.test(entry.name)) {
       out.push(fullPath);
@@ -46,15 +102,16 @@ function loadAllowlist() {
   const entries = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
   for (const [index, entry] of entries.entries()) {
     if (!entry.path || !entry.pattern || !entry.reason) {
-      addFailure('allowlist-reason', allowlistPath, index + 1, 'allowlist entries require path, pattern, and reason');
+      addFailure('ALLOWLIST-001', allowlistPath, index + 1, 'allowlist entry missing reason/path/pattern; reason is required for every exception');
     }
   }
   return entries;
 }
 
-function isAllowed(allowlist, file, text) {
-  return allowlist.some(entry => {
+function findAllowlistEntry(allowlist, ruleId, file, text) {
+  return allowlist.find(entry => {
     if (entry.path !== file) return false;
+    if (entry.rule_id && entry.rule_id !== ruleId) return false;
     return text.includes(entry.pattern);
   });
 }
@@ -96,8 +153,12 @@ function scanDangerousHtmlApi(files, allowlist) {
         addFailure('slash-palette-dangerous-html', file, index + 1, 'slash palette must use safe DOM rendering only');
         return;
       }
-      if (isAllowed(allowlist, file, line)) {
-        addWarning('frontend-dangerous-html-allowlisted', file, index + 1, 'known legacy dangerous HTML API allowed with reason');
+      const allowlistEntry = findAllowlistEntry(allowlist, 'frontend-dangerous-html', file, line);
+      if (allowlistEntry) {
+        addWarning('frontend-dangerous-html-allowlisted', file, index + 1, 'known legacy dangerous HTML API allowed with reason', {
+          reason: allowlistEntry.reason,
+          evidence: makeEvidence(file, index + 1, allowlistEntry.reason, line.trim()),
+        });
       } else {
         addFailure('frontend-dangerous-html', file, index + 1, 'dangerous HTML API requires allowlist reason or safe DOM rewrite');
       }
@@ -245,28 +306,46 @@ function findLine(text, needle) {
 }
 
 function printSummary() {
+  const report = {
+    status: failures.length ? 'fail' : 'pass',
+    summary: {
+      findings: findings.length,
+      failures: failures.length,
+      warnings: warnings.length,
+      allowlist: {
+        path: allowlistPath,
+      },
+    },
+    findings,
+  };
+
   console.log('Security Audit Gate V1 summary');
+  console.log(`findings: ${findings.length}`);
   console.log(`failures: ${failures.length}`);
   console.log(`warnings: ${warnings.length}`);
 
   if (warnings.length) {
     console.log('\nwarnings:');
     for (const warning of warnings) {
-      console.log(`- [${warning.rule}] ${warning.file}:${warning.line} ${warning.message}`);
+      console.log(`- [${warning.rule_id}] ${warning.file}:${warning.line} ${warning.message}`);
     }
   }
 
   if (failures.length) {
     console.error('\nfailures:');
     for (const failure of failures) {
-      console.error(`- [${failure.rule}] ${failure.file}:${failure.line} ${failure.message}`);
+      console.error(`- [${failure.rule_id}] ${failure.file}:${failure.line} ${failure.message}`);
     }
     console.error('\nSecurity Audit Gate V1: FAIL');
+    console.log('\nSecurity Audit Gate V1 JSON summary');
+    console.log(JSON.stringify(report, null, 2));
     process.exitCode = 1;
     return;
   }
 
   console.log('\nSecurity Audit Gate V1: PASS');
+  console.log('\nSecurity Audit Gate V1 JSON summary');
+  console.log(JSON.stringify(report, null, 2));
 }
 
 function main() {
