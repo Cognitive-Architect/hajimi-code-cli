@@ -1,8 +1,8 @@
 # DEBT-SECURITY-WORKFLOW-V1
 
-> Status: INITIATED / PARTIAL BASELINE.
+> Status: INITIATED / CONTRACT DEFINED / IMPLEMENTATION PENDING.
 > Updated: 2026-05-23.
-> Work item: B-17/01 Security Workflow Baseline Audit + Docs Skeleton.
+> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema.
 
 ## Baseline
 
@@ -13,6 +13,7 @@
 | HEAD | `b0e2b5bff326b4bd4530f3d176f855efd62fb1e1` |
 | Pre-existing dirty state | `.gitignore` modified; `docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md` deleted; `.codex/`, `docs/roadmap/Hajimi security workflow/`, and `target-ui-refresh/` untracked |
 | Day 1 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day01-Baseline-Audit-Docs.md` |
+| Day 2 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day02-Contract-Finding-Schema.md` |
 | Plan docs read | `SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md`; `SECURITY-WORKFLOW-V1-V3-ROADMAP.md` |
 
 ## Command Evidence
@@ -32,6 +33,7 @@
 | Shell allow-list | `rg -n "ALLOWED_COMMANDS|bash|sh|pwsh|powershell" src/engine/tool-system/src` | `shell.rs` contains allow-list and tests rejecting shell interpreters as user command payloads |
 | Node syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
 | Gate smoke | `npm run test:security-gate` | exit 0; `failures: 0`; `warnings: 108`; `Security Audit Gate V1: PASS` |
+| Day 2 source schema baseline | `rg -n "struct Finding|severity|snippet|SecurityAuditTool" src/engine/tool-system/src/security.rs` | Current `security.rs` still has lightweight fields: `severity`, `type_`, `file`, `line`, `snippet` |
 
 ## Current Security Capability
 
@@ -39,6 +41,7 @@
 |---|---:|---|
 | SecurityAuditTool | `EXISTS / LIGHT SCHEMA` | Current Rust output has `Finding` and `AuditResult`, but Day 5 still needs `rule_id`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence`. |
 | Security Gate V1 | `EXISTS / PARTIAL` | Gate is runnable and fails on hard regressions, but Day 3-4 still need rule IDs and structured summary work. |
+| Security Workflow contract | `DEFINED / NOT IMPLEMENTED` | Day 2 defines `FindingStatus`, `Evidence`, `ValidationReceipt`, workflow kinds, confidence, and feature-gate rules in docs only. |
 | B18 anti-regression | `CLEARED / GATED` | `withGlobalTauri=true` and naked `run_command` are fail-level regressions. |
 | Security CI | `EXISTS` | Existing workflow runs `npm run test:security-gate`. |
 | DOM rendering debt | `WARN / ALLOWLISTED` | 108 current warnings are tracked as legacy dangerous HTML API usage. |
@@ -57,11 +60,12 @@
 
 | Risk | Status | Next Step |
 |---|---:|---|
-| SecurityAuditTool schema is lightweight | `PENDING` | Day 5: structured finding schema |
+| SecurityAuditTool schema is lightweight | `PENDING` | Day 5: implement structured finding schema while preserving old `severity/type/file/line/snippet` fields |
 | Gate warnings are not machine-report JSON yet | `PENDING` | Day 3-4: rule IDs, allowlist metadata, structured summary |
 | Legacy DOM `innerHTML` debt remains | `PENDING` | Later UI safe-render migration; do not claim cleared |
 | Real WebView/manual click validation absent | `PENDING-WEBVIEW-SMOKE` | Record as debt until a human or browser session validates UI paths |
 | Security Workflow Agent/UI/Fix modules absent | `PLANNED` | Day 7+ per roadmap |
+| DEBT-SCHEMA-B17-02 | `CONTRACT ONLY` | Contract is documented; Rust/JS implementation remains pending |
 
 ## Safety Boundary
 
@@ -72,8 +76,33 @@
 - 不把未验证 finding 标记为 `confirmed`。
 - 不把未复测 fix 标记为 `fixed`。
 
+## Contract Rules Added In B-17/02
+
+- Finding status state machine: `candidate`, `unverified`, `confirmed`, `fixed`,
+  `accepted_risk`, `false_positive`.
+- Severity: `low`, `medium`, `high`, `critical`.
+- Confidence: `0.0-1.0`; no evidence caps confidence at `0.4`.
+- Evidence minimum fields: `kind`, `file`, `line`, `snippet`, `command`,
+  `output_hash`, `note`.
+- ValidationReceipt minimum fields: `command`, `exit_code`, `stdout_summary`,
+  `stderr_summary`, `status`.
+- Workflow kinds: `security_scan`, `threat_model`, `finding_discovery`,
+  `attack_path_analysis`, `validation`, `fix_finding`.
+- Feature gates: `HAJIMI_SECURITY_WORKFLOW_ENABLED`,
+  `HAJIMI_SECURITY_UI_ENABLED`, `HAJIMI_SECURITY_FIX_ENABLED`,
+  `HAJIMI_SECURITY_FIX_DRY_RUN`.
+- `High` / `Critical` and dangerous fix paths require
+  `human_review_required=true`.
+- Attack paths remain human-readable only; no executable exploit output.
+
 ## Day 1 Closure
 
 Day 1 initialized the security workflow spec, report template, and V1 debt
 receipt using real command output. No source business logic or gate behavior was
 changed.
+
+## Day 2 Closure
+
+Day 2 defined the shared Security Workflow contract for later V1-V3
+implementation. No Rust, JavaScript, gate rule, package script, or CI behavior
+was changed.

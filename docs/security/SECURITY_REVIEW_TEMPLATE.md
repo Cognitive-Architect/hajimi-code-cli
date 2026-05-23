@@ -28,6 +28,8 @@ Summary:
 - Overall status:
 - Gate status:
 - Main residual risk:
+- Contract version:
+- Feature gates:
 
 ## 3. Threat Model
 
@@ -43,36 +45,43 @@ Summary:
 
 ### FINDING-001: Title
 
+- Finding ID:
+- Rule ID:
 - Severity:
 - Status: `candidate | unverified | confirmed | fixed | accepted_risk | false_positive`
 - Category:
-- Rule ID:
 - Confidence:
+- Type:
 - File:
 - Line:
+- Snippet:
 - Evidence:
 - Attack path narrative:
 - Recommendation:
 - Regression test:
 - Human review required:
+- Validation receipts:
+- Residual risk:
 
 Evidence table:
 
-| Kind | File | Line | Command | Summary |
-|---|---|---:|---|---|
-| code | | | | |
+| Kind | File | Line | Snippet | Command | Output Hash | Note |
+|---|---|---:|---|---|---|---|
+| code | | | | | | |
 
 ## 5. Validation Receipts
 
-| Command | Exit Code | Status | Output Summary |
-|---|---:|---|---|
-| | | `pass | fail | not_run | pending` | |
+| Command | Exit Code | Status | Stdout Summary | Stderr Summary |
+|---|---:|---|---|---|
+| | | `pass | fail | not_run | pending` | | |
 
 ## 6. Fix / Revalidation
 
 - Patch plan:
 - Dry-run:
 - Files affected:
+- Risk level:
+- Human review required:
 - Rollback plan:
 - Revalidation commands:
 - Revalidation status:
@@ -83,8 +92,25 @@ Evidence table:
 - NOT_FOUND:
 - Accepted risk:
 - Manual WebView / click validation debt:
+- Findings without evidence:
+- Findings without revalidation:
 
-## 8. Safety Boundaries
+## 8. Workflow Contract Mapping
+
+| Contract Field | Report Location | Notes |
+|---|---|---|
+| `finding_id` | Findings | Stable report-local ID |
+| `rule_id` | Findings | Rule or detector ID |
+| `severity` | Summary and Findings | `low`, `medium`, `high`, `critical` |
+| `status` | Summary and Findings | `candidate`, `unverified`, `confirmed`, `fixed`, `accepted_risk`, `false_positive` |
+| `confidence` | Findings | `0.0-1.0`; no evidence caps at `0.4` |
+| `evidence` | Evidence table | Supports `kind/file/line/snippet/command/output_hash/note` |
+| `recommendation` | Findings | Concrete mitigation |
+| `regression_test` | Findings and Validation Receipts | Local command only |
+| `human_review_required` | Findings and Fix / Revalidation | Required for High/Critical |
+| `validation_receipts` | Validation Receipts | Required before `confirmed` / `fixed` |
+
+## 9. Safety Boundaries
 
 - 不自动执行真实 exploit。
 - 不做外部联网扫描。
