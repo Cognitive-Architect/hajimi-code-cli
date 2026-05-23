@@ -33,6 +33,7 @@ pub mod reflector;
 pub mod reflector_dto;
 pub mod resource_monitor;
 pub mod security_workflow;
+pub mod security_fix;
 pub mod skills;
 pub mod swarm;
 pub mod swarm_delegate;
@@ -69,6 +70,7 @@ pub use swarm::{
     Supervisor, SupervisorMetrics, SwarmCoordinator, SwarmMessage, TaskAssignment, Worker,
     WorkerResult, WorkerStatus,
 };
+pub use security_fix::{SecurityFixPlanner, FixFindingRequest, PatchPlan, PatchEdit, RiskLevel};
 
 #[cfg(test)]
 mod agent_loop_tests;

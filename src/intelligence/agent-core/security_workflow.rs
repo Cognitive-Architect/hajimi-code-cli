@@ -218,6 +218,22 @@ impl SecurityWorkflowOrchestrator {
                 workflow_notes.push(
                     "fix_finding remains dry-run planning only in this orchestrator.".to_string(),
                 );
+                let planner = crate::security_fix::SecurityFixPlanner::new();
+                for finding in &findings {
+                    let request = crate::security_fix::FixFindingRequest {
+                        finding_id: finding.finding_id.clone(),
+                        dry_run: true,
+                    };
+                    let plan = planner.plan(&request, finding);
+                    workflow_notes.push(format!(
+                        "Generated PatchPlan for finding {}: Risk Level: {:?}, Recommendation: {}, Human Review Required: {}, Rollback Plan: {}",
+                        plan.finding_id,
+                        plan.risk_level,
+                        plan.recommendation,
+                        plan.human_review_required,
+                        plan.rollback_plan
+                    ));
+                }
             }
         }
 
@@ -703,5 +719,19 @@ mod tests {
             .residual_risk
             .iter()
             .any(|risk| risk.contains("report-only")));
+    }
+
+    #[test]
+    fn security_workflow_fix_finding_runs_planner() {
+        let orchestrator = SecurityWorkflowOrchestrator::with_feature_enabled(true);
+        let report = orchestrator.run(SecurityWorkflowRequest {
+            kind: SecurityWorkflowKind::FixFinding,
+            scope: scope(),
+            dry_run: true,
+            max_findings: 10,
+            findings: vec![finding(FindingStatus::Unverified, vec![code_evidence()])],
+        });
+
+        assert!(report.workflow_notes.iter().any(|note| note.contains("Generated PatchPlan")));
     }
 }
