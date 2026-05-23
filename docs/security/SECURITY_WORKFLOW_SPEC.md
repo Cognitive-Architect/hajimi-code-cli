@@ -1,6 +1,6 @@
 # Hajimi Security Workflow Spec
 
-> Status: Day 7 Agent Core DTO skeleton implemented for B-17/07.
+> Status: Day 8 Agent Core workflow core implemented for B-17/08.
 > Updated: 2026-05-23.
 > Scope: local repository security review workflow only.
 
@@ -29,6 +29,7 @@ This is not a complete SAST platform or an automated attack system.
 | Shell allow-list | `HARDENED / NEEDS V1 RULE IDS` | `src/engine/tool-system/src/shell.rs:21` `ALLOWED_COMMANDS`; tests at lines 332-333 reject `bash` / `sh` as user command |
 | Day 5 Rust schema | `IMPLEMENTED / PARTIAL SCAN` | `src/engine/tool-system/src/security.rs` preserves old fields `severity`, `type`, `file`, `line`, `snippet` and adds `rule_id`, `category`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence` |
 | Day 7 Agent Core DTO | `IMPLEMENTED / SKELETON ONLY` | `src/intelligence/agent-core/security_workflow.rs` defines `SecurityWorkflowRequest`, `SecurityWorkflowReport`, `SecurityWorkflowKind`, `SecurityFinding`, `Evidence`, `ValidationReceipt`, and `SecurityWorkflowOrchestrator` |
+| Day 8 Agent Core workflow | `IMPLEMENTED / REPORT-ONLY` | `security_scan`, `threat_model`, `finding_discovery`, `attack_path_analysis`, and `validation` branches exist; `HAJIMI_SECURITY_WORKFLOW_ENABLED` defaults disabled |
 
 ## V1 Scope
 
@@ -325,10 +326,24 @@ Implemented request/report fields:
 | `validation_receipts` | `added` | Aggregated from findings only; no command is executed here. |
 | `residual_risk` | `added` | Assembled from dry-run status, missing evidence, missing receipts, and finding risks. |
 
-The Day 7 orchestrator is a report assembly skeleton only. It does not apply
-fixes, does not connect to Tauri commands, and does not run validation commands.
-If a finding has no evidence but arrives as `confirmed` or `fixed`, report
-assembly downgrades it to `unverified`.
+The Day 8 orchestrator remains report-only by default, controlled by
+`HAJIMI_SECURITY_WORKFLOW_ENABLED`. It implements local branches for
+`security_scan`, `threat_model`, `finding_discovery`,
+`attack_path_analysis`, and `validation`.
+
+Day 8 behavior:
+
+| Workflow kind | Behavior |
+|---|---|
+| `security_scan` | Consumes supplied local structured findings and records V1 gate/report scope limits. |
+| `threat_model` | Builds assets, entry points, trust boundaries, high-risk operations, and assumptions from scope and evidence only. |
+| `finding_discovery` | Re-runs the status classifier so missing evidence or missing validation cannot stay confirmed/fixed. |
+| `attack_path_analysis` | Adds human-readable narratives only; no executable attack material is produced. |
+| `validation` | Creates `pending` or `not_run` receipts from a local validation command allowlist without executing commands. |
+
+If a finding has no evidence, report assembly downgrades `confirmed` or `fixed`
+to `unverified` and caps confidence at `0.4`. `confirmed` and `fixed` also
+require a passing validation receipt.
 
 ## Feature Gates
 
@@ -404,4 +419,12 @@ Every finding must carry at least one evidence item:
   are implemented, but workflow execution logic is pending.
 - The orchestrator only assembles local in-memory DTOs; it does not invoke
   tools, does not apply fixes, and does not produce UI state.
+- Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
+
+## Day 8 Debt
+
+- `DEBT-INTEGRATION-B17-08`: ToolRegistry execution is not connected. V2 uses
+  pure in-memory DTO orchestration and validation receipts are report-only.
+- `HAJIMI_SECURITY_WORKFLOW_ENABLED` defaults disabled; enabled mode still does
+  not execute validation commands.
 - Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
