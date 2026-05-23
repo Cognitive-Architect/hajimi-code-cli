@@ -7,22 +7,53 @@ const modulePath = path.join(__dirname, '..', '..', 'src', 'interface', 'web', '
 const source = fs.readFileSync(modulePath, 'utf8');
 
 const invoked = [];
+const mockElements = {};
+
 const sandbox = {
   window: {
     __HAJIMI_FLAGS__: {},
   },
   document: {
     createElement(tagName) {
-      return {
+      const el = {
         tagName,
+        id: '',
         className: '',
         textContent: '',
+        style: {},
         children: [],
         appendChild(child) {
           this.children.push(child);
         },
+        removeChild(child) {
+          const idx = this.children.indexOf(child);
+          if (idx >= 0) this.children.splice(idx, 1);
+        },
+        addEventListener(event, callback) {
+          if (!this._listeners) this._listeners = {};
+          this._listeners[event] = callback;
+        },
+        click() {
+          if (this._listeners && this._listeners.click) {
+            this._listeners.click();
+          }
+        },
+        get firstChild() {
+          return this.children[0] || null;
+        }
       };
+      return el;
     },
+    createTextNode(text) {
+      return { textContent: text };
+    },
+    getElementById(id) {
+      if (!mockElements[id]) {
+        mockElements[id] = this.createElement('div');
+        mockElements[id].id = id;
+      }
+      return mockElements[id];
+    }
   },
 };
 sandbox.window.document = sandbox.document;
@@ -104,6 +135,24 @@ workflow.runSlash(app, '/security scan').then((result) => {
   assert.strictEqual(invoked[0].args.request.kind, 'security_scan');
   assert.strictEqual(invoked[0].args.request.dry_run, true);
   assert.match(workflow.formatReportText(result.report), /Security Workflow Report/);
+
+  // Assert that new rendering and setup functions are exposed
+  assert.strictEqual(typeof workflow.setupSecurityPanel, 'function');
+  assert.strictEqual(typeof workflow.safeRenderSecurityPanel, 'function');
+
+  // Exercise setupSecurityPanel and safeRenderSecurityPanel
+  workflow.setupSecurityPanel(app);
+  workflow.lastReport = result.report;
+  workflow.safeRenderSecurityPanel(app);
+
+  // Verify elements are updated
+  const highCounter = sandbox.document.getElementById('securitySummaryHigh');
+  assert.strictEqual(highCounter.textContent, '0');
+
+  // Strict check: verify no innerHTML/insertAdjacentHTML are used in the source code
+  const hasInnerHTML = source.includes('innerHTML') || source.includes('insertAdjacentHTML');
+  assert.strictEqual(hasInnerHTML, false, 'Do NOT use innerHTML or insertAdjacentHTML in security-workflow.js!');
+
   console.log('day17_security_workflow_smoke: ok');
 }).catch((error) => {
   console.error(error);

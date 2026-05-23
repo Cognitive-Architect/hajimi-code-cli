@@ -644,3 +644,47 @@ Hajimi Agent Skills 系统用于将 Agent 动作模式从单一的工具调用�
 1. **分层原则**: 整个技能系统核心（types / registry / loader / router / scoring）完美闭环在 `src/intelligence/agent-core/skills/` 内，无外部逆向依赖。
 2. **零 LLM/RAG 消耗**: 路由与打分机制为完全确定性的轻量规则匹配，确保启动和决策在 <1ms 内秒级完成，无额外 token 消耗与延迟。
 3. **测试覆盖**: Golden route 测试已 100% 覆盖 exclusive_group 冲突处理、Top-K 数量裁剪、打分规则边界、路径非法穿越防御及 deterministic 真实 fixture 验证。
+
+---
+
+## Security Workflow & Panel (Day 10 Smoke Closure)
+
+<!-- SECURITY-PANEL-B17-10: Day 10 Security Panel completed -->
+
+**当前状态**: 🔄 **Day 10 安全展示面板与 V2 smoke validation 开发与闭环全部完成（测试全通过）**
+
+Hajimi 安全工作流（Security Workflow）打通了底层安全引擎（Engine）、智能调度器（Intelligence）与前端可视化展示（Interface）的三层链条。用户可以通过 Command Palette 输入或侧边栏点击一键运行安全扫描，交互式查看漏洞摘要（Summary）、安全发现（Findings）、复测凭证（Validation Receipts）与残余风险（Residual Risks），并能一键发起 dry-run 修复计划。
+
+### 1. 三层安全数据流架构 (Engine -> Intelligence -> Interface)
+
+```
+[Engine 层 (tool-system)]  ──► 执行本地静态规则与安全命令扫描
+            │
+            ▼
+[Intelligence 层 (agent-core)] ──► 组装 SecurityWorkflowReport (摘要、风险、凭证)
+            │
+            ▼
+[Interface 层 (tauri-desktop)] ──► run_security_workflow Tauri Command 桥接
+            │
+            ▼
+[Interface 层 (vanilla web)] ──► HajimiSecurityWorkflow (IIFE 模块解析与文本过滤)
+            │
+            ▼
+[Right Inspector (安全面板)] ──► textContent 绝对安全 DOM 渲染 (无 XSS/innerHTML 风险)
+```
+
+### 2. 核心架构设计
+
+1. **安全渲染红线 (XSS Defense)**:
+   - 全面禁止在 `security-workflow.js` 内对 untrusted snippet 或 evidence 使用任何 `innerHTML` / `insertAdjacentHTML` API。
+   - 所有数据和字段强制通过 `textContent` 与 `document.createTextNode` 构建的 `setSafeText` 渲染辅助函数进行文本输出。
+2. **交互式修复流程 (Confirm/Apply Gates)**:
+   - findings 卡片下自带 “生成修复计划 (Dry-run)” 按钮，一键通过 `/security fix <finding_id>` 发起干跑。
+   - 修复计划的实际变更应用依旧强制由 `EditApplier` 拦截并在界面进行 diff 审查，杜绝静默自动修改代码。
+3. **异步/非阻塞交互 (Non-blocking)**:
+   - 所有的 slash 命令 and UI 扫描均采用异步流式或 Promisified 执行，并在网络或 Tauri 底层不可达时优雅触发降级熔断。
+4. **WebView 烟雾测试覆盖 (V2 Smoke)**:
+   - Node.js 环境下的 `tests/frontend/day17_security_workflow_smoke.js` 烟雾测试全面扩展。
+   - 引入高度逼真的 DOM 沙箱模拟（`document.getElementById`, `document.createElement`, `createTextNode`），高精度校验了 `setupSecurityPanel` 与 `safeRenderSecurityPanel` 各核心分支无崩溃、防 XSS 注入。
+
+*本架构文档与代码同步维护，最后更新于 2026-05-23*

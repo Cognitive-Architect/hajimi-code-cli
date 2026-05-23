@@ -479,6 +479,10 @@ window.app = {
         if (inspector) inspector.style.display = 'none';
       });
     }
+
+    if (window.HajimiSecurityWorkflow) {
+      window.HajimiSecurityWorkflow.setupSecurityPanel(this);
+    }
   },
 
   showInspectorTab(tabId) {
@@ -494,6 +498,9 @@ window.app = {
       if (isActive) {
         if (tabId === 'diff-preview') this.safeRenderInspectorDiffPreview();
         if (tabId === 'agent-trace') this.safeRenderTraceInspector();
+        if (tabId === 'security-panel' && window.HajimiSecurityWorkflow) {
+          window.HajimiSecurityWorkflow.safeRenderSecurityPanel(this);
+        }
       }
     });
   },

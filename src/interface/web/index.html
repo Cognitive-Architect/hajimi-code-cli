@@ -381,6 +381,7 @@
         <div class="inspector-tab" data-inspector-tab="diff-preview">Diff 预览</div>
         <div class="inspector-tab" data-inspector-tab="agent-trace">Agent Trace</div>
         <div class="inspector-tab" data-inspector-tab="context-receipt" id="contextReceiptTab">Context 小票</div>
+        <div class="inspector-tab" data-inspector-tab="security-panel" id="securityPanelTab">安全面板</div>
       </div>
       <div class="inspector-content" id="inspectorContent">
         <!-- Tab: 任务详情 (默认显示) -->
@@ -437,6 +438,58 @@
             </div>
             <div id="contextReceiptBody" class="inspector-card-body" style="font-size:11px;">
               <span style="color:var(--fg-dim);">暂无上下文小票（Context Receipt）。Agent 运行后自动记录。</span>
+            </div>
+          </div>
+        </div>
+        <!-- Tab: Security Panel (Day 10) -->
+        <div class="inspector-panel" data-inspector-panel="security-panel" id="inspectorSecurityPanel">
+          <div class="inspector-card" style="padding:12px;">
+            <div class="inspector-card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <span>安全工作流与面板</span>
+              <button id="runSecurityScanBtn" class="sidebar-action-btn" title="执行安全扫描" style="font-size:11px;padding:2px 6px;">扫描</button>
+            </div>
+
+            <div class="security-section">
+              <div class="security-section-title">工作区摘要 (Summary)</div>
+              <div class="security-summary-grid" id="securitySummaryGrid">
+                <div class="security-summary-card high">
+                  <div class="label">高危 / High</div>
+                  <div class="value" id="securitySummaryHigh">0</div>
+                </div>
+                <div class="security-summary-card medium">
+                  <div class="label">中危 / Med</div>
+                  <div class="value" id="securitySummaryMedium">0</div>
+                </div>
+                <div class="security-summary-card low">
+                  <div class="label">低危 / Low</div>
+                  <div class="value" id="securitySummaryLow">0</div>
+                </div>
+                <div class="security-summary-card unverified">
+                  <div class="label">待验证 / Unv</div>
+                  <div class="value" id="securitySummaryUnverified">0</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="security-section" style="margin-top:16px;">
+              <div class="security-section-title">安全发现 (Findings)</div>
+              <div class="security-findings-list" id="securityFindingsList">
+                <div class="security-empty-state">暂无安全漏洞发现</div>
+              </div>
+            </div>
+
+            <div class="security-section" style="margin-top:16px;">
+              <div class="security-section-title">复测凭证 (Validation Receipts)</div>
+              <div class="security-validation-list" id="securityValidationList">
+                <div class="security-empty-state">暂无复测凭证</div>
+              </div>
+            </div>
+
+            <div class="security-section" style="margin-top:16px;">
+              <div class="security-section-title">残余风险 (Residual Risks)</div>
+              <ul class="security-residual-list" id="securityResidualList">
+                <li class="security-empty-state">暂无残余风险记录</li>
+              </ul>
             </div>
           </div>
         </div>

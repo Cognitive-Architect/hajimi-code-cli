@@ -1,8 +1,8 @@
 # DEBT-SECURITY-WORKFLOW-V2
 
-> Status: DESKTOP SLASH CONTRACT / REPORT-ONLY / PARTIAL.
+> Status: INTEGRATED SECURITY PANEL / SAFE RENDERING / PENDING WEBVIEW SMOKE.
 > Updated: 2026-05-23.
-> Work items: B-17/07 Agent Core Security Workflow DTO + Orchestrator Skeleton; B-17/08 Security Workflow V2 Core Implementation; B-17/09 Desktop Command + Slash Contract.
+> Work items: B-17/07 Agent Core Security Workflow DTO + Orchestrator Skeleton; B-17/08 Security Workflow V2 Core Implementation; B-17/09 Desktop Command + Slash Contract; B-17/10 Security Panel + V2 Smoke Closure.
 
 ## Scope
 
@@ -10,7 +10,8 @@ V2 starts the Intelligence-layer security workflow contract. Day 7 added DTOs
 and a minimal report assembly orchestrator in Agent Core only. Day 8 implements
 the core report-only workflow branches without connecting ToolRegistry execution.
 Day 9 exposes that report-only contract through a dedicated desktop command and
-vanilla `/security` slash commands. It does not add a full UI panel.
+vanilla `/security` slash commands. Day 10 implements the full, interactive UI Security Panel
+within the Right Inspector, utilizing absolute textContent safe rendering (no innerHTML) and closing V2 Smoke validation.
 
 | Item | Status | Evidence |
 |---|---:|---|
@@ -65,14 +66,12 @@ vanilla `/security` slash commands. It does not add a full UI panel.
 |---|---:|---|
 | DEBT-WORKFLOW-SKELETON-B17-07 | `PARTIAL` | DTO and report assembly skeleton exist; real workflow execution waits for later V2 tasks. |
 | DEBT-INTEGRATION-B17-08 | `PARTIAL` | ToolRegistry is not connected; V2 currently accepts supplied gate/report findings and emits report-only receipts. |
-| DEBT-BRIDGE-B17-09 | `PARTIAL` | Interface now calls Agent Core DTOs directly through `run_security_workflow`, but no full UI panel or ToolRegistry execution is connected. |
-| DEBT-WEBVIEW-SMOKE-B17-09 | `PENDING` | Real WebView click validation for `/security` is deferred per task instruction. |
+| DEBT-BRIDGE-B17-09 | `DONE` | Interface calls Agent Core DTOs directly through `run_security_workflow`. |
+| DEBT-PANEL-B17-10 | `DONE` | Security Panel is fully implemented in Right Inspector with complete textContent safety (no innerHTML). |
 | PENDING-WORKFLOW-EXECUTION | `PENDING` | `SecurityWorkflowOrchestrator::run` does not call tools or record executed validation commands. |
 | PENDING-WEBVIEW-SMOKE | `PENDING` | Real WebView/manual click validation remains unexecuted per task instruction. |
 
 ## Rollback
 
 Unregister `run_security_workflow` from `src/interface/desktop/src/main.rs`,
-remove `src/interface/web/modules/security-workflow.js` and its script tag,
-remove the `/security` branch from `src/interface/web/app.js`, and keep the
-existing V1 gate/report artifacts unchanged.
+hide the `security-panel` tab from `src/interface/web/index.html`, revert `src/interface/web/app.js` edits, and remove `src/interface/web/modules/security-workflow.js`.
