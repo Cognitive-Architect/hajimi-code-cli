@@ -1,8 +1,8 @@
 # DEBT-SECURITY-WORKFLOW-V1
 
-> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE PARTIAL/GATED.
+> Status: INITIATED / CONTRACT DEFINED / SECURITY GATE RULES PARTIAL/GATED.
 > Updated: 2026-05-23.
-> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary.
+> Work items: B-17/01 Security Workflow Baseline Audit + Docs Skeleton; B-17/02 Security Workflow Contract + Finding Schema; B-17/03 Security Audit Gate Allowlist + JSON Summary; B-17/04 Gate Rules CSP/DOM/Shell/File Ops.
 
 ## Baseline
 
@@ -15,6 +15,7 @@
 | Day 1 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day01-Baseline-Audit-Docs.md` |
 | Day 2 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day02-Contract-Finding-Schema.md` |
 | Day 3 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day03-Gate-Allowlist-Enhancement.md` |
+| Day 4 source task | `docs/roadmap/Hajimi security workflow/task/B-17-15-HAJIMI-SECURITY-WORKFLOW-Day04-Gate-Rules-CSP-DOM-Shell-FileOps.md` |
 | Plan docs read | `SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md`; `SECURITY-WORKFLOW-V1-V3-ROADMAP.md` |
 
 ## Command Evidence
@@ -40,13 +41,18 @@
 | Day 3 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
 | Day 3 allowlist evidence | `rg -n "allowlist|reason|ALLOWLIST-001|findings|summary" tests/security/security_audit_gate.js tests/security/security_audit_allowlist.json` | Structured finding collection, reason validation, and allowlist entries found |
 | Day 3 status correction | Review note after `2a56b7c1` | Static gate failures default to `unverified`; deterministic `ALLOWLIST-001` policy violations are explicitly `confirmed`; allowlist string checks trim whitespace |
+| Day 4 gate syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
+| Day 4 gate run | `node tests/security/security_audit_gate.js` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; `allowlisted: 108`; JSON summary emitted |
+| Day 4 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
+| Day 4 rule IDs | `rg -n "TAURI-CSP-001|TAURI-GLOBAL-001|DOM-INLINE-001|DOM-HTML-001|SHELL-ALLOW-001|FILE-OPS-001|ALLOWLIST-001" tests/security/security_audit_gate.js` | All seven B-17/04 rule IDs found |
+| Day 4 scope check | `git diff --name-only -- src/interface/desktop/tauri.conf.json src/interface/web src/engine/tool-system/src` | empty; no business config or source code modified |
 
 ## Current Security Capability
 
 | Capability | Status | Notes |
 |---|---:|---|
 | SecurityAuditTool | `EXISTS / LIGHT SCHEMA` | Current Rust output has `Finding` and `AuditResult`, but Day 5 still needs `rule_id`, `status`, `evidence`, `recommendation`, `regression_test`, and `confidence`. |
-| Security Gate V1 | `EXISTS / PARTIAL/GATED` | Gate is runnable, can fail on hard regressions, validates allowlist reasons, emits structured findings, and prints JSON summary. Coverage remains limited until Day 4 rule expansion. |
+| Security Gate V1 | `EXISTS / RULES PARTIAL/GATED` | Gate is runnable, can fail on hard regressions, validates allowlist reasons, emits structured findings, prints JSON summary, and has explicit CSP/DOM/Shell/File Ops rule IDs. Coverage is still not a complete security audit. |
 | Security Workflow contract | `DEFINED / NOT IMPLEMENTED` | Day 2 defines `FindingStatus`, `Evidence`, `ValidationReceipt`, workflow kinds, confidence, and feature-gate rules in docs only. |
 | B18 anti-regression | `CLEARED / GATED` | `withGlobalTauri=true` and naked `run_command` are fail-level regressions. |
 | Security CI | `EXISTS` | Existing workflow runs `npm run test:security-gate`. |
@@ -74,6 +80,19 @@
 | Security Workflow Agent/UI/Fix modules absent | `PLANNED` | Day 7+ per roadmap |
 | DEBT-SCHEMA-B17-02 | `CONTRACT ONLY` | Contract is documented; Rust/JS implementation remains pending |
 | DEBT-SECURITY-GATE-B17-03 | `PASS WITH NOTES / PARTIAL/GATED` | Gate now has allowlist reason validation, trimmed string checks, allowlisted count, and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
+| DEBT-SECURITY-GATE-B17-04 | `PARTIAL/GATED` | Explicit CSP/DOM/Shell/File Ops rule IDs now exist; this is a focused regression gate, not a full SAST engine |
+
+## Security Gate V1 Rule Coverage
+
+| Rule ID | Block Level | Coverage Scope | False Positive / allowlist Boundary |
+|---|---:|---|---|
+| `TAURI-CSP-001` | `fail` | `src/interface/desktop/tauri.conf.json` must not set CSP to `null`. | No allowlist; `csp: null` is a B18-class regression. |
+| `TAURI-GLOBAL-001` | `fail` | `withGlobalTauri=true` and direct frontend global Tauri access outside the bridge. | Adapter implementation file is exempt; other hits require code change, not allowlist. |
+| `DOM-INLINE-001` | `fail` | Inline HTML event handlers such as `onclick`, `onerror`, `onload`, `onmouseover`. | No historical allowlist yet; any hit should be reviewed as DOM XSS risk. |
+| `DOM-HTML-001` | `warn` when allowlisted, `fail` when new/unallowlisted | `innerHTML`, `outerHTML`, and `insertAdjacentHTML` in frontend HTML/JS/CSS scan set. | Historical DOM debt is allowed only with `rule_id/path/pattern/reason`; new hits fail until rewritten or explicitly risk-accepted. |
+| `SHELL-ALLOW-001` | `fail` | Complex shell interpreters, high-capability legacy desktop commands, and naked `run_command` exposure. | No allowlist; B18 cleared items must remain strong blockers. |
+| `FILE-OPS-001` | `fail` | Workspace file tools must stay path-bound; inline edits must use workspace resolver; frontend file ops must not bypass dedicated commands through shell. | Regex may be conservative around `run_command`; false positives should document reason before any allowlist path is considered. |
+| `ALLOWLIST-001` | `fail` | Every allowlist entry must carry non-empty trimmed `path`, `pattern`, and `reason`. | Deterministic policy violation; marked `confirmed`. |
 
 ## Safety Boundary
 
@@ -135,3 +154,24 @@ Day 3 enhanced the existing Security Audit Gate in place. The gate now:
 
 Real WebView/manual click validation remains `PENDING-WEBVIEW-SMOKE` per user
 instruction and is not claimed as completed.
+
+## Day 4 Closure
+
+Day 4 upgraded the Day 3 gate from descriptive legacy rule names to explicit
+B-17/04 Security Gate V1 rule IDs:
+
+- `TAURI-CSP-001` fails `csp: null`;
+- `TAURI-GLOBAL-001` fails `withGlobalTauri=true` and direct global Tauri API
+  use outside the bridge;
+- `DOM-INLINE-001` fails inline handler attributes;
+- `DOM-HTML-001` warns only for reasoned allowlist matches and fails new
+  dangerous HTML API usage;
+- `SHELL-ALLOW-001` fails complex shell/high-capability command regressions and
+  naked `run_command`;
+- `FILE-OPS-001` fails workspace file-op bypass and missing path-bound file
+  tool safeguards;
+- `ALLOWLIST-001` fails malformed allowlist entries.
+
+No Tauri config, frontend business code, engine source code, package script, or
+CI workflow was changed for Day 4. Real WebView/manual click validation remains
+`PENDING-WEBVIEW-SMOKE` per user instruction.

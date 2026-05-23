@@ -111,7 +111,13 @@ function loadAllowlist() {
       });
     }
   }
-  return entries;
+  return entries.map(entry => ({
+    ...entry,
+    rule_id: typeof entry.rule_id === 'string' ? entry.rule_id.trim() : undefined,
+    path: typeof entry.path === 'string' ? entry.path.trim() : '',
+    pattern: typeof entry.pattern === 'string' ? entry.pattern.trim() : '',
+    reason: typeof entry.reason === 'string' ? entry.reason.trim() : '',
+  }));
 }
 
 function findAllowlistEntry(allowlist, ruleId, file, text) {
@@ -127,10 +133,16 @@ function scanTauriConfig() {
   const config = JSON.parse(raw);
   const csp = config.app?.security?.csp;
   if (csp === null) {
-    addFailure('tauri-csp-null', tauriConfigPath, findLine(raw, '"csp"'), 'Tauri CSP must not be null');
+    addFailure('TAURI-CSP-001', tauriConfigPath, findLine(raw, '"csp"'), 'Tauri CSP must not be null', {
+      severity: 'critical',
+      status: 'confirmed',
+    });
   }
   if (config.app?.withGlobalTauri === true) {
-    addFailure('tauri-global-api-fail', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri=true is forbidden after B-18 security closure');
+    addFailure('TAURI-GLOBAL-001', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri=true is forbidden after B-18 security closure', {
+      severity: 'critical',
+      status: 'confirmed',
+    });
   }
 }
 
@@ -142,32 +154,33 @@ function scanInlineHandlers(files) {
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (inlineHandlerPattern.test(line)) {
-        addFailure('frontend-inline-handler', file, index + 1, 'inline event handlers are not allowed');
+        addFailure('DOM-INLINE-001', file, index + 1, 'inline event handlers are not allowed');
       }
     });
   }
 }
 
 function scanDangerousHtmlApi(files, allowlist) {
-  const dangerousHtmlPattern = /\b(innerHTML|insertAdjacentHTML)\b/;
+  const dangerousHtmlPattern = /\b(innerHTML|outerHTML|insertAdjacentHTML)\b/;
   for (const fullPath of files) {
     const file = toRepoPath(fullPath);
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (!dangerousHtmlPattern.test(line)) return;
       if (file === 'src/interface/web/modules/slash-palette.js') {
-        addFailure('slash-palette-dangerous-html', file, index + 1, 'slash palette must use safe DOM rendering only');
+        addFailure('DOM-HTML-001', file, index + 1, 'slash palette must use safe DOM rendering only');
         return;
       }
-      const allowlistEntry = findAllowlistEntry(allowlist, 'frontend-dangerous-html', file, line);
+      const allowlistEntry = findAllowlistEntry(allowlist, 'DOM-HTML-001', file, line);
       if (allowlistEntry) {
         allowlistedCount += 1;
-        addWarning('frontend-dangerous-html-allowlisted', file, index + 1, 'known legacy dangerous HTML API allowed with reason', {
+        addWarning('DOM-HTML-001', file, index + 1, 'known legacy dangerous HTML API allowed with reason', {
+          status: 'accepted_risk',
           reason: allowlistEntry.reason,
           evidence: makeEvidence(file, index + 1, allowlistEntry.reason, line.trim()),
         });
       } else {
-        addFailure('frontend-dangerous-html', file, index + 1, 'dangerous HTML API requires allowlist reason or safe DOM rewrite');
+        addFailure('DOM-HTML-001', file, index + 1, 'dangerous HTML API requires allowlist reason or safe DOM rewrite');
       }
     });
   }
@@ -177,7 +190,7 @@ function scanShellAllowList() {
   const raw = readText(shellPath);
   const block = raw.match(/const\s+ALLOWED_COMMANDS:[\s\S]*?=\s*&\[(?<body>[\s\S]*?)\];/);
   if (!block) {
-    addFailure('shell-allow-list-missing', shellPath, 21, 'ALLOWED_COMMANDS block not found');
+    addFailure('SHELL-ALLOW-001', shellPath, 21, 'ALLOWED_COMMANDS block not found');
     return;
   }
 
@@ -185,7 +198,10 @@ function scanShellAllowList() {
   const forbiddenShells = ['bash', 'sh', 'pwsh', 'powershell'];
   for (const shell of forbiddenShells) {
     if (commands.includes(shell)) {
-      addFailure('shell-complex-shell-allowlist', shellPath, findLine(raw, `"${shell}"`), `ALLOWED_COMMANDS must not include ${shell}`);
+      addFailure('SHELL-ALLOW-001', shellPath, findLine(raw, `"${shell}"`), `ALLOWED_COMMANDS must not include ${shell}`, {
+        severity: 'critical',
+        status: 'confirmed',
+      });
     }
   }
 }
@@ -201,7 +217,7 @@ function scanDesktopCommandAllowList() {
   const highCapabilityCommands = ['npx', 'pnpm', 'pip', 'pip3', 'code', 'cursor'];
   for (const command of highCapabilityCommands) {
     if (commands.includes(command)) {
-      addFailure('desktop-run-command-high-capability', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
+      addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
     }
   }
 }
@@ -209,10 +225,14 @@ function scanDesktopCommandAllowList() {
 function scanRunCommandExposure() {
   const raw = readText(desktopMainPath);
   if (/fn\s+run_command\s*\(/.test(raw)) {
-    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command');
+    addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command', {
+      severity: 'critical',
+    });
   }
   if (/generate_handler!\[[\s\S]*\brun_command\s*,/.test(raw)) {
-    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'run_command,'), 'run_command must not appear in the Tauri invoke_handler');
+    addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, 'run_command,'), 'run_command must not appear in the Tauri invoke_handler', {
+      severity: 'critical',
+    });
   }
 }
 
@@ -240,7 +260,7 @@ function scanTauriGlobalApiUsage(files) {
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (directGlobalPattern.test(line)) {
-        addFailure('tauri-global-api-usage', file, index + 1, 'frontend code must use HajimiTauri adapter instead of direct global Tauri access');
+        addFailure('TAURI-GLOBAL-001', file, index + 1, 'frontend code must use HajimiTauri adapter instead of direct global Tauri access');
       }
     });
   }
@@ -274,7 +294,7 @@ function scanWorkspaceBoundFileTools() {
   ];
   for (const pattern of required) {
     if (!raw.includes(pattern)) {
-      addFailure('desktop-file-tools-workspace-bound', desktopMainPath, findLine(raw, 'fn build_registry'), `${pattern} must be used in desktop registry`);
+      addFailure('FILE-OPS-001', desktopMainPath, findLine(raw, 'fn build_registry'), `${pattern} must be used in desktop registry`);
     }
   }
 }
@@ -289,19 +309,19 @@ function scanInlineEditWorkspaceResolver() {
     }
     const body = raw.slice(index, index + 900);
     if (!body.includes('resolve_workspace_path')) {
-      addFailure('desktop-inline-edit-workspace-resolver', desktopMainPath, findLine(raw, command), `${command} must resolve paths through workspace resolver`);
+      addFailure('FILE-OPS-001', desktopMainPath, findLine(raw, command), `${command} must resolve paths through workspace resolver`);
     }
   }
 }
 
 function scanFileOpsBypass(files) {
-  const fileOpsBypassPattern = /run_command[\s\S]{0,120}\b(mkdir|mv|rm|rmdir|del)\b/i;
+  const fileOpsBypassPattern = /run_command[\s\S]{0,160}\b(mkdir|mv|rm|rmdir|del|delete|rename|write|create)\b/i;
   for (const fullPath of files) {
     const file = toRepoPath(fullPath);
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (fileOpsBypassPattern.test(line)) {
-        addFailure('frontend-file-ops-shell-bypass', file, index + 1, 'file operations must use dedicated Tauri commands, not shell run_command');
+        addFailure('FILE-OPS-001', file, index + 1, 'file operations must use dedicated Tauri commands, not shell run_command');
       }
     });
   }
