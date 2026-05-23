@@ -12,6 +12,7 @@ const scanSkipDirs = new Set(['.git', 'target', 'node_modules', 'dist', 'target-
 const findings = [];
 const failures = [];
 const warnings = [];
+let allowlistedCount = 0;
 
 function toRepoPath(filePath) {
   return path.relative(repoRoot, filePath).replace(/\\/g, '/');
@@ -59,7 +60,7 @@ function addFailure(rule, file, line, message, options = {}) {
   const finding = addFinding({
     rule_id: rule,
     severity: options.severity || 'high',
-    status: options.status || 'confirmed',
+    status: options.status || 'unverified',
     file,
     line,
     message,
@@ -101,8 +102,13 @@ function loadAllowlist() {
   if (!fs.existsSync(fullPath)) return [];
   const entries = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
   for (const [index, entry] of entries.entries()) {
-    if (!entry.path || !entry.pattern || !entry.reason) {
-      addFailure('ALLOWLIST-001', allowlistPath, index + 1, 'allowlist entry missing reason/path/pattern; reason is required for every exception');
+    const pathValue = typeof entry.path === 'string' ? entry.path.trim() : '';
+    const patternValue = typeof entry.pattern === 'string' ? entry.pattern.trim() : '';
+    const reasonValue = typeof entry.reason === 'string' ? entry.reason.trim() : '';
+    if (!pathValue || !patternValue || !reasonValue) {
+      addFailure('ALLOWLIST-001', allowlistPath, index + 1, 'allowlist entry missing reason/path/pattern; reason is required for every exception', {
+        status: 'confirmed',
+      });
     }
   }
   return entries;
@@ -155,6 +161,7 @@ function scanDangerousHtmlApi(files, allowlist) {
       }
       const allowlistEntry = findAllowlistEntry(allowlist, 'frontend-dangerous-html', file, line);
       if (allowlistEntry) {
+        allowlistedCount += 1;
         addWarning('frontend-dangerous-html-allowlisted', file, index + 1, 'known legacy dangerous HTML API allowed with reason', {
           reason: allowlistEntry.reason,
           evidence: makeEvidence(file, index + 1, allowlistEntry.reason, line.trim()),
@@ -312,6 +319,7 @@ function printSummary() {
       findings: findings.length,
       failures: failures.length,
       warnings: warnings.length,
+      allowlisted: allowlistedCount,
       allowlist: {
         path: allowlistPath,
       },
@@ -323,6 +331,7 @@ function printSummary() {
   console.log(`findings: ${findings.length}`);
   console.log(`failures: ${failures.length}`);
   console.log(`warnings: ${warnings.length}`);
+  console.log(`allowlisted: ${allowlistedCount}`);
 
   if (warnings.length) {
     console.log('\nwarnings:');

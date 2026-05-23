@@ -36,9 +36,10 @@
 | Gate smoke | `npm run test:security-gate` | exit 0; `failures: 0`; `warnings: 108`; `Security Audit Gate V1: PASS` |
 | Day 2 source schema baseline | `rg -n "struct Finding|severity|snippet|SecurityAuditTool" src/engine/tool-system/src/security.rs` | Current `security.rs` still has lightweight fields: `severity`, `type_`, `file`, `line`, `snippet` |
 | Day 3 gate syntax | `node --check tests/security/security_audit_gate.js` | exit 0 |
-| Day 3 gate run | `node tests/security/security_audit_gate.js` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; JSON summary emitted |
+| Day 3 gate run | `node tests/security/security_audit_gate.js` | exit 0; `findings: 108`; `failures: 0`; `warnings: 108`; `allowlisted: 108`; JSON summary emitted |
 | Day 3 npm script | `npm run test:security-gate` | exit 0; existing package script preserved |
 | Day 3 allowlist evidence | `rg -n "allowlist|reason|ALLOWLIST-001|findings|summary" tests/security/security_audit_gate.js tests/security/security_audit_allowlist.json` | Structured finding collection, reason validation, and allowlist entries found |
+| Day 3 status correction | Review note after `2a56b7c1` | Static gate failures default to `unverified`; deterministic `ALLOWLIST-001` policy violations are explicitly `confirmed`; allowlist string checks trim whitespace |
 
 ## Current Security Capability
 
@@ -72,7 +73,7 @@
 | Real WebView/manual click validation absent | `PENDING-WEBVIEW-SMOKE` | Record as debt until a human or browser session validates UI paths |
 | Security Workflow Agent/UI/Fix modules absent | `PLANNED` | Day 7+ per roadmap |
 | DEBT-SCHEMA-B17-02 | `CONTRACT ONLY` | Contract is documented; Rust/JS implementation remains pending |
-| DEBT-SECURITY-GATE-B17-03 | `PARTIAL/GATED` | Gate now has allowlist reason validation and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
+| DEBT-SECURITY-GATE-B17-03 | `PASS WITH NOTES / PARTIAL/GATED` | Gate now has allowlist reason validation, trimmed string checks, allowlisted count, and JSON summary, but still covers only the existing V1 rule set plus legacy DOM warning inventory |
 
 ## Safety Boundary
 
@@ -121,12 +122,15 @@ Day 3 enhanced the existing Security Audit Gate in place. The gate now:
 - collects structured findings with `rule_id`, `severity`, `status`, `file`,
   `line`, `evidence`, and `reason`;
 - validates allowlist entries with `ALLOWLIST-001` so every exception must carry
-  `path`, `pattern`, and `reason`;
+  non-empty trimmed `path`, `pattern`, and `reason`;
 - supports allowlist entries shaped as `rule_id`, `path`, `pattern`, `reason`,
   and optional `expires_at`;
+- defaults static gate failure findings to `unverified` unless a deterministic
+  policy violation explicitly sets `confirmed`;
 - skips build/dependency directories including `.git`, `target`,
   `node_modules`, `dist`, and `target-ui-refresh`;
-- preserves the human-readable summary and appends a JSON summary report;
+- preserves the human-readable summary and appends a JSON summary report with
+  `allowlisted` count;
 - preserves `npm run test:security-gate` without adding dependencies.
 
 Real WebView/manual click validation remains `PENDING-WEBVIEW-SMOKE` per user
