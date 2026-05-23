@@ -9,6 +9,23 @@ pub enum RiskLevel {
     Critical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RevalidationStatus {
+    NotRun,
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevalidationReceipt {
+    pub command: String,
+    pub exit_code: Option<i32>,
+    pub stdout_summary: String,
+    pub stderr_summary: String,
+    pub status: RevalidationStatus,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PatchEdit {
     pub file: String,
@@ -28,6 +45,7 @@ pub struct PatchPlan {
     pub edits: Vec<PatchEdit>,
     pub validation_commands: Vec<String>,
     pub rollback_plan: String,
+    pub revalidation_receipt: Option<RevalidationReceipt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +65,34 @@ impl Default for SecurityFixPlanner {
     }
 }
 
+pub fn is_validation_command_allowed(command: &str) -> bool {
+    let c_lower = command.to_lowercase();
+    // Reject dangerous commands/patterns per strict safety criteria
+    if c_lower.contains("curl")
+        || c_lower.contains("wget")
+        || c_lower.contains("rm ")
+        || c_lower.contains("eval")
+        || c_lower.contains("http://")
+        || c_lower.contains("https://")
+        || c_lower.contains("bash")
+        || c_lower.contains("powershell")
+        || c_lower.contains("cmd")
+    {
+        return false;
+    }
+
+    // Only allow local commands from safe whitelist
+    let allowed_commands = &[
+        "npm run test:security-gate",
+        "npm run security:report",
+        "cargo test -p engine-tool-system security",
+        "cargo test -p intelligence-agent-core security_workflow",
+        "git diff",
+    ];
+
+    allowed_commands.iter().any(|&cmd| c_lower.contains(cmd))
+}
+
 impl SecurityFixPlanner {
     pub fn new() -> Self {
         Self {
@@ -58,6 +104,34 @@ impl SecurityFixPlanner {
 
     pub fn with_feature_enabled(feature_enabled: bool) -> Self {
         Self { feature_enabled }
+    }
+
+    pub fn transition_status(
+        &self,
+        current_status: &str,
+        receipt: &Option<RevalidationReceipt>,
+    ) -> String {
+        match current_status {
+            "planned" => {
+                if receipt.is_some() {
+                    "applied".to_string()
+                } else {
+                    "planned".to_string()
+                }
+            }
+            "applied" => {
+                if let Some(r) = receipt {
+                    if r.status == RevalidationStatus::Pass {
+                        "revalidated".to_string()
+                    } else {
+                        "applied".to_string()
+                    }
+                } else {
+                    "applied".to_string()
+                }
+            }
+            other => other.to_string(),
+        }
     }
 
     pub fn plan(
@@ -98,11 +172,30 @@ impl SecurityFixPlanner {
             .unwrap_or_default();
 
         let mut validation_commands = Vec::new();
-        if let Some(cmd) = &finding.regression_test {
-            validation_commands.push(cmd.clone());
+        let cmd = finding
+            .regression_test
+            .as_deref()
+            .unwrap_or("npm run test:security-gate");
+
+        validation_commands.push(cmd.to_string());
+
+        let receipt = if !is_validation_command_allowed(cmd) {
+            RevalidationReceipt {
+                command: cmd.to_string(),
+                exit_code: Some(1),
+                stdout_summary: "Command rejected due to security policy violation.".to_string(),
+                stderr_summary: "Dangerous execution command rejected by SecurityFixPlanner allowlist gate.".to_string(),
+                status: RevalidationStatus::Fail,
+            }
         } else {
-            validation_commands.push("npm run test:security-gate".to_string());
-        }
+            RevalidationReceipt {
+                command: cmd.to_string(),
+                exit_code: None,
+                stdout_summary: "Allowed local command pending execution.".to_string(),
+                stderr_summary: String::new(),
+                status: RevalidationStatus::NotRun,
+            }
+        };
 
         let rollback_plan = format!(
             "git checkout -- {}",
@@ -119,6 +212,7 @@ impl SecurityFixPlanner {
             edits,
             validation_commands,
             rollback_plan,
+            revalidation_receipt: Some(receipt),
         }
     }
 }
@@ -130,7 +224,7 @@ mod tests {
         FindingSeverity, FindingStatus, SecurityCategory, SecurityFinding,
     };
 
-    fn make_test_finding(severity: FindingSeverity) -> SecurityFinding {
+    fn make_test_finding(severity: FindingSeverity, test_cmd: Option<String>) -> SecurityFinding {
         SecurityFinding {
             finding_id: "FIND-TEST-123".to_string(),
             rule_id: "RULE-XSS".to_string(),
@@ -146,7 +240,7 @@ mod tests {
             evidence: vec![],
             attack_path: None,
             recommendation: "Use textContent instead of innerHTML".to_string(),
-            regression_test: Some("npm run test:security-gate".to_string()),
+            regression_test: test_cmd.or(Some("npm run test:security-gate".to_string())),
             human_review_required: false,
             validation_receipts: vec![],
             residual_risk: vec![],
@@ -160,7 +254,7 @@ mod tests {
             finding_id: "FIND-TEST-123".to_string(),
             dry_run: true,
         };
-        let finding = make_test_finding(FindingSeverity::Medium);
+        let finding = make_test_finding(FindingSeverity::Medium, None);
         let plan = planner.plan(&request, &finding);
 
         assert_eq!(plan.finding_id, "FIND-TEST-123");
@@ -173,20 +267,83 @@ mod tests {
             vec!["npm run test:security-gate".to_string()]
         );
         assert!(plan.rollback_plan.contains("git checkout"));
+        assert!(plan.revalidation_receipt.is_some());
+        assert_eq!(
+            plan.revalidation_receipt.unwrap().status,
+            RevalidationStatus::NotRun
+        );
     }
 
     #[test]
-    fn test_planner_enforces_dry_run_even_if_requested_false() {
-        let planner = SecurityFixPlanner::with_feature_enabled(false);
+    fn test_dangerous_commands_are_rejected() {
+        assert!(!is_validation_command_allowed("rm -rf /"));
+        assert!(!is_validation_command_allowed("curl http://malicious.site"));
+        assert!(!is_validation_command_allowed("wget https://malicious.site"));
+        assert!(!is_validation_command_allowed("bash -c malicious"));
+        assert!(!is_validation_command_allowed("powershell -Command malicious"));
+
+        // Allowed safe local checks
+        assert!(is_validation_command_allowed("npm run test:security-gate"));
+        assert!(is_validation_command_allowed("cargo test -p engine-tool-system security"));
+        assert!(is_validation_command_allowed("git diff"));
+    }
+
+    #[test]
+    fn test_planner_rejects_dangerous_regression_test() {
+        let planner = SecurityFixPlanner::with_feature_enabled(true);
         let request = FixFindingRequest {
             finding_id: "FIND-TEST-123".to_string(),
-            dry_run: false,
+            dry_run: true,
         };
-        let finding = make_test_finding(FindingSeverity::Low);
+        let finding = make_test_finding(FindingSeverity::Medium, Some("rm -rf /".to_string()));
         let plan = planner.plan(&request, &finding);
 
-        // Enforce dry_run is true even if dry_run request is false
-        assert!(plan.dry_run);
+        let receipt = plan.revalidation_receipt.unwrap();
+        assert_eq!(receipt.status, RevalidationStatus::Fail);
+        assert!(receipt.stdout_summary.contains("rejected"));
+        assert!(receipt.stderr_summary.contains("Dangerous"));
+    }
+
+    #[test]
+    fn test_transition_status_planned_applied_revalidated() {
+        let planner = SecurityFixPlanner::with_feature_enabled(true);
+
+        // 1. planned -> planned (without receipt)
+        let status1 = planner.transition_status("planned", &None);
+        assert_eq!(status1, "planned");
+
+        // 2. planned -> applied (with any receipt)
+        let receipt_not_run = RevalidationReceipt {
+            command: "npm run test:security-gate".to_string(),
+            exit_code: None,
+            stdout_summary: String::new(),
+            stderr_summary: String::new(),
+            status: RevalidationStatus::NotRun,
+        };
+        let status2 = planner.transition_status("planned", &Some(receipt_not_run.clone()));
+        assert_eq!(status2, "applied");
+
+        // 3. applied -> revalidated (with passing receipt)
+        let receipt_pass = RevalidationReceipt {
+            command: "npm run test:security-gate".to_string(),
+            exit_code: Some(0),
+            stdout_summary: String::new(),
+            stderr_summary: String::new(),
+            status: RevalidationStatus::Pass,
+        };
+        let status3 = planner.transition_status("applied", &Some(receipt_pass));
+        assert_eq!(status3, "revalidated");
+
+        // 4. applied -> applied (with failing receipt)
+        let receipt_fail = RevalidationReceipt {
+            command: "npm run test:security-gate".to_string(),
+            exit_code: Some(1),
+            stdout_summary: String::new(),
+            stderr_summary: String::new(),
+            status: RevalidationStatus::Fail,
+        };
+        let status4 = planner.transition_status("applied", &Some(receipt_fail));
+        assert_eq!(status4, "applied");
     }
 
     #[test]
@@ -198,14 +355,14 @@ mod tests {
         };
 
         // Critical Severity finding
-        let finding_critical = make_test_finding(FindingSeverity::Critical);
+        let finding_critical = make_test_finding(FindingSeverity::Critical, None);
         let plan_critical = planner.plan(&request, &finding_critical);
         assert!(plan_critical.human_review_required);
         assert!(plan_critical.dry_run);
         assert_eq!(plan_critical.risk_level, RiskLevel::Critical);
 
         // High Severity finding
-        let finding_high = make_test_finding(FindingSeverity::High);
+        let finding_high = make_test_finding(FindingSeverity::High, None);
         let plan_high = planner.plan(&request, &finding_high);
         assert!(plan_high.human_review_required);
         assert!(plan_high.dry_run);

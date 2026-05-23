@@ -349,6 +349,58 @@
       card.appendChild(fixBtn);
     }
 
+    if (finding.regression_test || finding.status === 'fixed' || finding.status === 'confirmed') {
+      const planContainer = document.createElement('div');
+      planContainer.className = 'finding-plan-container';
+      planContainer.style.marginTop = '6px';
+      planContainer.style.padding = '6px';
+      planContainer.style.background = 'var(--bg-light, rgba(0,0,0,0.05))';
+      planContainer.style.borderRadius = '4px';
+
+      const planTitle = document.createElement('strong');
+      planTitle.textContent = 'Dry-run Patch Plan & Revalidation:';
+      planTitle.style.fontSize = '10px';
+      planTitle.style.display = 'block';
+      planContainer.appendChild(planTitle);
+
+      const revalCmd = document.createElement('div');
+      revalCmd.style.fontSize = '9px';
+      revalCmd.style.marginTop = '2px';
+      const revalCmdLabel = document.createElement('strong');
+      revalCmdLabel.textContent = 'Revalidation Command: ';
+      const revalCmdText = document.createTextNode(finding.regression_test || 'npm run test:security-gate');
+      revalCmd.appendChild(revalCmdLabel);
+      revalCmd.appendChild(revalCmdText);
+      planContainer.appendChild(revalCmd);
+
+      const revalStatus = document.createElement('div');
+      revalStatus.style.fontSize = '9px';
+      revalStatus.style.marginTop = '2px';
+      const revalStatusLabel = document.createElement('strong');
+      revalStatusLabel.textContent = 'Revalidation Status: ';
+      const statusBadge = document.createElement('span');
+      statusBadge.style.padding = '1px 4px';
+      statusBadge.style.borderRadius = '2px';
+      statusBadge.style.fontSize = '8px';
+      statusBadge.style.fontWeight = 'bold';
+
+      if (finding.status === 'fixed') {
+        statusBadge.textContent = 'REVALIDATED / PASS';
+        statusBadge.style.background = 'var(--accent-success, #2e7d32)';
+        statusBadge.style.color = '#fff';
+      } else {
+        statusBadge.textContent = 'NOT RUN / PENDING';
+        statusBadge.style.background = 'var(--fg-dim, #757575)';
+        statusBadge.style.color = '#fff';
+      }
+
+      revalStatus.appendChild(revalStatusLabel);
+      revalStatus.appendChild(statusBadge);
+      planContainer.appendChild(revalStatus);
+
+      card.appendChild(planContainer);
+    }
+
     return card;
   }
 

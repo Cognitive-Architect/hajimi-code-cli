@@ -225,13 +225,27 @@ impl SecurityWorkflowOrchestrator {
                         dry_run: true,
                     };
                     let plan = planner.plan(&request, finding);
+
+                    let current_status = match finding.status {
+                        FindingStatus::Fixed => "revalidated",
+                        FindingStatus::Confirmed => "applied",
+                        _ => "planned",
+                    };
+
+                    let next_status_str = planner.transition_status(
+                        current_status,
+                        &plan.revalidation_receipt,
+                    );
+
                     workflow_notes.push(format!(
-                        "Generated PatchPlan for finding {}: Risk Level: {:?}, Recommendation: {}, Human Review Required: {}, Rollback Plan: {}",
+                        "Generated PatchPlan for finding {}: Risk Level: {:?}, Recommendation: {}, Human Review Required: {}, Rollback Plan: {}, Lifecycle transition: {} -> {}",
                         plan.finding_id,
                         plan.risk_level,
                         plan.recommendation,
                         plan.human_review_required,
-                        plan.rollback_plan
+                        plan.rollback_plan,
+                        current_status,
+                        next_status_str
                     ));
                 }
             }
@@ -733,5 +747,6 @@ mod tests {
         });
 
         assert!(report.workflow_notes.iter().any(|note| note.contains("Generated PatchPlan")));
+        assert!(report.workflow_notes.iter().any(|note| note.contains("Lifecycle transition")));
     }
 }
