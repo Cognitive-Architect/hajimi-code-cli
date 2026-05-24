@@ -2,8 +2,18 @@
 
 > **当前状态**: ✅ **Day 15 Final Closure & Handoff Completed**  
 > **分支**: `codex/security-workflow-day01`  
-> **当前 HEAD**: `d79113b925bb5993da986a6619320be7207b6967` (基于 Day 14 最小补丁提交)  
+> **当前 HEAD**: `4843b02330f78e833a3f73cc98585884fc187ffb` (基于 Day 15 最终结案与最小修补提交)  
 > **文档维护时间**: 2026-05-24
+
+---
+
+## 0. Changed Files & Scope Note (变更文件与范围说明)
+
+从 Day 14 最小修补态到 Day 15 最终结案，变更的内容及范围明细如下：
+
+- **`docs/debt/DEBT-SECURITY-WORKFLOW-CLOSURE.md`**: 新增此最终结案与交接文档，汇总全部状态。
+- **`.gitignore`**: 在 Day 15 前期清理中，为了合规记录 roadmap 及排除无关的本地临时文件夹，微调了白名单跟踪机制。这属于 Day 15 结案的一部分，保证了安全门禁自测脚本的可读性与正确性。
+- **`docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md`**: 物理删除了该陈旧且重复的安全审计样例，避免与 Day 15 本地通过自动门禁生成的 `SECURITY_REVIEW_SAMPLE.md` 报告规范发生歧义冲突。
 
 ---
 
@@ -13,8 +23,8 @@ Hajimi 安全工作流（Security Workflow）经历了 V1-V3 迭代周期。以�
 
 | 交付模块 | 状态 | 状态定义与证据说明 |
 |:---|:---:|:---|
-| **V1 Gate (安全门禁 V1)** | `PASS` | 本地测试通过。`test:security-gate` 依赖的规则集（包含 CSP 校验、Tauri 全局过滤、DOM 危险 API 扫描、Shell 安全白名单与 Path 门禁等）在本地测试完美收口，108 项历史 DOM 风险全部登记为合理 allowlist 警告。 |
-| **V1 Schema (数据定义与 Tool 契约)** | `PASS` | 本地测试通过。`src/engine/tool-system/src/security.rs` 内置的 `Finding`, `Evidence`, `ValidationReceipt` 契约结构及 JSON 报告输出完全兼容 legacy 结构。本地 `cargo test -p engine-tool-system security` 单元测试通过。 |
+| **V1 Gate (安全门禁 V1)** | `PASS` | 本地测试通过。`test:security-gate` 依赖的规则集（包含 CSP 校验、Tauri 全局过滤、DOM 危险 API 扫描、Shell 安全白名单与 Path 门禁等）在本地测试收口，108 项历史 DOM 风险全部登记为合理 allowlist 警告。 |
+| **V1 Schema (数据定义与 Tool 契约)** | `PASS` | 本地测试通过。`src/engine/tool-system/src/security.rs` 内置的 `Finding`, `Evidence`, `ValidationReceipt` 契约结构及 JSON 报告输出兼容 legacy 结构。本地 `cargo test -p engine-tool-system security` 单元测试通过。 |
 | **V2 Agent Workflow (审计与分析流程)** | `PASS` | 本地测试通过。`src/intelligence/agent-core/security_workflow.rs` 中的编排器和 threat model、finding discovery、attack path analysis、validation 决策逻辑运行正常。本地 `cargo test -p intelligence-agent-core security_workflow` 单元测试通过。 |
 | **V2 UI (安全面板面板)** | `PARTIAL` | **保留 WebView 活跃债务**。Right Inspector 右侧栏的安全面板基础渲染和 CSS Token 已就位，且交互式 Slash `/security` 协议逻辑在 JS 层已解析完毕。已实现字段采用 `textContent` 与 `createTextNode` 渲染。但由于真机交互点击与 WebView 真机环境测试处于挂起状态，当前不宣称 `DONE`。 |
 | **V3 Fix/Revalidation (自动修复与复测)** | `PARTIAL` | **干跑门禁限制**。`src/intelligence/agent-core/security_fix.rs` 与本地复测机制已开发完毕并测试通过，但出于系统底层数据安全性红线考量，均强置于 `DRY-RUN ONLY`（只生成虚拟 Plan 与 Dry-run Receipts，默认禁止执行任何物理 fs 写入或高危 interpreter 动作）。单元测试 `cargo test -p intelligence-agent-core security_fix` 通过。 |
@@ -77,6 +87,14 @@ Hajimi 安全工作流（Security Workflow）经历了 V1-V3 迭代周期。以�
 | **DEBT-FIX-APPLY-B17-11** | `DRY-RUN ONLY` | **干跑修复限制**: `SecurityFixPlanner` 生成虚拟 Patch 面板，物理 fs 文件写入未解禁，未来需接入 `EditApplier` 的 diff 校验与确认通道进行持久化合规。 |
 | **DEBT-REVALIDATION-B17-12** | `DRY-RUN ONLY` | **干跑验证限制**: `revalidation` 指令由于只执行 allowlist 网关检查而不触发真实 Shell 指令，未来若接入真实运行需对底层 stdout/stderr 进行沙箱隔离和安全加固。 |
 | **FALSE-POSITIVES-GOVERNANCE** | `PARTIAL` | **静态误报治理**: 正则规则虽然支持合理 allowlist 并携带 reason 机制，但长时间演进后易出现 allowlist 膨胀，需定期开展人工垃圾清理。 |
+
+### 4.1 本地工作空间环境说明 (Local Workspace Note)
+
+在本地 Windows 物理环境中，运行 `git status --short` 时存在以下未跟踪（Untracked）的文件夹，特此作出合规性声明：
+- **`.codex/`**: Codex-Twist 引擎在本地执行规划、追溯决策与上下文投影时生成的本地缓存元数据文件夹，与业务编译 check 无关。
+- **`docs/roadmap/`**: 存有安全工作流相关的每日任务工单及过程规划，作为未跟踪文档在本地存档备用，不干扰 CI 门禁的编译或自动化测试。
+- **`target-ui-refresh/`**: 前端 UI 刷新、预览与静态编译的本地临时构建输出目录，并不属于 Rust 的业务二进制输出。
+以上未跟踪资源均为良性开发辅助缓存，本地回归测试与静态审计网关均已正常 PASS。
 
 ---
 
