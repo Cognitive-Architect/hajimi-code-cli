@@ -33,3 +33,46 @@
    - `package.json` 中保留了 `test:security-gate` 且新增了 `test:security-workflow`。
    - 扩展了 `.github/workflows/security.yml` 并通过 artifacts 上传策略（`security-workflow-report`）闭环了报告可见性，不生成任何多余的 `.github/workflows/security-gate.yml` 文件。
    - 运行结果完全可本地复现，并在 `docs/security/SECURITY_WORKFLOW_SPEC.md` 中写明复现指令与 `HAJIMI_SECURITY_GATE_STRICT` 设计机制。
+
+---
+
+## 3. Day 14 全量回归验证凭证 (Day 14 Full Regression Validation Receipts)
+
+为了确保 V1-V3 产物的质量与系统的整体稳定性，我们在 Windows 实机环境下运行了全量质量闸门测试。测试命令与执行结果如下：
+
+1. **`cargo check --workspace`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: 整个工作空间（包括 19 个 Crate）编译成功，仅产生 4 个关于 legacy `context_threshold` 的 deprecation warnings。
+
+2. **`cargo test -p engine-tool-system security`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: `5 passed; 0 failed`。成功验证 `SecurityAuditTool` 的基础扫描、敏感度分级、PAT 泄露与 Credential 验证规则。
+
+3. **`cargo test -p intelligence-agent-core security_workflow`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: `9 passed; 0 failed`。成功验证 `security_scan`, `threat_model`, `finding_discovery`, `attack_path_analysis`, `validation` 分支、流程驱动及 feature gate。
+
+4. **`cargo test -p intelligence-agent-core security_fix`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: `5 passed; 0 failed`。成功验证漏洞严重级拦截规则、危险指令网关、修复决策与 state machine 状态转换。
+
+5. **`node --check src/interface/web/modules/security-workflow.js`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: 前端无 bundler IIFE 模块语法校验 100% 正确。
+
+6. **`node tests/security/security_audit_gate.js`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: `failures: 0`, `warnings: 108`, `allowlisted: 108`。无新漏洞引入，安全规则拦截策略正常发挥作用。
+
+7. **`node tests/frontend/day17_security_workflow_smoke.js`**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: `day17_security_workflow_smoke: ok`。前端组件及 XSS 安全沙箱 DOM 仿真渲染测试通过。
+
+8. **四层架构逆向依赖检查 (`rg -n "use interface|interface::|src/interface" src/engine src/intelligence`)**
+   - **结果**: `Exit code 1` (0 matches)
+   - **细节**: 完美，Engine 与 Intelligence 层不存在任何向上的 Interface 依赖，严守架构红线。
+
+9. **Git 空白错误校验 (`git diff --check`)**
+   - **结果**: `Exit code 0` (PASS)
+   - **细节**: 无任何悬空行或空白字符错误。
+

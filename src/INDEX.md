@@ -243,6 +243,8 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `context_probe.rs` | **Context Probe 容量探测与五态管理**（探针级联 Fallback / TTL 校验） | 393 |
 | `context_receipt.rs` | **Context Receipt 隐私脱敏回执**（Included/Omitted 统计与 API 隐私脱敏） | 716 |
 | `mod.rs` | 公共API导出与长上下文路由门禁 | 34 |
+| `security_workflow.rs` | **Security Workflow 审计编排器**（漏洞定义、安全状态转换规划、三层调度调度器） | 752 |
+| `security_fix.rs` | **Security Fix 自动修复**（Dry-run plan、验证凭证、回滚、安全网关、危险分析） | 393 |
 | `memory_retriever.rs` | **多层级记忆检索**（DEBT-LINES清偿） | 87 |
 | `loop_state_machine.rs` | **7步循环状态机**（DEBT-LINES清偿） | 69 |
 | `reflection_persistence.rs` | **反思持久化与审批**（DEBT-LINES清偿） | 53 |
@@ -638,8 +640,8 @@ interface/mcp-server/
 | 文件 | 职责 | Phase 5 交付状态 |
 |:---|:---|:---|
 | `src/interface/web/index.html` | Tauri Web UI DOM 合约；7 区域布局；Settings panels；Right Inspector panels | Chat-first layout、Settings Integration、Inspector panels 已落地 |
-| `src/interface/web/app.js` | 前端状态、事件绑定、Command Palette、Agent cards、Inspector data binding、diff/trace/evidence rendering | Day 1-10 UI 交互核心已接入；Day 13-14 保留兼容 wrapper 并渐进接入 `modules/security-dom.js`、`workspace.js`、`sessions.js`、`thinking-ui.js` |
-| `src/interface/web/modules/` | 无 bundler IIFE frontend modules | `security-dom.js` / `workspace.js` / `sessions.js` / `thinking-ui.js`，承接安全渲染、workspace、会话、Thinking/Trace 高频逻辑 |
+| `src/interface/web/app.js` | 前端状态、事件绑定、Command Palette、Agent cards、Inspector data binding、diff/trace/evidence rendering | Day 1-10 UI 交互核心已接入；Day 13-14 保留兼容 wrapper 并渐进接入 `modules/security-dom.js`、`modules/security-workflow.js`、`workspace.js`、`sessions.js`、`thinking-ui.js` |
+| `src/interface/web/modules/` | 无 bundler IIFE frontend modules | `security-dom.js` / `security-workflow.js` / `workspace.js` / `sessions.js` / `thinking-ui.js`，承接安全扫描与展示、安全渲染、workspace、会话、Thinking/Trace 高频逻辑 |
 | `src/interface/web/style.css` | 设计 tokens、布局、cards、menus、Settings、Inspector、Evidence panels 样式 | Phase 5 视觉系统与组件状态已收口 |
 | `src/interface/desktop/src/main.rs` | Tauri command / event bridge；web 前端调用后端能力的入口 | Day 2-10 接入 workspace resolver、专用文件操作、checkpoint export/compare/restore/replay；CSP 配置位于 `tauri.conf.json` |
 | `src/intelligence/agent-core/prompt_golden_tests.rs` | Prompt golden regression harness | 显式加载 `tests/agent_prompt_golden/` fixtures，覆盖 Planner/Reflector/ToolCall 契约回归 |
