@@ -164,6 +164,19 @@ docs/debt/*
 !docs/debt/DEBT-AGENT-SKILLS-V0.md
 !docs/roadmap/
 docs/roadmap/*
+!docs/roadmap/Hajimi security workflow/
+docs/roadmap/Hajimi security workflow/*
+!docs/roadmap/Hajimi security workflow/SECURITY-WORKFLOW-V1-V3-ROADMAP.md
+!docs/roadmap/Hajimi security workflow/SECURITY-WORKFLOW-V1-V3-DAILY-PLAN.md
+!docs/roadmap/Hajimi security workflow/plan/
+docs/roadmap/Hajimi security workflow/plan/*
+!docs/roadmap/Hajimi security workflow/plan/*.md
+!docs/roadmap/Hajimi security workflow/task/
+docs/roadmap/Hajimi security workflow/task/*
+!docs/roadmap/Hajimi security workflow/task/*.md
+!docs/roadmap/Hajimi security workflow/audit report/
+docs/roadmap/Hajimi security workflow/audit report/*
+!docs/roadmap/Hajimi security workflow/audit report/*.md
 !docs/roadmap/hajimi build/
 docs/roadmap/hajimi build/*
 !docs/roadmap/hajimi build/Hajimi Skills/
@@ -189,6 +202,12 @@ audit-report/
 audit report/
 !docs/roadmap/hajimi build/Hajimi Skills/audit report/
 !docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md
+!docs/roadmap/Hajimi security workflow/task/
+docs/roadmap/Hajimi security workflow/task/*
+!docs/roadmap/Hajimi security workflow/task/*.md
+!docs/roadmap/Hajimi security workflow/audit report/
+docs/roadmap/Hajimi security workflow/audit report/*
+!docs/roadmap/Hajimi security workflow/audit report/*.md
 
 # ============================================
 # 过时技术栈内容（已清理）
