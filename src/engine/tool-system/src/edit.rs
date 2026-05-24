@@ -249,3 +249,124 @@ pub async fn atomic_write(path: &PathBuf, content: &str) -> Result<(), ToolError
 fn _is_utf8_boundary(content: &str, idx: usize) -> bool {
     content.is_char_boundary(idx)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Tool;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn setup_test_workspace() -> (PathBuf, PathBuf) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be available")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "hajimi-edit-file-test-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let workspace = temp.join("workspace");
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&workspace).expect("create workspace");
+        (temp, workspace)
+    }
+
+    fn cleanup_test_workspace(temp: &Path) {
+        let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[cfg(unix)]
+    fn create_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn create_dir_link(link: &Path, target: &Path) -> std::io::Result<()> {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => Ok(()),
+            Err(primary_error) => {
+                let status = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(link)
+                    .arg(target)
+                    .status();
+                match status {
+                    Ok(status) if status.success() => Ok(()),
+                    _ => Err(primary_error),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_absolute_path_outside_workspace() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside.txt");
+        std::fs::write(&outside, "old").expect("write outside file");
+        let tool = EditFileTool::with_allowed_paths(vec![workspace]);
+
+        let result = tool
+            .execute(json!({
+                "path": outside,
+                "old_string": "old",
+                "new_string": "new",
+                "dry_run": true,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("outside allowed workspace"));
+        assert!(!err.message.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_parent_traversal() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(temp.join("outside.txt"), "old").expect("write outside file");
+        let tool = EditFileTool::with_allowed_paths(vec![workspace]);
+
+        let result = tool
+            .execute(json!({
+                "path": "../outside.txt",
+                "old_string": "old",
+                "new_string": "new",
+                "dry_run": true,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("traversal"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_symlink_escape() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+        std::fs::write(outside.join("secret.txt"), "old").expect("write outside file");
+        let link = workspace.join("outside-link");
+        create_dir_link(&link, &outside).expect("create workspace escape link");
+        let tool = EditFileTool::with_allowed_paths(vec![workspace]);
+
+        let result = tool
+            .execute(json!({
+                "path": link.join("secret.txt"),
+                "old_string": "old",
+                "new_string": "new",
+                "dry_run": true,
+            }))
+            .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("outside allowed workspace"));
+        cleanup_test_workspace(&temp);
+    }
+}

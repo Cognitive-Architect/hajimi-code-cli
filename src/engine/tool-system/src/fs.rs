@@ -372,7 +372,7 @@ pub(crate) fn validate_tool_path(
         .any(|base| canonical.starts_with(base))
     {
         return Err(ToolError {
-            message: format!("Path outside allowed workspace: {}", canonical.display()),
+            message: "Path outside allowed workspace".into(),
             kind: ToolErrorKind::PermissionDenied,
         });
     }
@@ -580,7 +580,7 @@ impl Tool for DeleteFileTool {
 
         if let Some(bases) = &self.allowed_paths {
             let canonical_bases = canonicalize_allowed_bases(bases)?;
-            if canonical_bases.iter().any(|base| path_buf == *base) {
+            if canonical_bases.contains(&path_buf) {
                 return Err(ToolError {
                     message: "Cannot delete workspace root".into(),
                     kind: ToolErrorKind::PermissionDenied,

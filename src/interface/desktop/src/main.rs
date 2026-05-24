@@ -856,11 +856,7 @@ fn resolve_workspace_path(
 
     // 5. 确认在 workspace 内
     if !canonical.starts_with(&canonical_base) {
-        return Err(format!(
-            "路径越界: {} 不在工作目录 {} 内",
-            canonical.display(),
-            canonical_base.display()
-        ));
+        return Err("路径越界: 目标不在当前工作目录内".to_string());
     }
 
     match intent {
@@ -961,7 +957,7 @@ struct ToolInfo {
     description: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 struct ToolResult {
     stdout: String,
     stderr: String,
@@ -1182,6 +1178,13 @@ fn trusted_workspace_path(
     app_handle: &tauri::AppHandle,
 ) -> Result<Option<PathBuf>, String> {
     let current = get_workspace_dir(app_handle)?;
+    trusted_workspace_path_for_current(workspace_path, &current)
+}
+
+fn trusted_workspace_path_for_current(
+    workspace_path: Option<&str>,
+    current: &Path,
+) -> Result<Option<PathBuf>, String> {
     let canonical_current = current
         .canonicalize()
         .map_err(|e| format!("无法解析当前 workspace: {}", e))?;
@@ -1193,11 +1196,7 @@ fn trusted_workspace_path(
         .canonicalize()
         .map_err(|e| format!("无法解析 workspace 参数: {}", e))?;
     if canonical_requested != canonical_current {
-        return Err(format!(
-            "workspace 参数越界: {} 不是当前 workspace {}",
-            canonical_requested.display(),
-            canonical_current.display()
-        ));
+        return Err("workspace 参数越界: 请求 workspace 不是当前 workspace".to_string());
     }
     Ok(Some(canonical_current))
 }
@@ -2707,15 +2706,22 @@ async fn apply_edits(
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<ToolResult>, String> {
-    let mut results = Vec::new();
     let base_dir = get_workspace_dir(&app_handle)?;
+    apply_edits_with_base_dir(edits, &state.registry, &base_dir).await
+}
+
+async fn apply_edits_with_base_dir(
+    edits: Vec<EditHunkPayload>,
+    registry: &ToolRegistry,
+    base_dir: &Path,
+) -> Result<Vec<ToolResult>, String> {
+    let mut results = Vec::new();
     for edit in edits {
         if edit.old_string.is_empty() {
             return Err("old_string cannot be empty".to_string());
         }
-        let safe_path = resolve_workspace_path(&edit.path, &base_dir, PathIntent::ExistingFile)?;
-        let tool = state
-            .registry
+        let safe_path = resolve_workspace_path(&edit.path, base_dir, PathIntent::ExistingFile)?;
+        let tool = registry
             .get("edit_file")
             .ok_or_else(|| "edit_file tool not found".to_string())?;
         let args = serde_json::json!({
@@ -2740,7 +2746,19 @@ fn preview_edit(
         return Err("old_string cannot be empty".to_string());
     }
     let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(&path, &base_dir, PathIntent::ExistingFile)?;
+    preview_edit_with_base_dir(path, old_string, new_string, &base_dir)
+}
+
+fn preview_edit_with_base_dir(
+    path: String,
+    old_string: String,
+    new_string: String,
+    base_dir: &Path,
+) -> Result<String, String> {
+    if old_string.is_empty() {
+        return Err("old_string cannot be empty".to_string());
+    }
+    let safe_path = resolve_workspace_path(&path, base_dir, PathIntent::ExistingFile)?;
     preview_edit_for_path(&safe_path, &path, &old_string, &new_string)
 }
 
@@ -3098,6 +3116,181 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn apply_edits_allows_workspace_file() {
+        let (temp, workspace) = setup_test_workspace();
+        let file = workspace.join("edit.txt");
+        std::fs::write(&file, "hello").expect("write workspace file");
+        let registry = build_registry(&workspace);
+
+        let result = apply_edits_with_base_dir(
+            vec![EditHunkPayload {
+                path: "edit.txt".to_string(),
+                old_string: "hello".to_string(),
+                new_string: "world".to_string(),
+            }],
+            &registry,
+            &workspace,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "world");
+        cleanup_test_workspace(&temp);
+    }
+
+    #[tokio::test]
+    async fn apply_edits_rejects_absolute_path_outside_workspace() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside.txt");
+        std::fs::write(&outside, "hello").expect("write outside file");
+        let registry = build_registry(&workspace);
+
+        let result = apply_edits_with_base_dir(
+            vec![EditHunkPayload {
+                path: outside.to_string_lossy().to_string(),
+                old_string: "hello".to_string(),
+                new_string: "world".to_string(),
+            }],
+            &registry,
+            &workspace,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("路径越界"));
+        assert!(!err.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[tokio::test]
+    async fn apply_edits_rejects_parent_traversal() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(temp.join("outside.txt"), "hello").expect("write outside file");
+        let registry = build_registry(&workspace);
+
+        let result = apply_edits_with_base_dir(
+            vec![EditHunkPayload {
+                path: "../outside.txt".to_string(),
+                old_string: "hello".to_string(),
+                new_string: "world".to_string(),
+            }],
+            &registry,
+            &workspace,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("traversal"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[tokio::test]
+    async fn apply_edits_rejects_symlink_escape() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+        std::fs::write(outside.join("secret.txt"), "hello").expect("write outside file");
+        let link = workspace.join("outside-link");
+        create_dir_link(&link, &outside).expect("create workspace escape link");
+        let registry = build_registry(&workspace);
+
+        let result = apply_edits_with_base_dir(
+            vec![EditHunkPayload {
+                path: "outside-link/secret.txt".to_string(),
+                old_string: "hello".to_string(),
+                new_string: "world".to_string(),
+            }],
+            &registry,
+            &workspace,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("路径越界"));
+        assert!(!err.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn preview_edit_allows_workspace_file() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(workspace.join("edit.txt"), "hello").expect("write workspace file");
+
+        let result = preview_edit_with_base_dir(
+            "edit.txt".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+            &workspace,
+        );
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("-hello"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn preview_edit_rejects_absolute_path_outside_workspace() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside.txt");
+        std::fs::write(&outside, "hello").expect("write outside file");
+
+        let result = preview_edit_with_base_dir(
+            outside.to_string_lossy().to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+            &workspace,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("路径越界"));
+        assert!(!err.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn preview_edit_rejects_parent_traversal() {
+        let (temp, workspace) = setup_test_workspace();
+        std::fs::write(temp.join("outside.txt"), "hello").expect("write outside file");
+
+        let result = preview_edit_with_base_dir(
+            "../outside.txt".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+            &workspace,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("traversal"));
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn preview_edit_rejects_symlink_escape() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+        std::fs::write(outside.join("secret.txt"), "hello").expect("write outside file");
+        let link = workspace.join("outside-link");
+        create_dir_link(&link, &outside).expect("create workspace escape link");
+
+        let result = preview_edit_with_base_dir(
+            "outside-link/secret.txt".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+            &workspace,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("路径越界"));
+        assert!(!err.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
     }
 
     #[test]
@@ -3467,6 +3660,45 @@ mod tests {
             std::fs::read_to_string(workspace.join("ok.txt")).unwrap(),
             "before"
         );
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn provider_workspace_defaults_to_current_workspace_when_missing() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result = trusted_workspace_path_for_current(None, &workspace);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().unwrap(), workspace.canonicalize().unwrap());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn provider_workspace_accepts_current_workspace() {
+        let (temp, workspace) = setup_test_workspace();
+
+        let result =
+            trusted_workspace_path_for_current(Some(&workspace.to_string_lossy()), &workspace);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().unwrap(), workspace.canonicalize().unwrap());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn provider_workspace_rejects_mismatched_workspace_without_path_leak() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside-workspace");
+        std::fs::create_dir_all(&outside).expect("create outside workspace");
+
+        let result =
+            trusted_workspace_path_for_current(Some(&outside.to_string_lossy()), &workspace);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("workspace 参数越界"));
+        assert!(!err.contains(&temp.to_string_lossy().to_string()));
         cleanup_test_workspace(&temp);
     }
 
