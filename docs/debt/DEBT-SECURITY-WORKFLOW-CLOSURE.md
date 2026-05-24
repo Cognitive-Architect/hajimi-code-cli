@@ -1,8 +1,7 @@
 # B-17 Security Workflow Closure (最终收卷与交接包)
 
-> **当前状态**: ✅ **Day 15 Final Closure & Handoff Completed**  
-> **分支**: `codex/security-workflow-day01`  
-> **当前 HEAD**: `4843b02330f78e833a3f73cc98585884fc187ffb` (基于 Day 15 最终结案与最小修补提交)  
+> - **Closure baseline HEAD**: `d79113b925bb5993da986a6619320be7207b6967`  
+> - **Final closure commit SHA**: reported by git rev-parse HEAD in handoff receipt; not self-embedded to avoid commit-hash recursion.  
 > **文档维护时间**: 2026-05-24
 
 ---
