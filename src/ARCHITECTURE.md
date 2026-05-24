@@ -651,7 +651,7 @@ Hajimi Agent Skills 系统用于将 Agent 动作模式从单一的工具调用�
 
 <!-- SECURITY-PANEL-B17-10: Day 10 Security Panel completed -->
 
-**当前状态**: ✅ **Day 14 Regression & Docs Sync Completed (Day 11-14 Security Workflow closure)（保留 PENDING-WEBVIEW-SMOKE 活跃债务，本地与 CI 集成回归测试 100% 通过）**
+**当前状态**: ✅ **Day 14 Regression & Docs Sync Completed (Day 11-14 Security Workflow closure)（保留 PENDING-WEBVIEW-SMOKE 活跃债务，本地回归命令通过；CI workflow 已接线；远程 GitHub Actions run / artifact evidence 仍 pending。）**
 
 Hajimi 安全工作流（Security Workflow）打通了底层安全引擎（Engine）、智能调度器（Intelligence）与前端可视化展示（Interface）的三层链条。用户可以通过 Command Palette 输入或侧边栏点击运行安全扫描，交互式查看漏洞摘要（Summary）、安全发现（Findings）、证据细节（Evidence）、复测凭证（Validation Receipts）与残余风险（Residual Risks），并能一键发起 dry-run 修复计划。
 
@@ -670,7 +670,7 @@ Hajimi 安全工作流（Security Workflow）打通了底层安全引擎（Engin
 [Interface 层 (vanilla web)] ──► HajimiSecurityWorkflow (IIFE 模块解析与文本过滤)
             │
             ▼
-[Right Inspector (安全面板)] ──► textContent 绝对安全 DOM 渲染 (无 XSS/innerHTML 风险)
+[Right Inspector (安全面板)] ──► 已实现字段采用 textContent / createTextNode 安全文本渲染；真实 WebView/manual click smoke 仍 pending。
 ```
 
 ### 2. 核心架构设计

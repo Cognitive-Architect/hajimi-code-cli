@@ -15,6 +15,7 @@
 | **HAJIMI_SECURITY_FIX_ENABLED** | `DEFAULT OFF` | `HAJIMI_SECURITY_FIX_ENABLED` 环境变量门禁默认未开启。即使人为强制设定为 `true`，为了代码安全，系统在修复规划时也依旧遵循 dry-run 与 human review 拦截红线。 |
 | **PENDING-WEBVIEW-SMOKE** | `PENDING` | 真机 WebView 安全面板与按钮交互测试仍处于挂起/债务状态。目前在本地已通过 DOM 沙箱仿真烟雾测试（`tests/frontend/day17_security_workflow_smoke.js`）进行验证。 |
 | **DEBT-CI-B17-13** | `INTEGRATED` | 已成功将 Security Workflow 集成入 CI 门禁与 Package scripts。CI 优先跑 regression gate (`test:security-gate`) 并接着编译报告 (`test:security-workflow`)，将生成的 Markdown 和 JSON 报告自动上传至 GitHub Action Artifacts。CI 对 High/Critical 以及 B18 回归项实施强阻断（fail-level），低危 warning 默认 report-only 不阻断（除非 `HAJIMI_SECURITY_GATE_STRICT=true` 被明确设置）。 |
+| **REMOTE-CI-EVIDENCE** | `PENDING` | GitHub workflow_runs / combined status 未获取，远程 GHA run 及 artifact 下载证据 pending。 |
 
 ---
 
@@ -31,8 +32,8 @@
    - `cargo test -p intelligence-agent-core security_workflow` 9 个工作流生命周期、严重级分类单元测试通过。
 6. **CI 与 Package 集成合规**:
    - `package.json` 中保留了 `test:security-gate` 且新增了 `test:security-workflow`。
-   - 扩展了 `.github/workflows/security.yml` 并通过 artifacts 上传策略（`security-workflow-report`）闭环了报告可见性，不生成任何多余的 `.github/workflows/security-gate.yml` 文件。
-   - 运行结果完全可本地复现，并在 `docs/security/SECURITY_WORKFLOW_SPEC.md` 中写明复现指令与 `HAJIMI_SECURITY_GATE_STRICT` 设计机制。
+   - 扩展了 `.github/workflows/security.yml` 并通过 artifacts 上传策略（`security-workflow-report`）闭环了报告可见性，不生成多余的 `.github/workflows/security-gate.yml` 文件。
+   - 运行结果可本地复现，并在 `docs/security/SECURITY_WORKFLOW_SPEC.md` 中写明复现指令与 `HAJIMI_SECURITY_GATE_STRICT` 设计机制。
 
 ---
 
@@ -58,7 +59,7 @@
 
 5. **`node --check src/interface/web/modules/security-workflow.js`**
    - **结果**: `Exit code 0` (PASS)
-   - **细节**: 前端无 bundler IIFE 模块语法校验 100% 正确。
+   - **细节**: 前端无 bundler IIFE 模块语法校验正确。
 
 6. **`node tests/security/security_audit_gate.js`**
    - **结果**: `Exit code 0` (PASS)
@@ -70,7 +71,7 @@
 
 8. **四层架构逆向依赖检查 (`rg -n "use interface|interface::|src/interface" src/engine src/intelligence`)**
    - **结果**: `Exit code 1` (0 matches)
-   - **细节**: 完美，Engine 与 Intelligence 层不存在任何向上的 Interface 依赖，严守架构红线。
+   - **细节**: 验证 Engine 与 Intelligence 层不存在向上的 Interface 依赖，严守架构红线。
 
 9. **Git 空白错误校验 (`git diff --check`)**
    - **结果**: `Exit code 0` (PASS)

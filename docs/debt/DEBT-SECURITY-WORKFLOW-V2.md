@@ -75,3 +75,11 @@ within the Right Inspector, utilizing textContent safe rendering (no innerHTML) 
 
 Unregister `run_security_workflow` from `src/interface/desktop/src/main.rs`,
 hide the `security-panel` tab from `src/interface/web/index.html`, revert `src/interface/web/app.js` edits, and remove `src/interface/web/modules/security-workflow.js`.
+
+---
+
+## Day 14 Review Note
+
+- **本地回归验证**: Day 14 本地回归命令及实机通过凭证已详细记录于 `docs/debt/DEBT-SECURITY-WORKFLOW-V3.md` 中。
+- **挂起状态确认**: V2 相关所有 pending 选项（如 DOM innerHTML 警告、高风险 WebView/manual click validation、ToolRegistry 运行交互）继续保持挂起（`PENDING-WEBVIEW-SMOKE`），不宣称已解决。
+- **远程 CI 状态**: 不宣称任何远程 CI/GHA 自动执行完成，远程端证据以 pending 形式记录在 V3 债务中。

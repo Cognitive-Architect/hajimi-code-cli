@@ -234,3 +234,11 @@ claim full SAST or complete security audit coverage.
 Validation receipts for Day 6 were recorded only after the commands were run.
 Manual WebView/click validation was not executed per user instruction and
 remains `PENDING-WEBVIEW-SMOKE`.
+
+---
+
+## Day 14 Review Note
+
+- **本地回归验证**: Day 14 本地回归命令及实机通过凭证已详细记录于 `docs/debt/DEBT-SECURITY-WORKFLOW-V3.md` 中。
+- **挂起状态确认**: V1 相关所有 pending 选项（如 DOM innerHTML 警告、高风险 WebView/manual click validation）继续保持挂起（`PENDING-WEBVIEW-SMOKE`），不宣称已解决。
+- **远程 CI 状态**: 不宣称任何远程 CI/GHA 自动执行完成，远程端证据以 pending 形式记录在 V3 债务中。
