@@ -6,8 +6,8 @@
 
 - Repository: hajimi-code-cli
 - Branch: `codex/security-workflow-day01`
-- Commit: `e541aee5e9f1e71d51bdb61b93ed0a8c3c7eec6e`
-- Generated at: 2026-05-23T12:39:09.457Z
+- Commit: `b8c0f1a43a937e64c34e586d836b3a64d7bc8fda`
+- Generated at: 2026-05-24T03:52:51.170Z
 - Input command: `node tests/security/security_audit_gate.js`
 - Output JSON: `docs/security/examples/SECURITY_REVIEW_SAMPLE.json`
 - In scope: Security Gate V1 structured findings and report rendering.
@@ -211,7 +211,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 551
+- Line: 558
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -219,7 +219,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 551 | el.innerHTML = '<span style="color:var(--fg-dim);">无待处理修改</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 558 | el.innerHTML = '<span style="color:var(--fg-dim);">无待处理修改</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-010: known legacy dangerous HTML API allowed with reason
 
@@ -230,7 +230,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 556
+- Line: 563
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -238,7 +238,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 556 | el.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 563 | el.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-011: known legacy dangerous HTML API allowed with reason
 
@@ -249,7 +249,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 568
+- Line: 575
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -257,7 +257,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 568 | contextEl.innerHTML = '<span style="color:var(--fg-dim);">暂无上下文文件</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 575 | contextEl.innerHTML = '<span style="color:var(--fg-dim);">暂无上下文文件</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-012: known legacy dangerous HTML API allowed with reason
 
@@ -268,7 +268,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 570
+- Line: 577
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -276,7 +276,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 570 | contextEl.innerHTML = this.chatContextFiles.map(path => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 577 | contextEl.innerHTML = this.chatContextFiles.map(path => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-013: known legacy dangerous HTML API allowed with reason
 
@@ -287,7 +287,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 582
+- Line: 589
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -295,7 +295,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 582 | modelEl.innerHTML = '<span style="color:var(--fg-dim);">未选择模型</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 589 | modelEl.innerHTML = '<span style="color:var(--fg-dim);">未选择模型</span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-014: known legacy dangerous HTML API allowed with reason
 
@@ -306,7 +306,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 587
+- Line: 594
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -314,7 +314,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 587 | modelEl.innerHTML = `<div style="font-size:12px;color:var(--fg-default);"> |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 594 | modelEl.innerHTML = `<div style="font-size:12px;color:var(--fg-default);"> |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-015: known legacy dangerous HTML API allowed with reason
 
@@ -325,7 +325,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 603
+- Line: 610
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -333,7 +333,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 603 | container.innerHTML = `<div class="inspector-empty-state"> |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 610 | container.innerHTML = `<div class="inspector-empty-state"> |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-016: known legacy dangerous HTML API allowed with reason
 
@@ -344,7 +344,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 645
+- Line: 652
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -352,28 +352,9 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 645 | container.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 652 | container.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-017: known legacy dangerous HTML API allowed with reason
-
-- Rule ID: `DOM-HTML-001`
-- Severity: `low`
-- Status: `accepted_risk`
-- Category: `gate`
-- Confidence: n/a
-- Type: n/a
-- File: src/interface/web/app.js
-- Line: 657
-- Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
-- Regression test: `npm run test:security-gate`
-- Human review required: false
-- Residual risk: Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only.
-
-| Kind | File | Line | Snippet | Command | Output Hash | Note |
-|---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 657 | container.innerHTML = '<div class="inspector-empty-state"><span>任务执行后显示 Trace</span></div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
-
-### FINDING-018: known legacy dangerous HTML API allowed with reason
 
 - Rule ID: `DOM-HTML-001`
 - Severity: `low`
@@ -390,7 +371,26 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 664 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 664 | container.innerHTML = '<div class="inspector-empty-state"><span>任务执行后显示 Trace</span></div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+
+### FINDING-018: known legacy dangerous HTML API allowed with reason
+
+- Rule ID: `DOM-HTML-001`
+- Severity: `low`
+- Status: `accepted_risk`
+- Category: `gate`
+- Confidence: n/a
+- Type: n/a
+- File: src/interface/web/app.js
+- Line: 671
+- Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
+- Regression test: `npm run test:security-gate`
+- Human review required: false
+- Residual risk: Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only.
+
+| Kind | File | Line | Snippet | Command | Output Hash | Note |
+|---|---|---:|---|---|---|---|
+| code | src/interface/web/app.js | 671 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-019: known legacy dangerous HTML API allowed with reason
 
@@ -401,7 +401,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 708
+- Line: 715
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -409,7 +409,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 708 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">搜索中...</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 715 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">搜索中...</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-020: known legacy dangerous HTML API allowed with reason
 
@@ -420,7 +420,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 711
+- Line: 718
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -428,28 +428,9 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 711 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 718 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-021: known legacy dangerous HTML API allowed with reason
-
-- Rule ID: `DOM-HTML-001`
-- Severity: `low`
-- Status: `accepted_risk`
-- Category: `gate`
-- Confidence: n/a
-- Type: n/a
-- File: src/interface/web/app.js
-- Line: 724
-- Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
-- Regression test: `npm run test:security-gate`
-- Human review required: false
-- Residual risk: Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only.
-
-| Kind | File | Line | Snippet | Command | Output Hash | Note |
-|---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 724 | searchResults.innerHTML = `<div style="padding:12px;color:var(--fg-red);">搜索失败: ${this.escapeHtml(e.message \|\| e)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
-
-### FINDING-022: known legacy dangerous HTML API allowed with reason
 
 - Rule ID: `DOM-HTML-001`
 - Severity: `low`
@@ -466,7 +447,26 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 731 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 731 | searchResults.innerHTML = `<div style="padding:12px;color:var(--fg-red);">搜索失败: ${this.escapeHtml(e.message \|\| e)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+
+### FINDING-022: known legacy dangerous HTML API allowed with reason
+
+- Rule ID: `DOM-HTML-001`
+- Severity: `low`
+- Status: `accepted_risk`
+- Category: `gate`
+- Confidence: n/a
+- Type: n/a
+- File: src/interface/web/app.js
+- Line: 738
+- Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
+- Regression test: `npm run test:security-gate`
+- Human review required: false
+- Residual risk: Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only.
+
+| Kind | File | Line | Snippet | Command | Output Hash | Note |
+|---|---|---:|---|---|---|---|
+| code | src/interface/web/app.js | 738 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-023: known legacy dangerous HTML API allowed with reason
 
@@ -477,7 +477,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 751
+- Line: 758
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -485,7 +485,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 751 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 758 | searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-024: known legacy dangerous HTML API allowed with reason
 
@@ -496,7 +496,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 772
+- Line: 779
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -504,7 +504,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 772 | searchResults.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 779 | searchResults.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-025: known legacy dangerous HTML API allowed with reason
 
@@ -515,7 +515,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 825
+- Line: 832
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -523,7 +523,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 825 | fileList.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">没有更改</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 832 | fileList.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">没有更改</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-026: known legacy dangerous HTML API allowed with reason
 
@@ -534,7 +534,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 852
+- Line: 859
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -542,7 +542,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 852 | fileList.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 859 | fileList.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-027: known legacy dangerous HTML API allowed with reason
 
@@ -553,7 +553,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 880
+- Line: 887
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -561,7 +561,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 880 | diffContent.innerHTML = colored; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 887 | diffContent.innerHTML = colored; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-028: known legacy dangerous HTML API allowed with reason
 
@@ -572,7 +572,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 920
+- Line: 927
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -580,7 +580,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 920 | statusBranch.innerHTML = `🌿 ${this.escapeHtml(branch)}`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 927 | statusBranch.innerHTML = `🌿 ${this.escapeHtml(branch)}`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-029: known legacy dangerous HTML API allowed with reason
 
@@ -591,7 +591,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1023
+- Line: 1030
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -599,7 +599,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1023 | menu.innerHTML = items.map((item, i) => |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1030 | menu.innerHTML = items.map((item, i) => |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-030: known legacy dangerous HTML API allowed with reason
 
@@ -610,7 +610,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1090
+- Line: 1097
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -618,7 +618,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1090 | menu.innerHTML = items.map(item => |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1097 | menu.innerHTML = items.map(item => |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-031: known legacy dangerous HTML API allowed with reason
 
@@ -629,7 +629,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1209
+- Line: 1216
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -637,7 +637,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1209 | tabBar.innerHTML = this.tabs.map(tab => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1216 | tabBar.innerHTML = this.tabs.map(tab => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-032: known legacy dangerous HTML API allowed with reason
 
@@ -648,7 +648,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1229
+- Line: 1236
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -656,7 +656,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1229 | editorArea.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1236 | editorArea.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-033: known legacy dangerous HTML API allowed with reason
 
@@ -667,7 +667,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1250
+- Line: 1257
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -675,7 +675,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1250 | bar.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1257 | bar.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-034: known legacy dangerous HTML API allowed with reason
 
@@ -686,7 +686,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1265
+- Line: 1272
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -694,7 +694,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1265 | bar.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1272 | bar.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-035: known legacy dangerous HTML API allowed with reason
 
@@ -705,7 +705,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1282
+- Line: 1289
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -713,7 +713,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1282 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1289 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-036: known legacy dangerous HTML API allowed with reason
 
@@ -724,7 +724,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1337
+- Line: 1344
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -732,7 +732,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1337 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1344 | container.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-037: known legacy dangerous HTML API allowed with reason
 
@@ -743,7 +743,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1397
+- Line: 1404
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -751,7 +751,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1397 | lineNumbers.innerHTML = lines.map((_, i) => `<div>${i + 1}</div>`).join(''); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1404 | lineNumbers.innerHTML = lines.map((_, i) => `<div>${i + 1}</div>`).join(''); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-038: known legacy dangerous HTML API allowed with reason
 
@@ -762,7 +762,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1399
+- Line: 1406
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -770,7 +770,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1399 | editorContent.innerHTML = newHighlighted; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1406 | editorContent.innerHTML = newHighlighted; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-039: known legacy dangerous HTML API allowed with reason
 
@@ -781,7 +781,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1568
+- Line: 1575
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -789,7 +789,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1568 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1575 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-040: known legacy dangerous HTML API allowed with reason
 
@@ -800,7 +800,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1614
+- Line: 1621
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -808,7 +808,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1614 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1621 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-041: known legacy dangerous HTML API allowed with reason
 
@@ -819,7 +819,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1663
+- Line: 1670
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -827,7 +827,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1663 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1670 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-042: known legacy dangerous HTML API allowed with reason
 
@@ -838,7 +838,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1686
+- Line: 1693
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -846,7 +846,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1686 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1693 | div.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-043: known legacy dangerous HTML API allowed with reason
 
@@ -857,7 +857,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1782
+- Line: 1789
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -865,7 +865,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1782 | terminalContent.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1789 | terminalContent.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-044: known legacy dangerous HTML API allowed with reason
 
@@ -876,7 +876,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1834
+- Line: 1841
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -884,7 +884,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1834 | line.innerHTML = '<span class="terminal-prompt">$ </span><span class="terminal-input" contenteditable="true"></span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1841 | line.innerHTML = '<span class="terminal-prompt">$ </span><span class="terminal-input" contenteditable="true"></span>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-045: known legacy dangerous HTML API allowed with reason
 
@@ -895,7 +895,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1864
+- Line: 1871
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -903,7 +903,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1864 | cmdLine.innerHTML = `<span class="terminal-prompt">$ </span><span class="terminal-cmd">${this.escapeHtml(cmd)}</span>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1871 | cmdLine.innerHTML = `<span class="terminal-prompt">$ </span><span class="terminal-cmd">${this.escapeHtml(cmd)}</span>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-046: known legacy dangerous HTML API allowed with reason
 
@@ -914,7 +914,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1913
+- Line: 1920
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -922,7 +922,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1913 | problemsContent.innerHTML = '<div class="problems-empty">扫描中...</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1920 | problemsContent.innerHTML = '<div class="problems-empty">扫描中...</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-047: known legacy dangerous HTML API allowed with reason
 
@@ -933,7 +933,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1916
+- Line: 1923
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -941,7 +941,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1916 | problemsContent.innerHTML = '<div class="problems-empty">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1923 | problemsContent.innerHTML = '<div class="problems-empty">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-048: known legacy dangerous HTML API allowed with reason
 
@@ -952,7 +952,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1931
+- Line: 1938
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -960,7 +960,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1931 | problemsContent.innerHTML = `<div class="problems-empty">扫描失败: ${this.escapeHtml(e.message \|\| e)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1938 | problemsContent.innerHTML = `<div class="problems-empty">扫描失败: ${this.escapeHtml(e.message \|\| e)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-049: known legacy dangerous HTML API allowed with reason
 
@@ -971,7 +971,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1971
+- Line: 1978
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -979,7 +979,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1971 | problemsContent.innerHTML = '<div class="problems-empty">工作区中未检测到问题。</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1978 | problemsContent.innerHTML = '<div class="problems-empty">工作区中未检测到问题。</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-050: known legacy dangerous HTML API allowed with reason
 
@@ -990,7 +990,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 1987
+- Line: 1994
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -998,7 +998,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 1987 | problemsContent.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 1994 | problemsContent.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-051: known legacy dangerous HTML API allowed with reason
 
@@ -1009,7 +1009,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 2008
+- Line: 2015
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1017,7 +1017,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 2008 | clearBtn.innerHTML = '🗑'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 2015 | clearBtn.innerHTML = '🗑'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-052: known legacy dangerous HTML API allowed with reason
 
@@ -1028,7 +1028,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 2058
+- Line: 2065
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1036,7 +1036,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 2058 | if (outputContent) outputContent.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 2065 | if (outputContent) outputContent.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-053: known legacy dangerous HTML API allowed with reason
 
@@ -1047,7 +1047,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 2287
+- Line: 2294
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1055,7 +1055,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 2287 | if (chatMsgContainer) chatMsgContainer.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 2294 | if (chatMsgContainer) chatMsgContainer.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-054: known legacy dangerous HTML API allowed with reason
 
@@ -1066,7 +1066,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 2303
+- Line: 2310
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1074,7 +1074,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 2303 | list.innerHTML = this.chatContextFiles.map(path => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 2310 | list.innerHTML = this.chatContextFiles.map(path => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-055: known legacy dangerous HTML API allowed with reason
 
@@ -1085,7 +1085,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3158
+- Line: 3189
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1093,7 +1093,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3158 | turn.responseEl.innerHTML = this.formatText(`**模型返回错误：** ${err}`); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3189 | turn.responseEl.innerHTML = this.formatText(`**模型返回错误：** ${err}`); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-056: known legacy dangerous HTML API allowed with reason
 
@@ -1104,7 +1104,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3162
+- Line: 3193
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1112,7 +1112,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3162 | turn.responseEl.innerHTML = this.formatText(turn.state.response.content); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3193 | turn.responseEl.innerHTML = this.formatText(turn.state.response.content); |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-057: known legacy dangerous HTML API allowed with reason
 
@@ -1123,7 +1123,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3326
+- Line: 3357
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1131,7 +1131,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3326 | div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body message-card">${this.formatText(text)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3357 | div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body message-card">${this.formatText(text)}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-058: known legacy dangerous HTML API allowed with reason
 
@@ -1142,7 +1142,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3494
+- Line: 3525
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1150,7 +1150,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3494 | body.innerHTML = '<div class="model-picker-empty">暂无配置模型，点击下方按钮添加。</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3525 | body.innerHTML = '<div class="model-picker-empty">暂无配置模型，点击下方按钮添加。</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-059: known legacy dangerous HTML API allowed with reason
 
@@ -1161,7 +1161,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3516
+- Line: 3547
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1169,7 +1169,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3516 | body.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3547 | body.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-060: known legacy dangerous HTML API allowed with reason
 
@@ -1180,7 +1180,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3560
+- Line: 3591
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1188,7 +1188,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3560 | list.innerHTML = `<div class="provider-item-empty">暂无自定义模型，点击上方按钮添加。${workspaceTag}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3591 | list.innerHTML = `<div class="provider-item-empty">暂无自定义模型，点击上方按钮添加。${workspaceTag}</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-061: known legacy dangerous HTML API allowed with reason
 
@@ -1199,7 +1199,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3564
+- Line: 3595
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1207,7 +1207,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3564 | list.innerHTML = this.providerConfigs.map(cfg => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 3595 | list.innerHTML = this.providerConfigs.map(cfg => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-062: known legacy dangerous HTML API allowed with reason
 
@@ -1218,7 +1218,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 3984
+- Line: 4015
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1226,7 +1226,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 3984 | panel.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4015 | panel.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-063: known legacy dangerous HTML API allowed with reason
 
@@ -1237,7 +1237,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4013
+- Line: 4044
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1245,7 +1245,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4013 | panel.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4044 | panel.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-064: known legacy dangerous HTML API allowed with reason
 
@@ -1256,7 +1256,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4197
+- Line: 4228
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1264,7 +1264,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4197 | select.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4228 | select.innerHTML = html; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-065: known legacy dangerous HTML API allowed with reason
 
@@ -1275,7 +1275,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4268
+- Line: 4299
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1283,7 +1283,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4268 | if (select) select.innerHTML = opts; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4299 | if (select) select.innerHTML = opts; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-066: known legacy dangerous HTML API allowed with reason
 
@@ -1294,7 +1294,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4272
+- Line: 4303
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1302,7 +1302,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4272 | list.innerHTML = '<div class="agent-provider-empty">暂无绑定</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4303 | list.innerHTML = '<div class="agent-provider-empty">暂无绑定</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-067: known legacy dangerous HTML API allowed with reason
 
@@ -1313,7 +1313,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4275
+- Line: 4306
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1321,7 +1321,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4275 | list.innerHTML = entries.map(([agentId, providerId]) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4306 | list.innerHTML = entries.map(([agentId, providerId]) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-068: known legacy dangerous HTML API allowed with reason
 
@@ -1332,7 +1332,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4372
+- Line: 4403
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1340,7 +1340,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4372 | list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务器</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4403 | list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务器</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-069: known legacy dangerous HTML API allowed with reason
 
@@ -1351,7 +1351,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4376
+- Line: 4407
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1359,7 +1359,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4376 | list.innerHTML = this.mcpServers.map((s, i) => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4407 | list.innerHTML = this.mcpServers.map((s, i) => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-070: known legacy dangerous HTML API allowed with reason
 
@@ -1370,7 +1370,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4433
+- Line: 4464
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1378,7 +1378,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4433 | list.innerHTML = this.extensions.map(ext => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4464 | list.innerHTML = this.extensions.map(ext => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-071: known legacy dangerous HTML API allowed with reason
 
@@ -1389,7 +1389,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4612
+- Line: 4643
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1397,7 +1397,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4612 | tbody.innerHTML = '<tr><td colspan="4" class="audit-empty">暂无记录</td></tr>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4643 | tbody.innerHTML = '<tr><td colspan="4" class="audit-empty">暂无记录</td></tr>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-072: known legacy dangerous HTML API allowed with reason
 
@@ -1408,7 +1408,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4615
+- Line: 4646
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1416,7 +1416,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4615 | tbody.innerHTML = logs.map(r => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4646 | tbody.innerHTML = logs.map(r => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-073: known legacy dangerous HTML API allowed with reason
 
@@ -1427,7 +1427,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4675
+- Line: 4706
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1435,7 +1435,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4675 | if (!this.isTauriAvailable()) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; } |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4706 | if (!this.isTauriAvailable()) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; } |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-074: known legacy dangerous HTML API allowed with reason
 
@@ -1446,7 +1446,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4680
+- Line: 4711
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1454,7 +1454,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4680 | list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4711 | list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-075: known legacy dangerous HTML API allowed with reason
 
@@ -1465,7 +1465,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4683
+- Line: 4714
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1473,7 +1473,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4683 | list.innerHTML = checkpoints.map((chk, idx) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4714 | list.innerHTML = checkpoints.map((chk, idx) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-076: known legacy dangerous HTML API allowed with reason
 
@@ -1484,7 +1484,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4719
+- Line: 4750
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1492,7 +1492,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4719 | list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">加载失败</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4750 | list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">加载失败</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-077: known legacy dangerous HTML API allowed with reason
 
@@ -1503,7 +1503,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4764
+- Line: 4795
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1511,7 +1511,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4764 | target.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4795 | target.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-078: known legacy dangerous HTML API allowed with reason
 
@@ -1522,7 +1522,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 4936
+- Line: 4967
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1530,7 +1530,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 4936 | list.innerHTML = filtered.map((c, i) => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 4967 | list.innerHTML = filtered.map((c, i) => ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-079: known legacy dangerous HTML API allowed with reason
 
@@ -1541,7 +1541,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5077
+- Line: 5108
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1549,7 +1549,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5077 | hunksContainer.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5108 | hunksContainer.innerHTML = ''; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-080: known legacy dangerous HTML API allowed with reason
 
@@ -1560,7 +1560,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5081
+- Line: 5112
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1568,7 +1568,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5081 | hunksContainer.innerHTML = `<div style="padding:8px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5112 | hunksContainer.innerHTML = `<div style="padding:8px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-081: known legacy dangerous HTML API allowed with reason
 
@@ -1579,7 +1579,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5090
+- Line: 5121
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1587,7 +1587,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5090 | hunkEl.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5121 | hunkEl.innerHTML = ` |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-082: known legacy dangerous HTML API allowed with reason
 
@@ -1598,7 +1598,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5194
+- Line: 5225
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1606,7 +1606,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5194 | panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5225 | panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">Tauri 不可用</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-083: known legacy dangerous HTML API allowed with reason
 
@@ -1617,7 +1617,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5201
+- Line: 5232
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1625,7 +1625,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5201 | panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">加载失败</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5232 | panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">加载失败</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-084: known legacy dangerous HTML API allowed with reason
 
@@ -1636,7 +1636,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5209
+- Line: 5240
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1644,7 +1644,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5209 | panel.innerHTML = '<div class="edit-history-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无编辑历史</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5240 | panel.innerHTML = '<div class="edit-history-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无编辑历史</div>'; |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-085: known legacy dangerous HTML API allowed with reason
 
@@ -1655,7 +1655,7 @@
 - Confidence: n/a
 - Type: n/a
 - File: src/interface/web/app.js
-- Line: 5213
+- Line: 5244
 - Recommendation: Review the rule-specific guidance and either fix the issue or record an explicit accepted-risk decision.
 - Regression test: `npm run test:security-gate`
 - Human review required: false
@@ -1663,7 +1663,7 @@
 
 | Kind | File | Line | Snippet | Command | Output Hash | Note |
 |---|---|---:|---|---|---|---|
-| code | src/interface/web/app.js | 5213 | panel.innerHTML = entries.slice().reverse().map((e, i) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
+| code | src/interface/web/app.js | 5244 | panel.innerHTML = entries.slice().reverse().map((e, i) => { |  |  | Legacy monolithic frontend rendering debt. B16 gate tracks this as warning while new slash-palette module must stay safe-DOM only. |
 
 ### FINDING-086: known legacy dangerous HTML API allowed with reason
 

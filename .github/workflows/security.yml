@@ -24,6 +24,19 @@ jobs:
       - name: Run Hajimi security gate
         run: npm run test:security-gate
 
+      - name: Run Hajimi security workflow and generate report
+        run: npm run test:security-workflow
+        if: always()
+
+      - name: Upload Security Report Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-workflow-report
+          path: |
+            docs/security/examples/SECURITY_REVIEW_SAMPLE.md
+            docs/security/examples/SECURITY_REVIEW_SAMPLE.json
+
       - name: Run npm audit (P0 requirement)
         run: |
           echo "Running npm audit..."

@@ -333,8 +333,10 @@ function findLine(text, needle) {
 }
 
 function printSummary() {
+  const isStrict = process.env.HAJIMI_SECURITY_GATE_STRICT === 'true';
+  const hasFailures = failures.length > 0 || (isStrict && warnings.length > 0);
   const report = {
-    status: failures.length ? 'fail' : 'pass',
+    status: hasFailures ? 'fail' : 'pass',
     summary: {
       findings: findings.length,
       failures: failures.length,
@@ -360,12 +362,20 @@ function printSummary() {
     }
   }
 
-  if (failures.length) {
-    console.error('\nfailures:');
-    for (const failure of failures) {
-      console.error(`- [${failure.rule_id}] ${failure.file}:${failure.line} ${failure.message}`);
+  if (hasFailures) {
+    if (failures.length) {
+      console.error('\nfailures:');
+      for (const failure of failures) {
+        console.error(`- [${failure.rule_id}] ${failure.file}:${failure.line} ${failure.message}`);
+      }
     }
-    console.error('\nSecurity Audit Gate V1: FAIL');
+    if (isStrict && warnings.length) {
+      console.error('\nfailures (strict mode warnings):');
+      for (const warning of warnings) {
+        console.error(`- [${warning.rule_id}] ${warning.file}:${warning.line} ${warning.message}`);
+      }
+    }
+    console.error(`\nSecurity Audit Gate V1: FAIL${isStrict ? ' (STRICT MODE)' : ''}`);
     console.log('\nSecurity Audit Gate V1 JSON summary');
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = 1;

@@ -14,16 +14,22 @@
 | **DEBT-REVALIDATION-B17-12** | `PENDING / DRY-RUN ONLY` | 验证命令的本地执行仅执行安全网禁检查（allow-list）并输出 dry-run receipt 契约，本日不执行真实物理 Shell 命令运行。无 passing validation receipt 的漏洞发现不允许被标记为 `Fixed` / `revalidated`。 |
 | **HAJIMI_SECURITY_FIX_ENABLED** | `DEFAULT OFF` | `HAJIMI_SECURITY_FIX_ENABLED` 环境变量门禁默认未开启。即使人为强制设定为 `true`，为了代码安全，系统在修复规划时也依旧遵循 dry-run 与 human review 拦截红线。 |
 | **PENDING-WEBVIEW-SMOKE** | `PENDING` | 真机 WebView 安全面板与按钮交互测试仍处于挂起/债务状态。目前在本地已通过 DOM 沙箱仿真烟雾测试（`tests/frontend/day17_security_workflow_smoke.js`）进行验证。 |
+| **DEBT-CI-B17-13** | `INTEGRATED` | 已成功将 Security Workflow 集成入 CI 门禁与 Package scripts。CI 优先跑 regression gate (`test:security-gate`) 并接着编译报告 (`test:security-workflow`)，将生成的 Markdown 和 JSON 报告自动上传至 GitHub Action Artifacts。CI 对 High/Critical 以及 B18 回归项实施强阻断（fail-level），低危 warning 默认 report-only 不阻断（除非 `HAJIMI_SECURITY_GATE_STRICT=true` 被明确设置）。 |
 
 ---
 
 ## 2. 安全合规自检与断言证明
 
-1. **零文件直接写操作**: `src/intelligence/agent-core/security_fix.rs` 中未发现调用 `fs::write`、`write_all`、`remove_file` 或 `rename` 等直接操作文件系统物理存储的 API，以避免非预期文件修改。
+1. **零文件直接写操作**: `src/intelligence/agent-core/security_fix.rs` 中未发现调用 `fs::write`、`write_all` , `remove_file` 或 `rename` 等直接操作文件系统物理存储的 API，以避免非预期文件修改。
 2. **高危漏洞强拦截**: 所有 Severity 为 High 与 Critical 的漏洞其生成的 `PatchPlan` 都装载了 `human_review_required: true` 与 `dry_run: true`，从数据源头上确保安全策略合规性。
 3. **策略契约生成**: 每一个 `PatchPlan` 都生成了对应的 `validation_commands` 与 `rollback_plan`，以及对应的 `revalidation_receipt`。
 4. **限制危险指令执行**: 本地复测指令被限制在安全白名单内（仅允许本地的 `npm run test:security-gate`, `cargo test`, `git diff` 等本地静态/环境自测命令）。任何带有 `curl`、`wget`、`rm`、`eval`、`bash -c`、`powershell`、`cmd` 等敏感参数特征的指令在规划期会被拦截并使凭证标记为 `Fail`。
 5. **编译与单元测试合规**:
    - `cargo check -p intelligence-agent-core` 通过，0 编译错误。
+   - `cargo check -p engine-tool-system` 通过，0 编译错误。
    - `cargo test -p intelligence-agent-core security_fix` 5 个漏洞严重级、白名单网关、生命周期状态转换与干跑策略单元测试通过。
    - `cargo test -p intelligence-agent-core security_workflow` 9 个工作流生命周期、严重级分类单元测试通过。
+6. **CI 与 Package 集成合规**:
+   - `package.json` 中保留了 `test:security-gate` 且新增了 `test:security-workflow`。
+   - 扩展了 `.github/workflows/security.yml` 并通过 artifacts 上传策略（`security-workflow-report`）闭环了报告可见性，不生成任何多余的 `.github/workflows/security-gate.yml` 文件。
+   - 运行结果完全可本地复现，并在 `docs/security/SECURITY_WORKFLOW_SPEC.md` 中写明复现指令与 `HAJIMI_SECURITY_GATE_STRICT` 设计机制。

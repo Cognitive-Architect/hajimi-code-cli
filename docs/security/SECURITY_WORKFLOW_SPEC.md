@@ -428,3 +428,38 @@ Every finding must carry at least one evidence item:
 - `HAJIMI_SECURITY_WORKFLOW_ENABLED` defaults disabled; enabled mode still does
   not execute validation commands.
 - Real WebView click validation remains `PENDING-WEBVIEW-SMOKE`.
+
+## Day 13 CI / Release Gate Integration
+
+As of Day 13, the security workflow is integrated into the CI process and local package scripts.
+
+### 1. CI Workflow Extensions (`.github/workflows/security.yml`)
+- The existing workflow is expanded without creating any duplicate `.github/workflows/security-gate.yml` files.
+- The original regression gate step `npm run test:security-gate` is preserved to ensure backward compatibility.
+- Added a new step to run `npm run test:security-workflow` and compile structured JSON and Markdown reports.
+- Configured a Post-Execution Step to upload generated Markdown and JSON reports as GHA workflow artifacts under the name `security-workflow-report`. This ensures that even when the gate fails, reviewers can download the reports from the action panel to inspect failures.
+
+### 2. Strict / Report-Only Policies
+- **Always Blocking (Hard Gate)**: Any **High** or **Critical** vulnerabilities, or **B18 regressions** (e.g. `withGlobalTauri=true`, naked `run_command` exposure, complex shell allowlists, missing allowlist reasons) will always block the CI (exit code 1).
+- **Report-Only (Soft Gate)**: **Low** and **Medium** warnings (e.g. legacy allowlisted DOM `innerHTML` usages) do not block the CI by default; they are recorded as warnings and added to the report.
+- **Strict Override**: If the environment variable `HAJIMI_SECURITY_GATE_STRICT` is set to `true`, the gate is upgraded to STRICT mode. In this mode, any warning will also fail the build (exit code 1), ensuring absolute zero-warning compliance.
+
+### 3. Local Reproduction Commands (本地复现)
+Developers can perfectly reproduce CI gate results locally using the following commands:
+- **Run Standard Security Gate Check**:
+  ```bash
+  npm run test:security-gate
+  ```
+- **Run Workflow Scan & Compile Report**:
+  ```bash
+  npm run test:security-workflow
+  ```
+- **Run Strict Mode (Fail on Warnings)**:
+  - **PowerShell**:
+    ```powershell
+    $env:HAJIMI_SECURITY_GATE_STRICT="true"; npm run test:security-gate
+    ```
+  - **Bash**:
+    ```bash
+    HAJIMI_SECURITY_GATE_STRICT=true npm run test:security-gate
+    ```

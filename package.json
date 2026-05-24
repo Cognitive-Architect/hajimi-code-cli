@@ -10,6 +10,7 @@
   "scripts": {
     "test": "jest",
     "test:security-gate": "node tests/security/security_audit_gate.js",
+    "test:security-workflow": "node scripts/security-report.js",
     "security:report": "node scripts/security-report.js",
     "clean": "npx rimraf node_modules package-lock.json && npm cache clean --force && npm install",
     "check:deps": "npx depcheck"
