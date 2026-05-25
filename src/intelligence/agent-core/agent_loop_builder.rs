@@ -25,6 +25,8 @@ pub struct AgentLoopConfig {
     pub sync_gateway: Option<memory::sync_gateway::SyncGatewayHandle>,
     pub provider_id: Option<String>,
     pub edit_applier: Option<Arc<EditApplier>>,
+    pub skill_registry: Option<Arc<crate::skills::SkillRegistry>>,
+    pub skill_router: Option<Arc<crate::skills::SkillRouter>>,
 }
 
 pub struct AgentLoopBuilder {
@@ -39,6 +41,8 @@ pub struct AgentLoopBuilder {
     sync_gateway: Option<Option<memory::sync_gateway::SyncGatewayHandle>>,
     provider_id: Option<String>,
     edit_applier: Option<Option<Arc<EditApplier>>>,
+    skill_registry: Option<Option<Arc<crate::skills::SkillRegistry>>>,
+    skill_router: Option<Option<Arc<crate::skills::SkillRouter>>>,
 }
 
 impl AgentLoopBuilder {
@@ -55,6 +59,8 @@ impl AgentLoopBuilder {
             sync_gateway: Some(None),
             provider_id: None,
             edit_applier: Some(None),
+            skill_registry: Some(None),
+            skill_router: Some(None),
         }
     }
 
@@ -128,6 +134,14 @@ impl AgentLoopBuilder {
         self.edit_applier = Some(ea);
         self
     }
+    pub fn with_skill_registry(mut self, r: Option<Arc<crate::skills::SkillRegistry>>) -> Self {
+        self.skill_registry = Some(r);
+        self
+    }
+    pub fn with_skill_router(mut self, r: Option<Arc<crate::skills::SkillRouter>>) -> Self {
+        self.skill_router = Some(r);
+        self
+    }
 
     pub fn build(self) -> Result<AgentLoop, AgentError> {
         let context = self.context.unwrap_or_default();
@@ -150,6 +164,8 @@ impl AgentLoopBuilder {
         let memory = self.memory.flatten();
         let sync_gateway = self.sync_gateway.flatten();
         let edit_applier = self.edit_applier.flatten();
+        let skill_registry = self.skill_registry.flatten();
+        let skill_router = self.skill_router.flatten();
         let _iteration_count = Arc::new(Mutex::new(0));
         let _current_state = Arc::new(Mutex::new(crate::agent_loop::LoopState::Idle));
         let mut agent_loop = AgentLoop::from_components(AgentLoopConfig {
@@ -164,6 +180,8 @@ impl AgentLoopBuilder {
             sync_gateway,
             provider_id: self.provider_id,
             edit_applier: edit_applier.clone(),
+            skill_registry,
+            skill_router,
         });
         if let Some(ea) = edit_applier {
             agent_loop = agent_loop.with_edit_applier(ea);

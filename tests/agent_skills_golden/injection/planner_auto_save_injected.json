@@ -1,0 +1,28 @@
+{
+  "description": "Planner includes active auto-save skill instructions as a P1 ContextBlock.",
+  "skill_instructions": "# Auto-Save Skill\n\nWhen project state changes, produce an AUTO SAVE handoff block with truthful done/status/next/risk fields.",
+  "expected": {
+    "message_count": 3,
+    "included_blocks": [
+      {
+        "name": "system_prompt",
+        "priority": "P0",
+        "content_contains": "System:",
+        "truncatable": false
+      },
+      {
+        "name": "user_prompt",
+        "priority": "P0",
+        "content_contains": "Decompose",
+        "truncatable": false
+      },
+      {
+        "name": "active_skill_instructions",
+        "priority": "P1",
+        "content_contains": "AUTO SAVE",
+        "truncatable": true
+      }
+    ],
+    "absent_block_names": []
+  }
+}

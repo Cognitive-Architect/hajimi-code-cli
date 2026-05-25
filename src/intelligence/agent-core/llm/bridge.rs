@@ -155,6 +155,36 @@ impl PlannerLlmBridge {
 }
 
 impl PlannerLlmBridge {
+    async fn active_skill_instruction_blocks(
+        &self,
+    ) -> Vec<crate::context_window_manager::ContextBlock> {
+        if !crate::prompts::is_agent_skills_v0_enabled() {
+            return Vec::new();
+        }
+
+        let Some(ref bb) = self.blackboard else {
+            return Vec::new();
+        };
+        let Some(entry) = bb.read(crate::skills::BB_SKILL_INSTRUCTIONS).await else {
+            return Vec::new();
+        };
+
+        let instructions = entry.value.trim();
+        if instructions.is_empty() {
+            return Vec::new();
+        }
+
+        let content = format!("Active Skill Instructions:\n{}", instructions);
+        vec![crate::context_window_manager::ContextBlock {
+            name: "active_skill_instructions".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P1,
+            content_type: crate::context_window_manager::ContentType::Markdown,
+            token_estimate: crate::context_window_manager::estimate_tokens(&content),
+            content,
+            truncatable: true,
+        }]
+    }
+
     async fn chat_and_collect(&self, prompt: String) -> ReplResult<String> {
         let client = if let Some(ref bb) = self.blackboard {
             if let Some(entry) = bb.read("__hajimi_provider_id").await {
@@ -246,8 +276,14 @@ impl PlannerLlmBridge {
             } else {
                 "System: Please assist.".to_string()
             };
+            let extra_blocks = self.active_skill_instruction_blocks().await;
 
-            match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
+            match assemble_messages_for_bridge_with_blocks(
+                &prompt,
+                &sys_content,
+                &budget,
+                extra_blocks,
+            ) {
                 Ok((messages, estimated_input, included_meta, omitted_meta)) => {
                     tracing::info!(
                         "Planner budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
@@ -412,6 +448,61 @@ impl crate::reflector::ReflectionLlmClient for ReflectorLlmBridge {
 }
 
 impl ReflectorLlmBridge {
+    async fn active_skill_eval_criteria_blocks(
+        &self,
+    ) -> Vec<crate::context_window_manager::ContextBlock> {
+        if !crate::prompts::is_agent_skills_v0_enabled() {
+            return Vec::new();
+        }
+
+        let Some(ref bb) = self.blackboard else {
+            return Vec::new();
+        };
+        let Some(entry) = bb.read(crate::skills::BB_SKILL_EVAL_CRITERIA).await else {
+            return Vec::new();
+        };
+        let Ok(criteria) =
+            serde_json::from_str::<Vec<crate::skills::SkillEvalCriterion>>(&entry.value)
+        else {
+            tracing::warn!("Failed to parse BB_SKILL_EVAL_CRITERIA for Reflector injection");
+            return Vec::new();
+        };
+        if criteria.is_empty() {
+            return Vec::new();
+        }
+
+        let mut content = String::from(
+            "Skill Eval Criteria:\nCheck active Skill output against these lightweight criteria.\n",
+        );
+        for criterion in criteria {
+            content.push_str(&format!(
+                "- Skill: {}\n  must_include: {}\n  must_not_include: {}",
+                criterion.skill_name,
+                criterion.must_include.join(", "),
+                criterion.must_not_include.join(", ")
+            ));
+            if let Some(expected_structure) = criterion.expected_structure {
+                content.push_str(&format!(
+                    "\n  expected_structure: {}",
+                    expected_structure.join(", ")
+                ));
+            }
+            if let Some(failure_reason) = criterion.failure_reason {
+                content.push_str(&format!("\n  failure_reason: {}", failure_reason));
+            }
+            content.push('\n');
+        }
+
+        vec![crate::context_window_manager::ContextBlock {
+            name: "skill_eval_criteria".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P1,
+            content_type: crate::context_window_manager::ContentType::Text,
+            token_estimate: crate::context_window_manager::estimate_tokens(&content),
+            content,
+            truncatable: true,
+        }]
+    }
+
     async fn chat_and_collect(&self, prompt: String) -> ReplResult<String> {
         let client = if let Some(ref bb) = self.blackboard {
             if let Some(entry) = bb.read("__hajimi_provider_id").await {
@@ -503,8 +594,14 @@ impl ReflectorLlmBridge {
             } else {
                 "System: Please assist.".to_string()
             };
+            let extra_blocks = self.active_skill_eval_criteria_blocks().await;
 
-            match assemble_messages_for_bridge(&prompt, &sys_content, &budget) {
+            match assemble_messages_for_bridge_with_blocks(
+                &prompt,
+                &sys_content,
+                &budget,
+                extra_blocks,
+            ) {
                 Ok((messages, estimated_input, included_meta, omitted_meta)) => {
                     tracing::info!(
                         "Reflector budget stats: provider={}, model={}, max_context={}, input_budget={}, estimated_input={}, omitted_count={}",
@@ -717,6 +814,115 @@ mod tests {
         fn last_usage(&self) -> Option<engine_llm_core::Usage> {
             None
         }
+    }
+
+    struct RecordingLlmClient {
+        response: String,
+        messages: Mutex<Vec<Vec<engine_llm_core::ChatMessage>>>,
+    }
+
+    impl RecordingLlmClient {
+        fn new(response: String) -> Self {
+            Self {
+                response,
+                messages: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn captured_messages(&self) -> Vec<Vec<engine_llm_core::ChatMessage>> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl engine_llm_core::LlmClient for RecordingLlmClient {
+        async fn stream_chat(
+            &self,
+            _prompt: String,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            let (stream, tx) = engine_llm_core::ChannelStream::new(10);
+            tx.send(engine_llm_core::StreamChunk::Output(self.response.clone()))
+                .await
+                .unwrap();
+            tx.send(engine_llm_core::StreamChunk::Done).await.unwrap();
+            Ok(stream)
+        }
+
+        async fn stream_chat_with_context(
+            &self,
+            messages: Vec<engine_llm_core::ChatMessage>,
+            _system: Option<String>,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            self.messages.lock().unwrap().push(messages);
+            self.stream_chat(String::new()).await
+        }
+
+        fn provider(&self) -> &engine_llm_core::LlmProvider {
+            Box::leak(Box::new(engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost:11434".to_string(),
+                model: "test".to_string(),
+            }))
+        }
+
+        fn count_tokens(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _model: &str,
+        ) -> Result<usize, engine_llm_core::EngineError> {
+            Ok(0)
+        }
+
+        fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+            None
+        }
+    }
+
+    const PLANNER_AUTO_SAVE_INJECTED: &str = include_str!(
+        "../../../../tests/agent_skills_golden/injection/planner_auto_save_injected.json"
+    );
+    const PLANNER_NO_SKILL_NO_INJECTION: &str = include_str!(
+        "../../../../tests/agent_skills_golden/injection/planner_no_skill_no_injection.json"
+    );
+
+    #[derive(serde::Deserialize)]
+    struct PlannerInjectionGoldenCase {
+        description: String,
+        skill_instructions: Option<String>,
+        expected: PlannerInjectionExpected,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PlannerInjectionExpected {
+        message_count: usize,
+        included_blocks: Vec<PlannerInjectionExpectedBlock>,
+        absent_block_names: Vec<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PlannerInjectionExpectedBlock {
+        name: String,
+        priority: String,
+        content_contains: Option<String>,
+        truncatable: Option<bool>,
+    }
+
+    fn parse_injection_case(raw: &str) -> PlannerInjectionGoldenCase {
+        serde_json::from_str(raw).expect("planner injection golden fixture should parse")
+    }
+
+    fn planner_v1_response() -> String {
+        r#"{"schema_version":"PlannerSubgoalPlanV1","goal_id":"g1","summary":"test","subgoals":[{"id_hint":"sg1","description":"Analyze","priority":"High","depends_on":[],"suggested_tools":[],"expected_evidence":[],"validation_intent":"None","risk_level":"Low","requires_user_approval":false,"stop_conditions":[]}],"global_risks":[],"notes":[]}"#.to_string()
+    }
+
+    fn reflector_v1_response() -> String {
+        r#"{"schema_version":"ReflectorCritiqueV1","success":false,"severity":"High","confidence":0.7,"evidence":["missing AUTO SAVE"],"root_cause":{"category":"ValidationFailure","description":"skill output missing archive block","confidence":0.9},"issues":["missing auto-save block"],"new_risks":[],"suggestions":["add AUTO SAVE archive block"],"plan_adjustment":{"action":"Continue","reason":"output can be corrected","revised_subgoals":[]},"stop_loss":{"triggered":false,"reason":"none","escalation_target":"user"}}"#.to_string()
+    }
+
+    fn clear_planner_injection_env() {
+        std::env::remove_var("HAJIMI_AGENT_SKILLS_V0");
+        std::env::remove_var("HAJIMI_CONTEXT_WINDOW_ENABLED");
+        std::env::remove_var("HAJIMI_PROMPT_PERSONA_ENABLED");
+        std::env::remove_var("HAJIMI_PLANNER_V1_ENABLED");
     }
 
     fn mk_test_goal() -> crate::planner::Goal {
@@ -953,6 +1159,233 @@ mod tests {
         assert!(res.is_err());
     }
 
+    #[tokio::test]
+    async fn planner_skill_injection_adds_p1_context_block_from_blackboard() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_planner_injection_env();
+        std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
+        std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
+        std::env::set_var("HAJIMI_PROMPT_PERSONA_ENABLED", "false");
+        std::env::set_var("HAJIMI_PLANNER_V1_ENABLED", "true");
+
+        let case = parse_injection_case(PLANNER_AUTO_SAVE_INJECTED);
+        let bb = Arc::new(crate::blackboard::Blackboard::new());
+        bb.write(
+            crate::skills::BB_SKILL_INSTRUCTIONS,
+            case.skill_instructions
+                .as_deref()
+                .expect("injected fixture must include skill instructions"),
+            "planner_skill_injection_test",
+        )
+        .await;
+
+        let client = Arc::new(RecordingLlmClient::new(planner_v1_response()));
+        let bridge = PlannerLlmBridge::new(client.clone()).with_blackboard(bb);
+        let blocks = bridge.active_skill_instruction_blocks().await;
+        assert_eq!(
+            blocks.len(),
+            1,
+            "case '{}' should build one active skill block",
+            case.description
+        );
+        let expected_skill_block = case
+            .expected
+            .included_blocks
+            .iter()
+            .find(|b| b.name == "active_skill_instructions")
+            .expect("fixture should expect active_skill_instructions");
+        assert_eq!(blocks[0].name, expected_skill_block.name);
+        assert_eq!(
+            format!("{}", blocks[0].priority),
+            expected_skill_block.priority
+        );
+        assert_eq!(
+            blocks[0].truncatable,
+            expected_skill_block.truncatable.unwrap_or(false)
+        );
+        if let Some(ref content) = expected_skill_block.content_contains {
+            assert!(
+                blocks[0].content.contains(content),
+                "active skill block should contain '{}'",
+                content
+            );
+        }
+
+        let goal = mk_test_goal();
+        bridge.decompose_goal_v1(&goal).await.unwrap();
+        let captured = client.captured_messages();
+        assert_eq!(captured.len(), 1);
+        let messages = &captured[0];
+        assert_eq!(messages.len(), case.expected.message_count);
+        assert_eq!(messages[0].role, "system");
+        assert!(messages
+            .iter()
+            .any(|m| m.content.contains("Active Skill Instructions")));
+        if let Some(ref content) = expected_skill_block.content_contains {
+            assert!(
+                messages.iter().any(|m| m.content.contains(content)),
+                "planner messages should contain expected skill text '{}'",
+                content
+            );
+        }
+
+        clear_planner_injection_env();
+    }
+
+    #[tokio::test]
+    async fn planner_skill_injection_no_skill_keeps_two_p0_messages() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_planner_injection_env();
+        std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
+        std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
+        std::env::set_var("HAJIMI_PROMPT_PERSONA_ENABLED", "false");
+        std::env::set_var("HAJIMI_PLANNER_V1_ENABLED", "true");
+
+        let case = parse_injection_case(PLANNER_NO_SKILL_NO_INJECTION);
+        let bb = Arc::new(crate::blackboard::Blackboard::new());
+        let client = Arc::new(RecordingLlmClient::new(planner_v1_response()));
+        let bridge = PlannerLlmBridge::new(client.clone()).with_blackboard(bb);
+        let blocks = bridge.active_skill_instruction_blocks().await;
+        assert!(
+            blocks.is_empty(),
+            "case '{}' has no skill",
+            case.description
+        );
+
+        let goal = mk_test_goal();
+        bridge.decompose_goal_v1(&goal).await.unwrap();
+        let captured = client.captured_messages();
+        assert_eq!(captured.len(), 1);
+        let messages = &captured[0];
+        assert_eq!(messages.len(), case.expected.message_count);
+        for absent in &case.expected.absent_block_names {
+            assert!(
+                !messages.iter().any(|m| m.content.contains(absent)),
+                "no-skill path should not include block '{}'",
+                absent
+            );
+        }
+
+        clear_planner_injection_env();
+    }
+
+    #[test]
+    fn planner_skill_injection_budget_omits_p1_without_dropping_p0() {
+        let sys_content = "System: Please assist.";
+        let prompt = "Decompose the goal into sub-goals.";
+        let mut budget = crate::context_budget::fast_128k();
+        budget.input_budget = crate::context_window_manager::estimate_tokens(sys_content)
+            + crate::context_window_manager::estimate_tokens(prompt);
+
+        let skill_content = format!(
+            "Active Skill Instructions:\n{}",
+            "__hajimi_skill_instructions ".repeat(2048)
+        );
+        let skill_block = crate::context_window_manager::ContextBlock {
+            name: "active_skill_instructions".to_string(),
+            priority: crate::context_window_manager::ContextPriority::P1,
+            content_type: crate::context_window_manager::ContentType::Markdown,
+            token_estimate: crate::context_window_manager::estimate_tokens(&skill_content),
+            content: skill_content,
+            truncatable: true,
+        };
+
+        let (messages, _estimated, included_meta, omitted_meta) =
+            assemble_messages_for_bridge_with_blocks(
+                prompt,
+                sys_content,
+                &budget,
+                vec![skill_block],
+            )
+            .unwrap();
+
+        assert_eq!(messages.len(), 2, "P0 system/user messages must remain");
+        assert!(included_meta.iter().any(|m| m.0 == "system_prompt"));
+        assert!(included_meta.iter().any(|m| m.0 == "user_prompt"));
+        let omitted_skill = omitted_meta
+            .iter()
+            .find(|m| m.0 == "active_skill_instructions")
+            .expect("P1 active skill block should be omitted when over budget");
+        assert_eq!(omitted_skill.1, "P1");
+        assert!(omitted_skill.4.contains("budget"));
+    }
+
+    #[tokio::test]
+    async fn reflector_skill_eval_injects_lightweight_criteria_from_blackboard() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_planner_injection_env();
+        std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
+        std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
+        std::env::set_var("HAJIMI_PROMPT_PERSONA_ENABLED", "false");
+        std::env::set_var("HAJIMI_REFLECTOR_V1_ENABLED", "true");
+
+        let criteria = vec![crate::skills::SkillEvalCriterion {
+            skill_name: "auto-save".to_string(),
+            must_include: vec![
+                "=== AUTO SAVE".to_string(),
+                "做了什么".to_string(),
+                "当前状态".to_string(),
+                "下一步".to_string(),
+                "风险".to_string(),
+            ],
+            must_not_include: vec!["TODO".to_string(), "simulation".to_string()],
+            expected_structure: Some(vec![
+                "做了什么".to_string(),
+                "当前状态".to_string(),
+                "下一步".to_string(),
+                "风险".to_string(),
+            ]),
+            failure_reason: Some("missing required auto-save archive block".to_string()),
+        }];
+        let bb = Arc::new(crate::blackboard::Blackboard::new());
+        bb.write(
+            crate::skills::BB_SKILL_EVAL_CRITERIA,
+            &serde_json::to_string(&criteria).unwrap(),
+            "reflector_skill_eval_test",
+        )
+        .await;
+
+        let client = Arc::new(RecordingLlmClient::new(reflector_v1_response()));
+        let bridge = ReflectorLlmBridge::new(client.clone()).with_blackboard(bb);
+        let blocks = bridge.active_skill_eval_criteria_blocks().await;
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "skill_eval_criteria");
+        assert_eq!(
+            format!("{}", blocks[0].priority),
+            "P1",
+            "criteria block must be P1"
+        );
+        assert!(blocks[0].truncatable);
+        assert!(blocks[0].content.contains("Skill Eval Criteria"));
+        assert!(blocks[0].content.contains("=== AUTO SAVE"));
+        assert!(
+            !blocks[0].content.contains("# Auto-Save Skill"),
+            "Reflector criteria must not receive the full skill body"
+        );
+
+        let goal = mk_test_goal();
+        let result = crate::planner::TaskResult {
+            success: true,
+            output: "Task completed without archive block".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        bridge.llm_critique(&goal, &result).await.unwrap();
+        let captured = client.captured_messages();
+        assert_eq!(captured.len(), 1);
+        assert!(captured[0]
+            .iter()
+            .any(|m| m.content.contains("Skill Eval Criteria")));
+        assert!(captured[0]
+            .iter()
+            .any(|m| m.content.contains("must_include")));
+        assert!(!captured[0]
+            .iter()
+            .any(|m| m.content.contains("# Auto-Save Skill")));
+
+        clear_planner_injection_env();
+        std::env::remove_var("HAJIMI_REFLECTOR_V1_ENABLED");
+    }
+
     #[test]
     fn test_assemble_rich_messages_for_bridge_success() {
         let budget = crate::context_budget::fast_128k();
@@ -998,16 +1431,26 @@ type AssembleBridgeResult = Result<
 /// ContextReceipt can record true block statistics without touching raw content.
 /// The `structured_summary` in included metadata is a privacy-safe structural label:
 ///   `"message role=<role> estimated_tokens=<n>"` — no prompt content.
+#[cfg(test)]
 pub(crate) fn assemble_messages_for_bridge(
     prompt: &str,
     sys_content: &str,
     budget: &crate::context_budget::ContextBudget,
 ) -> AssembleBridgeResult {
+    assemble_messages_for_bridge_with_blocks(prompt, sys_content, budget, Vec::new())
+}
+
+pub(crate) fn assemble_messages_for_bridge_with_blocks(
+    prompt: &str,
+    sys_content: &str,
+    budget: &crate::context_budget::ContextBudget,
+    mut extra_blocks: Vec<crate::context_window_manager::ContextBlock>,
+) -> AssembleBridgeResult {
     let mgr = crate::context_window_manager::ContextWindowManager::new(budget.input_budget);
     let sys_estimate = crate::context_window_manager::estimate_tokens(sys_content);
     let user_estimate = crate::context_window_manager::estimate_tokens(prompt);
 
-    let blocks = vec![
+    let mut blocks = vec![
         crate::context_window_manager::ContextBlock {
             name: "system_prompt".to_string(),
             priority: crate::context_window_manager::ContextPriority::P0,
@@ -1025,6 +1468,7 @@ pub(crate) fn assemble_messages_for_bridge(
             truncatable: false,
         },
     ];
+    blocks.append(&mut extra_blocks);
 
     let assembled = mgr.assemble(blocks)?;
 

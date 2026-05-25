@@ -1,10 +1,14 @@
 use crate::act_dto::{ActDecision, ToolCallV1};
 use crate::blackboard::Blackboard;
 use crate::governance::{AgentGovernance, ApprovalLevel, Decision, GovernanceRequest};
+use crate::skills::{
+    filter_tool_by_constraints, is_agent_skill_runtime_enabled, SkillToolConstraint,
+    SkillToolConstraints, SkillToolPermissionLevel, BB_SKILL_TOOL_CONSTRAINTS,
+};
 use crate::tool_manifest::RiskLevel;
 use crate::{AgentContext, AgentId};
 use engine_llm_core::LlmClient;
-use engine_tool_system::{ToolError, ToolOutput, ToolRegistry};
+use engine_tool_system::{ToolError, ToolErrorKind, ToolOutput, ToolRegistry};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -118,14 +122,15 @@ impl ActExecutor {
             ));
         };
 
-        // Governance routing: check if required or risk level is critical
-        if call.governance_required || matches!(call.risk_level, RiskLevel::Critical) {
+        // Governance routing: check if constraints or the tool risk require approval.
+        let approval_level = approval_level_for_tool_call(call);
+        if call.governance_required || approval_level != ApprovalLevel::Auto {
             let req = GovernanceRequest {
                 requester: "act_executor".to_string(),
                 action_type: format!("invoke_tool:{}", call.tool_name),
-                risk_score: 1.0, // Critical implies high risk score
+                risk_score: risk_score_for_level(approval_level),
                 description: format!("Agent requests to invoke {}", call.tool_name),
-                level: ApprovalLevel::Critical,
+                level: approval_level,
             };
             let decision = self.governance.approve(ctx, &req).await;
             match decision {
@@ -182,12 +187,26 @@ impl ActExecutor {
             };
         }
 
+        let call = match self.apply_skill_tool_constraints(blackboard, call).await {
+            Ok(call) => call,
+            Err(error) => {
+                self.record_failure(blackboard, agent_id, call, &fingerprint, 1, &error)
+                    .await;
+                let reflected = micro_reflect_tool_error(call, &error);
+                return ActChainResult {
+                    success: false,
+                    output: reflected.clone(),
+                    decision: ActDecision::CannotAct { reason: reflected },
+                };
+            }
+        };
+
         blackboard
             .write(BB_LAST_TOOL, &call.tool_name, agent_id)
             .await;
-        match self.execute_tool_call(ctx, call).await {
+        match self.execute_tool_call(ctx, &call).await {
             Ok(output) => {
-                self.record_success(blackboard, agent_id, call, &output)
+                self.record_success(blackboard, agent_id, &call, &output)
                     .await;
                 ActChainResult {
                     success: true,
@@ -200,13 +219,13 @@ impl ActExecutor {
                 self.record_failure(
                     blackboard,
                     agent_id,
-                    call,
+                    &call,
                     &fingerprint,
                     attempt_count,
                     &error,
                 )
                 .await;
-                let reflected = micro_reflect_tool_error(call, &error);
+                let reflected = micro_reflect_tool_error(&call, &error);
                 if attempt_count >= 2 {
                     ActChainResult {
                         success: false,
@@ -222,6 +241,30 @@ impl ActExecutor {
                 }
             }
         }
+    }
+
+    async fn apply_skill_tool_constraints(
+        &self,
+        blackboard: &Blackboard,
+        call: &ToolCallV1,
+    ) -> Result<ToolCallV1, ToolError> {
+        if !is_agent_skill_runtime_enabled() {
+            return Ok(call.clone());
+        }
+
+        let Some(entry) = blackboard.read(BB_SKILL_TOOL_CONSTRAINTS).await else {
+            return Ok(call.clone());
+        };
+        let constraints: Vec<SkillToolConstraints> =
+            serde_json::from_str(&entry.value).map_err(|e| permission_denied(e.to_string()))?;
+
+        let Some(constraint) =
+            filter_tool_by_constraints(&call.tool_name, &constraints).map_err(permission_denied)?
+        else {
+            return Ok(call.clone());
+        };
+
+        Ok(apply_constraint_to_call(call, &constraint))
     }
 
     async fn record_success(
@@ -308,6 +351,68 @@ fn output_summary(output: &ToolOutput) -> String {
     }
 }
 
+fn apply_constraint_to_call(call: &ToolCallV1, constraint: &SkillToolConstraint) -> ToolCallV1 {
+    let mut constrained = call.clone();
+    if constraint.permission == SkillToolPermissionLevel::Ask {
+        constrained.governance_required = true;
+    }
+    constrained.risk_level = max_risk_level(
+        constrained.risk_level,
+        risk_level_for_approval(constraint.approval_level),
+    );
+    constrained
+}
+
+fn approval_level_for_tool_call(call: &ToolCallV1) -> ApprovalLevel {
+    match call.risk_level {
+        RiskLevel::Low if !call.governance_required => ApprovalLevel::Auto,
+        RiskLevel::Low => ApprovalLevel::Required,
+        RiskLevel::Medium => ApprovalLevel::Required,
+        RiskLevel::High | RiskLevel::Critical => ApprovalLevel::Critical,
+    }
+}
+
+fn risk_score_for_level(level: ApprovalLevel) -> f32 {
+    match level {
+        ApprovalLevel::Auto => 0.1,
+        ApprovalLevel::Advisory => 0.3,
+        ApprovalLevel::Required => 0.6,
+        ApprovalLevel::Critical | ApprovalLevel::Override => 1.0,
+    }
+}
+
+fn risk_level_for_approval(level: ApprovalLevel) -> RiskLevel {
+    match level {
+        ApprovalLevel::Auto => RiskLevel::Low,
+        ApprovalLevel::Advisory | ApprovalLevel::Required => RiskLevel::Medium,
+        ApprovalLevel::Critical | ApprovalLevel::Override => RiskLevel::Critical,
+    }
+}
+
+fn max_risk_level(current: RiskLevel, candidate: RiskLevel) -> RiskLevel {
+    if risk_rank(candidate) > risk_rank(current) {
+        candidate
+    } else {
+        current
+    }
+}
+
+fn risk_rank(level: RiskLevel) -> u8 {
+    match level {
+        RiskLevel::Low => 0,
+        RiskLevel::Medium => 1,
+        RiskLevel::High => 2,
+        RiskLevel::Critical => 3,
+    }
+}
+
+fn permission_denied(message: impl Into<String>) -> ToolError {
+    ToolError {
+        message: message.into(),
+        kind: ToolErrorKind::PermissionDenied,
+    }
+}
+
 /// A bridge to an LLM specifically for deciding the next action (Act decision).
 pub struct ActLlmBridge {
     #[allow(dead_code)]
@@ -336,8 +441,11 @@ impl ActLlmBridge {
 mod tests {
     use super::*;
     use crate::act_dto::ActionType;
-    use crate::governance::DefaultGovernance;
+    use crate::governance::{
+        DefaultGovernance, GovernancePolicy, PermissionLevel, UserFeedback, Vote,
+    };
     use async_trait::async_trait;
+    use chimera_repl::traits::ReplResult;
     use engine_tool_system::{Config, Tool, ToolArgs, ToolPermissions};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -392,6 +500,128 @@ mod tests {
         }
     }
 
+    struct ShellSuccessTool;
+
+    #[async_trait]
+    impl Tool for ShellSuccessTool {
+        fn name(&self) -> &str {
+            "shell"
+        }
+
+        fn description(&self) -> &str {
+            "synthetic shell-shaped success tool"
+        }
+
+        fn permissions(&self) -> ToolPermissions {
+            ToolPermissions::default()
+        }
+
+        async fn execute(&self, _args: ToolArgs) -> Result<ToolOutput, ToolError> {
+            Ok(ToolOutput::success("shell ok"))
+        }
+    }
+
+    struct WriteSuccessTool;
+
+    #[async_trait]
+    impl Tool for WriteSuccessTool {
+        fn name(&self) -> &str {
+            "write_file"
+        }
+
+        fn description(&self) -> &str {
+            "synthetic write success tool"
+        }
+
+        fn permissions(&self) -> ToolPermissions {
+            ToolPermissions::default()
+        }
+
+        async fn execute(&self, _args: ToolArgs) -> Result<ToolOutput, ToolError> {
+            Ok(ToolOutput::success("write ok"))
+        }
+    }
+
+    struct RecordingGovernance {
+        requests: Arc<tokio::sync::Mutex<Vec<GovernanceRequest>>>,
+    }
+
+    #[async_trait]
+    impl AgentGovernance for RecordingGovernance {
+        async fn policy(&self, _ctx: &AgentContext, req: &GovernanceRequest) -> ApprovalLevel {
+            req.level
+        }
+
+        async fn approve(
+            &self,
+            _ctx: &AgentContext,
+            req: &GovernanceRequest,
+        ) -> ReplResult<Decision> {
+            self.requests.lock().await.push(req.clone());
+            Ok(Decision::Approved)
+        }
+
+        async fn vote(&self, _voter_id: &str, _proposal_id: &str, _vote: Vote) -> ReplResult<()> {
+            Ok(())
+        }
+
+        async fn escalate(
+            &self,
+            req: &GovernanceRequest,
+            to_level: ApprovalLevel,
+        ) -> ReplResult<GovernanceRequest> {
+            let mut next = req.clone();
+            next.level = to_level;
+            Ok(next)
+        }
+
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn GovernancePolicy>,
+            _caller: &str,
+            _required_level: PermissionLevel,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+
+        async fn record_feedback(
+            &self,
+            _ctx: &AgentContext,
+            _feedback: &UserFeedback,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+    }
+
+    static SKILL_RUNTIME_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original_value: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn new(key: &'static str, value: &str) -> Self {
+            let original_value = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self {
+                key,
+                original_value,
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(ref value) = self.original_value {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     fn tool_call(tool_name: &str, parameters: serde_json::Value) -> ToolCallV1 {
         ToolCallV1 {
             schema_version: "1".to_string(),
@@ -407,6 +637,19 @@ mod tests {
             idempotency_key: format!("{}-key", tool_name),
             next_step_hint: None,
         }
+    }
+
+    fn constraints_json(
+        allowed: Vec<SkillToolConstraint>,
+        denied: Vec<SkillToolConstraint>,
+    ) -> String {
+        serde_json::to_string(&vec![SkillToolConstraints {
+            skill_name: "runtime-test".to_string(),
+            allowed,
+            denied,
+            warnings: vec![],
+        }])
+        .unwrap()
     }
 
     #[tokio::test]
@@ -514,5 +757,132 @@ mod tests {
             blackboard.read(BB_LAST_TOOL_RESULT).await.is_some(),
             "successful tool result should be written"
         );
+    }
+
+    #[tokio::test]
+    async fn skill_runtime_act_executor_write_requires_governance() {
+        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "true");
+        let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(WriteSuccessTool));
+        let executor = ActExecutor::new(
+            Arc::new(Mutex::new(registry)),
+            Arc::new(RecordingGovernance {
+                requests: requests.clone(),
+            }),
+        );
+        let blackboard = Blackboard::new();
+        let agent_id = "agent1".to_string();
+        let constraints = constraints_json(
+            vec![SkillToolConstraint {
+                tool_name: "write-file".to_string(),
+                permission: SkillToolPermissionLevel::Ask,
+                approval_level: ApprovalLevel::Required,
+                reason: "write workspace requires approval".to_string(),
+            }],
+            vec![],
+        );
+        blackboard
+            .write(BB_SKILL_TOOL_CONSTRAINTS, &constraints, &agent_id)
+            .await;
+
+        let result = executor
+            .execute_chain(
+                &AgentContext::new(),
+                &blackboard,
+                &agent_id,
+                &tool_call("write_file", json!({"path":"a"})),
+            )
+            .await;
+
+        assert!(result.success);
+        let recorded = requests.lock().await;
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].level, ApprovalLevel::Required);
+        assert_eq!(recorded[0].action_type, "invoke_tool:write_file");
+    }
+
+    #[tokio::test]
+    async fn skill_runtime_act_executor_denies_shell_by_default() {
+        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "true");
+        let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let executor = ActExecutor::new(
+            Arc::new(Mutex::new(ToolRegistry::new())),
+            Arc::new(RecordingGovernance {
+                requests: requests.clone(),
+            }),
+        );
+        let blackboard = Blackboard::new();
+        let agent_id = "agent1".to_string();
+        let constraints = constraints_json(
+            vec![],
+            vec![SkillToolConstraint {
+                tool_name: "shell".to_string(),
+                permission: SkillToolPermissionLevel::Deny,
+                approval_level: ApprovalLevel::Critical,
+                reason: "run_shell=false denies shell tools".to_string(),
+            }],
+        );
+        blackboard
+            .write(BB_SKILL_TOOL_CONSTRAINTS, &constraints, &agent_id)
+            .await;
+
+        let result = executor
+            .execute_chain(
+                &AgentContext::new(),
+                &blackboard,
+                &agent_id,
+                &tool_call("shell", json!({"command":"echo ok"})),
+            )
+            .await;
+
+        assert!(!result.success);
+        assert!(result.output.contains("Skill runtime denied tool 'shell'"));
+        assert!(result.output.contains("run_shell=false"));
+        assert!(requests.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn skill_runtime_act_executor_gate_false_has_no_effect() {
+        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "false");
+        let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(ShellSuccessTool));
+        let executor = ActExecutor::new(
+            Arc::new(Mutex::new(registry)),
+            Arc::new(RecordingGovernance {
+                requests: requests.clone(),
+            }),
+        );
+        let blackboard = Blackboard::new();
+        let agent_id = "agent1".to_string();
+        let constraints = constraints_json(
+            vec![],
+            vec![SkillToolConstraint {
+                tool_name: "shell".to_string(),
+                permission: SkillToolPermissionLevel::Deny,
+                approval_level: ApprovalLevel::Critical,
+                reason: "run_shell=false denies shell tools".to_string(),
+            }],
+        );
+        blackboard
+            .write(BB_SKILL_TOOL_CONSTRAINTS, &constraints, &agent_id)
+            .await;
+
+        let result = executor
+            .execute_chain(
+                &AgentContext::new(),
+                &blackboard,
+                &agent_id,
+                &tool_call("shell", json!({"command":"echo ok"})),
+            )
+            .await;
+
+        assert!(result.success);
+        assert!(result.output.contains("shell ok"));
+        assert!(requests.lock().await.is_empty());
     }
 }

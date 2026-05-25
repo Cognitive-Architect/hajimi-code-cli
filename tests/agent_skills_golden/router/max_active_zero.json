@@ -1,0 +1,15 @@
+{
+  "description": "Max active skills limit case with max_active_skills override",
+  "input": "请帮我自动存档，记录当前项目状态",
+  "config_override": {
+    "threshold": 0.55,
+    "max_active_skills": 0
+  },
+  "expected_selected": [],
+  "expected_rejected": [
+    {
+      "name": "auto-save",
+      "reason_contains": "max_active_skills limit"
+    }
+  ]
+}

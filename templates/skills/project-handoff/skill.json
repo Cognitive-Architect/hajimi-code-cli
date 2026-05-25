@@ -1,0 +1,23 @@
+{
+  "schema_version": "hajimi.skill.v0",
+  "version": "0.1.0",
+  "name": "project-handoff",
+  "title": "项目交接归档",
+  "description": "在任务阶段性闭环或大模块完成交接时，生成包含目标、状态、风险和下一步指南的标准 HANDOFF 归档块。",
+  "enabled": false,
+  "category": "handoff",
+  "exclusive_group": "handoff-output",
+  "triggers": ["交接", "归档", "交付", "阶段完成", "完成开发", "handoff"],
+  "risk_level": "medium",
+  "entry": "SKILL.md",
+  "eval_entry": "evals/output_cases.json",
+  "context_budget_tokens": 1500,
+  "allowed_tools": [],
+  "permissions": {
+    "read_workspace": true,
+    "write_workspace": false,
+    "run_shell": false,
+    "network": false,
+    "delete": false
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "description": "auto-save output containing all five required archive block fields must pass criteria evaluation.",
+  "active_skills": [
+    {
+      "name": "auto-save",
+      "score": 0.95,
+      "reason": "trigger matched",
+      "matched_terms": ["存档"],
+      "risk_level": "low",
+      "category": "handoff",
+      "exclusive_group": "handoff-output"
+    }
+  ],
+  "output": "修改已完成并验证。\n\n=== AUTO SAVE ===\n做了什么:\n- 完成 Day11 输出评估逻辑开发\n\n当前状态:\n- 编译与测试完全通过\n\n下一步:\n- 进行 V0a 整体回归与收口\n\n风险:\n- 无任何已知运行时安全风险\n=================",
+  "expected_pass": true,
+  "expected_failure_reason": null
+}

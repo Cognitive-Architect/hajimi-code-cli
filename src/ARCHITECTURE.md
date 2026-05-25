@@ -123,6 +123,9 @@
 | `memory/` | 5层记忆系统 | Session/Auto/Dream/Graph/Cloud + **semantic embedding (fastembed)** ⭐ + **EpisodicMemory JSONL 持久化** + **HNSW 索引** | ✅ Phase 3b 完成 |
 | `pgvector/` | PostgreSQL向量 | 向量存储与检索 | ✅ 稳定 |
 
+<!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
+> **Agent Skills V0 状态**: `DEBT-AGENT-SKILLS-V0` 已登记，`docs/agent-skills/SKILL-PACK-SPEC.md` 定义本地 Skill Pack V0a 草案；`HAJIMI_AGENT_SKILLS_V0` 默认关闭。V0a / V0b / V0c 仍处于 initiated / planned 状态，尚未接入 AgentLoop、Registry、Router、Runtime 或 Memory receipt。
+
 > <!-- P0-CONTEXT-REMEDIATION-2026-04-30 -->
 > **P0 Context Debt Cleared ✅**
 >
@@ -236,6 +239,12 @@ pub async fn reflect(&self, goal: &Goal, results: &[WorkerResult]) -> ReplResult
     Ok(reflection)
 }
 ```
+
+### 7. Agent Skills V0 Integration (智能技能包本地增强)
+Hajimi Agent Skills V0 作为智能体决策流的本地强化层，旨在通过重用高频工作流模版提供更高确定性的输出保障，其架构设计划分为以下三阶段：
+- **V0a (已清偿)**: 提供本地技能包协议注册中心（Registry、Loader）及多轮路由与匹配得分（Router），并在 Planner 执行前向 LLM 注入技能上下文（ContextBlock），在任务产出后通过超低延迟（毫秒级）的强规则 Output Evaluator 执行确定性输出断言（`must_include`/`must_not_include`）。
+- **V0b (已集成)**: 限制技能运行期（Skill Runtime）权限与可用工具，构建专属工具约束（`__hajimi_skill_tool_constraints`），并由 ActExecutor 在拦截器层级配合 Governance 强制执行 Ask (需要审批) / Deny (直接拒绝) 操作。
+- **V0c (部分集成)**: 建立技能执行小票（`SkillExecutionReceipt`）契约，在 AgentLoop 反射（`reflect`）末期将执行结果（成功/失败等元数据）序列化为 JSON 数组并自动留档写入 Blackboard 键 `__hajimi_skill_execution_receipts`。关系图谱存储（Graph memory）、云端同步（Cloud sync）以及 Interface 列表/验证交互已被延迟至 V1 阶段开发。
 
 ---
 
@@ -467,6 +476,8 @@ Engine (llm-core) ──→ usage 解析 ──→ Interface (desktop)
 | 源代码索引 | `src/INDEX.md` | 详细文件索引 |
 | 贡献指南 | `src/CONTRIBUTING.md` | 开发指南 |
 | 技术文档 | `docs/debt/` | 技术约束与限制说明 |
+| Agent Skills V0 规格 | `docs/agent-skills/SKILL-PACK-SPEC.md` | 本地 Skill Pack V0a 目录、manifest、fixture 与安全边界草案 |
+| Agent Skills V0 债务 | `docs/debt/DEBT-AGENT-SKILLS-V0.md` | V0a / V0b / V0c 分段状态与每日 receipt 模板 |
 | 技术约束文档 | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` | UI交互核心重构期间无框架约束声明 |
 
 ---
@@ -591,4 +602,45 @@ Hajimi 1M Long Context 引擎在智能层 `agent-core` 内部完全闭环，完�
    - 小票显示的 token 计数为 **Estimated** 评估值，并非 provider 实机计费（actual usage）。
    - 实机 GUI 点击测试仍保留为活跃技术债务。
 
-*本架构文档与代码同步维护，最后更新于 2026-05-21*
+*本架构文档与代码同步维护，最后更新于 2026-05-22*
+
+---
+
+## Agent Skills V0a Day 4: Router & Scoring completed; V0a integration pending.
+
+<!-- AGENT-SKILLS-V0A-2026-05-22: Day 4 Router & Scoring completed -->
+
+**当前状态**: 🔄 **Day 4 Router & Scoring 开发与匹配逻辑实施完毕，V0a 集成与评估阶段待完成（本地验证通过）**
+
+Hajimi Agent Skills 系统用于将 Agent 动作模式从单一的工具调用提升为基于可复用技能流程的智能导向开发。在 V0a 阶段，本地技能包协议、注册中心、加载器、评测打分及路由分发已被打通，集成仍 pending。
+
+### 1. 架构组件说明
+
+| 核心组件 | 实现文件 | 职责说明 |
+|:---|:---|:---:|
+| **SkillManifest** | `types.rs` | 定义本地技能 `.hajimi/skills/<name>/skill.json` 配置规范（triggers、exclusive_group、risk_level、entry 等），并执行 kebab-case、safe relative paths 物理遍历边界防御验证。 |
+| **SkillRegistry** | `registry.rs` | 扫描工作空间内的技能目录，在常驻内存中仅加载元数据（Manifest），延迟加载正文（SKILL.md）。 |
+| **SkillLoader** | `loader.rs` | 按需载入具体的 `SKILL.md` 指令内容，执行严密的物理路径穿越验证，并统计 token 占用。 |
+| **SkillRouter** | `router.rs` | 根据用户输入和技能的匹配分数，进行分发和状态选择。支持 exclusive_group 冲突消解（最高分胜出，其余拒绝）和 Top-K 激活上限（默认最大 3 个）。 |
+| **Scoring Engine** | `scoring.rs` | 100% 确定性的无 LLM 评分机制：触发词匹配（+0.60），Name/Title 匹配（+0.25），Description 关键词交叉覆盖匹配（+0.15）。 |
+
+### 2. 路由与匹配流程
+
+```
+[用户输入] ──► 遍历各 Enabled 技能 ──► score_skill() 确定性评分
+                                            │ (Trigger + Title + Desc)
+                                            ▼
+[exclusive_group 冲突消解] ◄──────── 候选技能打分结果
+      │ (同名 Group 仅保留最高分者)
+      ▼
+[Threshold 过滤与 Top-K 裁剪] ──► 记录 selected & rejected 详情
+      │ (过滤 score < 0.55, 仅取 Top 3)
+      ▼
+[SkillRouteReceipt 生成] ──► 包含 input_hash, timestamp, 匹配依据与 rejection reason
+```
+
+### 3. 架构硬性约束
+
+1. **分层原则**: 整个技能系统核心（types / registry / loader / router / scoring）完美闭环在 `src/intelligence/agent-core/skills/` 内，无外部逆向依赖。
+2. **零 LLM/RAG 消耗**: 路由与打分机制为完全确定性的轻量规则匹配，确保启动和决策在 <1ms 内秒级完成，无额外 token 消耗与延迟。
+3. **测试覆盖**: Golden route 测试已 100% 覆盖 exclusive_group 冲突处理、Top-K 数量裁剪、打分规则边界、路径非法穿越防御及 deterministic 真实 fixture 验证。

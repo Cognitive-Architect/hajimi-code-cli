@@ -1,0 +1,40 @@
+{
+  "schema_version": "hajimi.skill.eval.v0",
+  "skill_name": "project-handoff",
+  "criteria": {
+    "skill_name": "project-handoff",
+    "must_include": [
+      "=== PROJECT HANDOFF",
+      "目标",
+      "状态",
+      "风险",
+      "下一步"
+    ],
+    "must_not_include": [
+      "TODO",
+      "simulation",
+      "mock"
+    ],
+    "expected_structure": [
+      "目标",
+      "状态",
+      "风险",
+      "下一步"
+    ],
+    "failure_reason": "missing required project-handoff archive block or missed mandatory sections"
+  },
+  "cases": [
+    {
+      "name": "complete_handoff_block",
+      "output": "交接流程已就绪。\n\n=== PROJECT HANDOFF ===\n目标:\n- 完成 Day12 收卷\n\n状态:\n- 编译全绿\n\n风险:\n- 实机点击债务挂起\n\n下一步:\n- 进入 Day13\n=======================",
+      "expected_pass": true,
+      "expected_failure_reason": null
+    },
+    {
+      "name": "missing_handoff_block",
+      "output": "交接就绪，没有归档小票。",
+      "expected_pass": false,
+      "expected_failure_reason": "missing required marker: === PROJECT HANDOFF"
+    }
+  ]
+}

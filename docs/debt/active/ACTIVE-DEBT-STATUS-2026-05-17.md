@@ -49,7 +49,8 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-005 Thinking UI and checkpoint depth | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | `docs/debt/DEBT-THINKING-UI.md` | Thinking UI stream parser is completed under TDD mode for the current fixture matrix (tested against SSE split-chunks and malformed tokens); checkpoint management is integrated; remaining trace/checkpoint depth is ready for WebView verification. |
 | AD-006 Agent Prompt productization | `PARTIAL/IMPROVED` | P2 | active summary; archived `archive/05/debt-history/DEBT-AGENT-PROMPT-001.md` | Agent Persona, context window manager, tool manifest, DTO/contracts, and prompt golden tests exist. Remaining work is productization: live runtime consistency, broader policy integration, and product scoring beyond deterministic golden cases. |
 | AD-007 Slash command suggestion panel | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | archived `archive/05/debt-history/02-slash-command-palette.md`; archived B16 receipt | Slash Palette V1 is implemented and Node-smoked. The old "panel missing" debt is archived. Only real Tauri/WebView interaction evidence remains before final UI closure. |
-| AD-008 SecurityAuditTool quality | `IMPLEMENTED/GATED` | P2 | archived B16 receipt; `tests/security/security_audit_gate.js` | Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green. Remaining work is AST-level syntax scanning. |
+| AD-008 SecurityAuditTool quality | `IMPLEMENTED/GATED` | P2 | archived B16 receipt; `tests/security/security_audit_gate.js` | Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green. Remaining work is AST-level syntax scanning, narrower allowlist precision, and broader sink coverage. |
+| AD-009 Agent Skills V0 integration | `PARTIAL` | P2 | `docs/debt/DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is partially integrated: V0a (manifest, registry, router, planner/reflector injection, output evaluation) and V0b (constrained runtime permissions) are complete. V0c (Blackboard receipts and templates) is partially completed; Graph memory, Cloud sync, and Interface list-validate are deferred. |
 
 ## 4. Manual Verification Debt
 
@@ -81,6 +82,7 @@ Previously archived cleared, inactive, or superseded documents remain in `archiv
 The root `docs/debt` directory intentionally keeps only active debt declarations plus this index layer:
 
 ```text
+DEBT-AGENT-SKILLS-V0.md
 DEBT-FRONTEND-B13-UI-SMOKE-BLOCKED.md
 DEBT-P0-UI-INTERACTION-REMEDIATION.md
 DEBT-THINKING-UI.md

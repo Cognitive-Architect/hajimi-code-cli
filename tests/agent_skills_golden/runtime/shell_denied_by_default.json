@@ -1,0 +1,36 @@
+{
+  "description": "shell tools are denied when run_shell is false",
+  "available_tools": ["shell", "read_file"],
+  "manifest": {
+    "schema_version": "hajimi.skill.v0",
+    "version": "0.1.0",
+    "name": "shell-blocker",
+    "title": "Shell Blocker",
+    "description": "Demonstrates default shell denial.",
+    "enabled": true,
+    "category": "runtime",
+    "exclusive_group": null,
+    "triggers": ["shell"],
+    "risk_level": "high",
+    "entry": "SKILL.md",
+    "eval_entry": null,
+    "context_budget_tokens": 256,
+    "allowed_tools": ["shell"],
+    "permissions": {
+      "read_workspace": false,
+      "write_workspace": false,
+      "run_shell": false,
+      "network": false,
+      "delete": false
+    }
+  },
+  "expected_allowed": [],
+  "expected_denied": [
+    {
+      "tool_name": "shell",
+      "permission": "deny",
+      "approval_level": "Critical",
+      "reason_contains": "run_shell=false"
+    }
+  ]
+}

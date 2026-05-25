@@ -1,0 +1,40 @@
+{
+  "schema_version": "hajimi.skill.eval.v0",
+  "skill_name": "auto-save",
+  "criteria": {
+    "skill_name": "auto-save",
+    "must_include": [
+      "=== AUTO SAVE",
+      "做了什么",
+      "当前状态",
+      "下一步",
+      "风险"
+    ],
+    "must_not_include": [
+      "TODO",
+      "simulation",
+      "mock"
+    ],
+    "expected_structure": [
+      "做了什么",
+      "当前状态",
+      "下一步",
+      "风险"
+    ],
+    "failure_reason": "missing required auto-save archive block"
+  },
+  "cases": [
+    {
+      "name": "complete_auto_save_block",
+      "output": "已完成本轮修改。\n\n=== AUTO SAVE ===\n做了什么:\n- 完成 Day8 criteria 接入\n\n当前状态:\n- 测试通过\n\n下一步:\n- 执行 B-09\n\n风险:\n- 无新增运行时权限\n=================",
+      "expected_pass": true,
+      "expected_failure_reason": null
+    },
+    {
+      "name": "missing_auto_save_block",
+      "output": "已完成本轮修改，但没有附加存档块。",
+      "expected_pass": false,
+      "expected_failure_reason": "missing required marker: === AUTO SAVE"
+    }
+  ]
+}

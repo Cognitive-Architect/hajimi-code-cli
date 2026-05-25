@@ -7,9 +7,12 @@ const webRoot = 'src/interface/web';
 const shellPath = 'src/engine/tool-system/src/shell.rs';
 const desktopMainPath = 'src/interface/desktop/src/main.rs';
 const allowlistPath = 'tests/security/security_audit_allowlist.json';
+const scanSkipDirs = new Set(['.git', 'target', 'node_modules', 'dist', 'target-ui-refresh']);
 
+const findings = [];
 const failures = [];
 const warnings = [];
+let allowlistedCount = 0;
 
 function toRepoPath(filePath) {
   return path.relative(repoRoot, filePath).replace(/\\/g, '/');
@@ -19,19 +22,73 @@ function readText(repoPath) {
   return fs.readFileSync(path.join(repoRoot, repoPath), 'utf8');
 }
 
-function addFailure(rule, file, line, message) {
-  failures.push({ rule, file, line, message });
+function readSnippet(file, line) {
+  if (!file || !line) return '';
+  const fullPath = path.join(repoRoot, file);
+  if (!fs.existsSync(fullPath)) return '';
+  return fs.readFileSync(fullPath, 'utf8').split(/\r?\n/)[line - 1]?.trim() || '';
 }
 
-function addWarning(rule, file, line, message) {
-  warnings.push({ rule, file, line, message });
+function makeEvidence(file, line, note, snippet) {
+  return [{
+    kind: 'code',
+    file,
+    line,
+    snippet: snippet || readSnippet(file, line),
+    command: null,
+    output_hash: null,
+    note,
+  }];
+}
+
+function addFinding(input) {
+  const finding = {
+    rule_id: input.rule_id,
+    severity: input.severity || 'medium',
+    status: input.status || 'unverified',
+    file: input.file || null,
+    line: input.line || null,
+    evidence: input.evidence || makeEvidence(input.file, input.line, input.message || input.reason),
+    reason: input.reason || input.message || null,
+    message: input.message || input.reason || '',
+  };
+  findings.push(finding);
+  return finding;
+}
+
+function addFailure(rule, file, line, message, options = {}) {
+  const finding = addFinding({
+    rule_id: rule,
+    severity: options.severity || 'high',
+    status: options.status || 'unverified',
+    file,
+    line,
+    message,
+    reason: options.reason || message,
+    evidence: options.evidence,
+  });
+  failures.push(finding);
+}
+
+function addWarning(rule, file, line, message, options = {}) {
+  const finding = addFinding({
+    rule_id: rule,
+    severity: options.severity || 'low',
+    status: options.status || 'unverified',
+    file,
+    line,
+    message,
+    reason: options.reason || message,
+    evidence: options.evidence,
+  });
+  warnings.push(finding);
 }
 
 function walkFiles(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (['dist', 'node_modules'].includes(entry.name)) continue;
+      if (scanSkipDirs.has(entry.name)) continue;
       walkFiles(fullPath, out);
     } else if (/\.(html|js|css)$/.test(entry.name)) {
       out.push(fullPath);
@@ -45,16 +102,28 @@ function loadAllowlist() {
   if (!fs.existsSync(fullPath)) return [];
   const entries = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
   for (const [index, entry] of entries.entries()) {
-    if (!entry.path || !entry.pattern || !entry.reason) {
-      addFailure('allowlist-reason', allowlistPath, index + 1, 'allowlist entries require path, pattern, and reason');
+    const pathValue = typeof entry.path === 'string' ? entry.path.trim() : '';
+    const patternValue = typeof entry.pattern === 'string' ? entry.pattern.trim() : '';
+    const reasonValue = typeof entry.reason === 'string' ? entry.reason.trim() : '';
+    if (!pathValue || !patternValue || !reasonValue) {
+      addFailure('ALLOWLIST-001', allowlistPath, index + 1, 'allowlist entry missing reason/path/pattern; reason is required for every exception', {
+        status: 'confirmed',
+      });
     }
   }
-  return entries;
+  return entries.map(entry => ({
+    ...entry,
+    rule_id: typeof entry.rule_id === 'string' ? entry.rule_id.trim() : undefined,
+    path: typeof entry.path === 'string' ? entry.path.trim() : '',
+    pattern: typeof entry.pattern === 'string' ? entry.pattern.trim() : '',
+    reason: typeof entry.reason === 'string' ? entry.reason.trim() : '',
+  }));
 }
 
-function isAllowed(allowlist, file, text) {
-  return allowlist.some(entry => {
+function findAllowlistEntry(allowlist, ruleId, file, text) {
+  return allowlist.find(entry => {
     if (entry.path !== file) return false;
+    if (entry.rule_id && entry.rule_id !== ruleId) return false;
     return text.includes(entry.pattern);
   });
 }
@@ -64,10 +133,16 @@ function scanTauriConfig() {
   const config = JSON.parse(raw);
   const csp = config.app?.security?.csp;
   if (csp === null) {
-    addFailure('tauri-csp-null', tauriConfigPath, findLine(raw, '"csp"'), 'Tauri CSP must not be null');
+    addFailure('TAURI-CSP-001', tauriConfigPath, findLine(raw, '"csp"'), 'Tauri CSP must not be null', {
+      severity: 'critical',
+      status: 'confirmed',
+    });
   }
   if (config.app?.withGlobalTauri === true) {
-    addFailure('tauri-global-api-fail', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri=true is forbidden after B-18 security closure');
+    addFailure('TAURI-GLOBAL-001', tauriConfigPath, findLine(raw, 'withGlobalTauri'), 'withGlobalTauri=true is forbidden after B-18 security closure', {
+      severity: 'critical',
+      status: 'confirmed',
+    });
   }
 }
 
@@ -79,27 +154,33 @@ function scanInlineHandlers(files) {
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (inlineHandlerPattern.test(line)) {
-        addFailure('frontend-inline-handler', file, index + 1, 'inline event handlers are not allowed');
+        addFailure('DOM-INLINE-001', file, index + 1, 'inline event handlers are not allowed');
       }
     });
   }
 }
 
 function scanDangerousHtmlApi(files, allowlist) {
-  const dangerousHtmlPattern = /\b(innerHTML|insertAdjacentHTML)\b/;
+  const dangerousHtmlPattern = /\b(innerHTML|outerHTML|insertAdjacentHTML)\b/;
   for (const fullPath of files) {
     const file = toRepoPath(fullPath);
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (!dangerousHtmlPattern.test(line)) return;
       if (file === 'src/interface/web/modules/slash-palette.js') {
-        addFailure('slash-palette-dangerous-html', file, index + 1, 'slash palette must use safe DOM rendering only');
+        addFailure('DOM-HTML-001', file, index + 1, 'slash palette must use safe DOM rendering only');
         return;
       }
-      if (isAllowed(allowlist, file, line)) {
-        addWarning('frontend-dangerous-html-allowlisted', file, index + 1, 'known legacy dangerous HTML API allowed with reason');
+      const allowlistEntry = findAllowlistEntry(allowlist, 'DOM-HTML-001', file, line);
+      if (allowlistEntry) {
+        allowlistedCount += 1;
+        addWarning('DOM-HTML-001', file, index + 1, 'known legacy dangerous HTML API allowed with reason', {
+          status: 'accepted_risk',
+          reason: allowlistEntry.reason,
+          evidence: makeEvidence(file, index + 1, allowlistEntry.reason, line.trim()),
+        });
       } else {
-        addFailure('frontend-dangerous-html', file, index + 1, 'dangerous HTML API requires allowlist reason or safe DOM rewrite');
+        addFailure('DOM-HTML-001', file, index + 1, 'dangerous HTML API requires allowlist reason or safe DOM rewrite');
       }
     });
   }
@@ -109,7 +190,7 @@ function scanShellAllowList() {
   const raw = readText(shellPath);
   const block = raw.match(/const\s+ALLOWED_COMMANDS:[\s\S]*?=\s*&\[(?<body>[\s\S]*?)\];/);
   if (!block) {
-    addFailure('shell-allow-list-missing', shellPath, 21, 'ALLOWED_COMMANDS block not found');
+    addFailure('SHELL-ALLOW-001', shellPath, 21, 'ALLOWED_COMMANDS block not found');
     return;
   }
 
@@ -117,7 +198,10 @@ function scanShellAllowList() {
   const forbiddenShells = ['bash', 'sh', 'pwsh', 'powershell'];
   for (const shell of forbiddenShells) {
     if (commands.includes(shell)) {
-      addFailure('shell-complex-shell-allowlist', shellPath, findLine(raw, `"${shell}"`), `ALLOWED_COMMANDS must not include ${shell}`);
+      addFailure('SHELL-ALLOW-001', shellPath, findLine(raw, `"${shell}"`), `ALLOWED_COMMANDS must not include ${shell}`, {
+        severity: 'critical',
+        status: 'confirmed',
+      });
     }
   }
 }
@@ -133,7 +217,7 @@ function scanDesktopCommandAllowList() {
   const highCapabilityCommands = ['npx', 'pnpm', 'pip', 'pip3', 'code', 'cursor'];
   for (const command of highCapabilityCommands) {
     if (commands.includes(command)) {
-      addFailure('desktop-run-command-high-capability', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
+      addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, `"${command}"`), `legacy run_command must not allow ${command} by default`);
     }
   }
 }
@@ -141,10 +225,14 @@ function scanDesktopCommandAllowList() {
 function scanRunCommandExposure() {
   const raw = readText(desktopMainPath);
   if (/fn\s+run_command\s*\(/.test(raw)) {
-    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command');
+    addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command', {
+      severity: 'critical',
+    });
   }
   if (/generate_handler!\[[\s\S]*\brun_command\s*,/.test(raw)) {
-    addFailure('run-command-not-naked', desktopMainPath, findLine(raw, 'run_command,'), 'run_command must not appear in the Tauri invoke_handler');
+    addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, 'run_command,'), 'run_command must not appear in the Tauri invoke_handler', {
+      severity: 'critical',
+    });
   }
 }
 
@@ -172,7 +260,7 @@ function scanTauriGlobalApiUsage(files) {
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (directGlobalPattern.test(line)) {
-        addFailure('tauri-global-api-usage', file, index + 1, 'frontend code must use HajimiTauri adapter instead of direct global Tauri access');
+        addFailure('TAURI-GLOBAL-001', file, index + 1, 'frontend code must use HajimiTauri adapter instead of direct global Tauri access');
       }
     });
   }
@@ -206,7 +294,7 @@ function scanWorkspaceBoundFileTools() {
   ];
   for (const pattern of required) {
     if (!raw.includes(pattern)) {
-      addFailure('desktop-file-tools-workspace-bound', desktopMainPath, findLine(raw, 'fn build_registry'), `${pattern} must be used in desktop registry`);
+      addFailure('FILE-OPS-001', desktopMainPath, findLine(raw, 'fn build_registry'), `${pattern} must be used in desktop registry`);
     }
   }
 }
@@ -221,19 +309,19 @@ function scanInlineEditWorkspaceResolver() {
     }
     const body = raw.slice(index, index + 900);
     if (!body.includes('resolve_workspace_path')) {
-      addFailure('desktop-inline-edit-workspace-resolver', desktopMainPath, findLine(raw, command), `${command} must resolve paths through workspace resolver`);
+      addFailure('FILE-OPS-001', desktopMainPath, findLine(raw, command), `${command} must resolve paths through workspace resolver`);
     }
   }
 }
 
 function scanFileOpsBypass(files) {
-  const fileOpsBypassPattern = /run_command[\s\S]{0,120}\b(mkdir|mv|rm|rmdir|del)\b/i;
+  const fileOpsBypassPattern = /run_command[\s\S]{0,160}\b(mkdir|mv|rm|rmdir|del|delete|rename|write|create)\b/i;
   for (const fullPath of files) {
     const file = toRepoPath(fullPath);
     const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/);
     lines.forEach((line, index) => {
       if (fileOpsBypassPattern.test(line)) {
-        addFailure('frontend-file-ops-shell-bypass', file, index + 1, 'file operations must use dedicated Tauri commands, not shell run_command');
+        addFailure('FILE-OPS-001', file, index + 1, 'file operations must use dedicated Tauri commands, not shell run_command');
       }
     });
   }
@@ -281,28 +369,48 @@ function findLine(text, needle) {
 }
 
 function printSummary() {
+  const report = {
+    status: failures.length ? 'fail' : 'pass',
+    summary: {
+      findings: findings.length,
+      failures: failures.length,
+      warnings: warnings.length,
+      allowlisted: allowlistedCount,
+      allowlist: {
+        path: allowlistPath,
+      },
+    },
+    findings,
+  };
+
   console.log('Security Audit Gate V1 summary');
+  console.log(`findings: ${findings.length}`);
   console.log(`failures: ${failures.length}`);
   console.log(`warnings: ${warnings.length}`);
+  console.log(`allowlisted: ${allowlistedCount}`);
 
   if (warnings.length) {
     console.log('\nwarnings:');
     for (const warning of warnings) {
-      console.log(`- [${warning.rule}] ${warning.file}:${warning.line} ${warning.message}`);
+      console.log(`- [${warning.rule_id}] ${warning.file}:${warning.line} ${warning.message}`);
     }
   }
 
   if (failures.length) {
     console.error('\nfailures:');
     for (const failure of failures) {
-      console.error(`- [${failure.rule}] ${failure.file}:${failure.line} ${failure.message}`);
+      console.error(`- [${failure.rule_id}] ${failure.file}:${failure.line} ${failure.message}`);
     }
     console.error('\nSecurity Audit Gate V1: FAIL');
+    console.log('\nSecurity Audit Gate V1 JSON summary');
+    console.log(JSON.stringify(report, null, 2));
     process.exitCode = 1;
     return;
   }
 
   console.log('\nSecurity Audit Gate V1: PASS');
+  console.log('\nSecurity Audit Gate V1 JSON summary');
+  console.log(JSON.stringify(report, null, 2));
 }
 
 function main() {
