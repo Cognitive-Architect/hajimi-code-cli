@@ -253,20 +253,18 @@ impl ContextProbeRunner {
 
         // 1. Gate check: if real probe is disabled, short-circuit immediately.
         if !is_real_context_probe_enabled() {
-            // Gate is off: DO NOT call client. Return a fallback mock successful ProbeResult.
             let token_count = level.tokens();
             return ProbeResult {
                 provider_id,
                 model,
                 declared_max,
                 tested_input_tokens: token_count,
-                success: true,
-                usage: Some(ProbeUsage {
-                    prompt_tokens: token_count,
-                    completion_tokens: 10,
-                }),
+                success: false,
+                usage: None,
                 latency_ms: start.elapsed().as_millis() as u64,
-                error: None,
+                error: Some(
+                    "Real provider probe disabled by HAJIMI_CONTEXT_PROBE_REAL".to_string(),
+                ),
                 timestamp,
                 ttl_seconds,
                 cancelled: false,
@@ -400,6 +398,8 @@ impl ContextProbeRunner {
 mod tests {
     use super::*;
 
+    static REAL_PROBE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn test_probe_success() {
         let runner = ContextProbeRunner::new();
@@ -508,8 +508,9 @@ mod tests {
         assert!(res.is_expired());
     }
 
-    #[test]
-    fn test_real_probe_disabled_by_default() {
+    #[tokio::test]
+    async fn test_real_probe_disabled_by_default() {
+        let _guard = REAL_PROBE_ENV_LOCK.lock().await;
         // By default, the real context probe should be disabled (gate is false)
         std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
         assert!(!is_real_context_probe_enabled());
@@ -598,6 +599,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_probe_gate_off_short_circuits() {
+        let _guard = REAL_PROBE_ENV_LOCK.lock().await;
+
         struct TrackingClient {
             called: std::sync::atomic::AtomicBool,
         }
@@ -633,14 +636,57 @@ mod tests {
             )
             .await;
 
-        // Gate is off: client must NEVER be called, but it returns a simulated successful ProbeResult.
+        // Gate is off: client must NEVER be called and result must never look verified.
         assert!(!client.called.load(std::sync::atomic::Ordering::SeqCst));
-        assert!(res.success);
+        assert!(!res.success);
         assert_eq!(res.tested_input_tokens, 128_000);
+        assert!(res.usage.is_none());
+        assert!(res
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn test_run_probe_gate_off_never_resolves_verified_budget() {
+        use crate::context_budget::{
+            resolve_context_budget, BudgetResolveInput, ContextCapabilityStatus,
+        };
+
+        let _guard = REAL_PROBE_ENV_LOCK.lock().await;
+        std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
+
+        let runner = ContextProbeRunner::new();
+        let res = runner
+            .run_probe(
+                "deepseek".to_string(),
+                "deepseek-v4-pro".to_string(),
+                ProbeLevel::Level128K,
+                1_000_000,
+                3600,
+                30,
+                None,
+            )
+            .await;
+
+        assert!(!res.success);
+
+        let budget = resolve_context_budget(BudgetResolveInput {
+            provider_id: Some("deepseek".to_string()),
+            model: Some("deepseek-v4-pro".to_string()),
+            probe_result: Some(res),
+            ..BudgetResolveInput::default()
+        });
+
+        assert_ne!(budget.capability_status, ContextCapabilityStatus::Verified);
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Fallback);
     }
 
     #[tokio::test]
     async fn test_run_probe_gate_on_success() {
+        let _guard = REAL_PROBE_ENV_LOCK.lock().await;
+
         struct TrackingClient {
             called: std::sync::atomic::AtomicBool,
         }
@@ -689,6 +735,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_probe_gate_on_unsupported_provider_fallback() {
+        let _guard = REAL_PROBE_ENV_LOCK.lock().await;
         std::env::set_var("HAJIMI_CONTEXT_PROBE_REAL", "true");
 
         let runner = ContextProbeRunner::new();
