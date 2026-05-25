@@ -203,3 +203,28 @@ The automated checks and unit/integration matrix for the Hajimi 1M Context Engin
 4. **GUI Smoke Debt Preservation**: The active manual UI testing debts (GUI clicks) are fully preserved and registered in this document.
 
 The workspace compiler, dynamic budget resolution rules, context pack head-tail filters, metadata receipts, and rollback toggles are verified complete at the code level, but final real provider E2E and GUI integration tests remain pending.
+
+---
+
+## DebtFix V5 Day 11 Closure Note
+
+Commands rechecked on **2026-05-25** under branch `codex/debtfix-v5-day11-closure`, HEAD `21cfec9167764e21812784505a16493c8db40385`:
+
+```text
+cargo test -p intelligence-agent-core --lib
+PASS: 230 passed, 0 failed.
+
+cargo test -p intelligence-agent-core -- context_probe
+PASS: 15 context_probe-filtered tests passed, 0 failed.
+
+rg "interface.*desktop|ProviderConfig|hajimi-desktop" src/intelligence/agent-core
+PASS: no matches.
+```
+
+DebtFix V5 closes the Long Context code-level automation lane as `IMPLEMENTED-GATED`, not as real-provider `Verified`.
+
+The following remain active:
+
+- `PENDING_REAL_PROVIDER_RECEIPT`: no live provider API probe receipt with valid TTL has been produced.
+- `WEBVIEW_MANUAL_SMOKE`: Context capacity probe button, Context Receipt refresh, and provider settings interactions still need real Tauri/WebView manual evidence.
+- `TOKEN_ACCOUNTING_ESTIMATE`: receipt token counts remain estimated values unless a provider returns actual usage.

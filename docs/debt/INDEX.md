@@ -1,6 +1,6 @@
 # Hajimi Debt Documentation Index
 
-> Updated: 2026-05-17
+> Updated: 2026-05-25
 > Current source of truth: `docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md`
 
 ## Active Summary
@@ -23,7 +23,7 @@ Use this file first:
 ## Code-Level Guides & Closure Receipts
 
 - `docs/debt/code-level/PRIORITY-GUIDE.md`: Actions and prioritization guide for P0/P1/P1-C security and functional debt.
-- `docs/debt/code-level/DEBTFIX-V5-CLOSURE-RECEIPT.md`: Closure receipt for the entire DebtFix V5 cluster.
+- `docs/debt/code-level/DEBTFIX-V5-CLOSURE-RECEIPT.md`: Closure receipt for the DebtFix V5 code-level automation pass, with residual real-provider and WebView manual debts retained.
 
 ## Archived In Latest Pass
 

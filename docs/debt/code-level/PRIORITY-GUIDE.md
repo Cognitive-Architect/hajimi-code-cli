@@ -1,6 +1,6 @@
 # Hajimi 代码级债务优先级指南
 
-> **更新日期**: 2026-05-24  
+> **更新日期**: 2026-05-25
 > **适用范围**: `docs/debt/code-level/` 下的全部 7 份活跃债务文档  
 > **交叉验证**: 已对照 `active/ACTIVE-DEBT-STATUS-2026-05-17.md` 状态矩阵与 `archive/05/debt-history/DEBT-B18-SECURITY-HARDENING-CLOSURE.md` 闭环收据
 
@@ -19,13 +19,13 @@
 
 ## P0 — 架构级债务（地基裂缝，优先堵）
 
-### P0-1: 安全审计工具的扫描覆盖面已完全补强
+### P0-1: 安全审计工具的扫描覆盖面已补强并通过自动化回归
 > 📄 来源: [HAJIMI-CODEX-SECURITY-VALIDATION-REPORT.md](file:///f:/hajimi-code-cli/docs/debt/code-level/HAJIMI-CODEX-SECURITY-VALIDATION-REPORT.md) (F-002, F-005, F-006)
 
 | 子项 | 当前状态 | 说明 |
 |:---|:---:|:---|
-| 通用文件工具 workspace 沙箱 | ✅ 已修复 | `EditFileTool` canonical workspace 检查与 allowed paths 绑定已经过全量单元测试覆盖，完美契合安全沙箱沙漏边界 |
-| `apply_edits` / `preview_edit` 路径校验 | ✅ 已修复 | 实现了严格 of workspace 路径逃逸拒绝与 canonical root resolve，负向跨越逃逸路径测试 100% 拦截并抛错 |
+| 通用文件工具 workspace 沙箱 | ✅ 已修复 / 自动化通过 | `EditFileTool` canonical workspace 检查与 allowed paths 绑定已经过单元测试覆盖 |
+| `apply_edits` / `preview_edit` 路径校验 | ✅ 已修复 / 自动化通过 | 实现了严格的 workspace 路径逃逸拒绝与 canonical root resolve，负向跨越逃逸路径测试通过 |
 | Provider config workspace_path 信任前端 | ✅ 已修复 | 后端 provider config 命令完全基于 canonical workspace 进行物理安全校验，不再静默信任前端传参 |
 
 **为什么是 P0**：这些都是安全沙箱边界问题。如果工具系统允许跨 workspace 读写文件，等于给了 Agent 或前端脚本突破沙箱的能力，是架构级的安全红线。
@@ -37,7 +37,7 @@
 
 ---
 
-### P0-2: Security Gate 反回退规则已补全
+### P0-2: Security Gate 反回退规则已补全并持续保留 warning 债务
 > 📄 来源: [HAJIMI-SECURITY-RESIDUAL-FIX-GUIDE.md](file:///f:/hajimi-code-cli/docs/debt/code-level/HAJIMI-SECURITY-RESIDUAL-FIX-GUIDE.md) (R-004)
 
 | 子项 | 当前状态 | 说明 |
@@ -60,8 +60,8 @@
 
 ## P1 — 功能级债务（核心功能有缺口）
 
-### P1-1: 前端模块化已取得重大突破
-> 📄 来源: [DEBT-P0-UI-INTERACTION-REMEDIATION.md](file:///f:/hajimi-code-cli/docs/debt/code-level/DEBT-P0-UI-INTERACTION-REMEDIATION.md) / AD-002, AD-004
+### P1-1: 前端模块化已取得阶段性突破
+> 📄 来源: [DEBT-P0-UI-INTERACTION-REMEDIATION.md](file:///f:/hajimi-code-cli/docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md) / AD-002, AD-004
 
 | 子项 | 当前状态 | 说明 |
 |:---|:---:|:---|
@@ -78,19 +78,19 @@
 
 ---
 
-### P1-2: Thinking UI 流式解析跨 Chunk 截断缺陷已闭环修复
-> 📄 来源: [DEBT-THINKING-UI.md](file:///f:/hajimi-code-cli/docs/debt/code-level/DEBT-THINKING-UI.md) / AD-005
+### P1-2: Thinking UI 流式解析跨 Chunk 截断缺陷已完成自动化闭环
+> 📄 来源: [DEBT-THINKING-UI.md](file:///f:/hajimi-code-cli/docs/debt/DEBT-THINKING-UI.md) / AD-005
 
 | 子项 | 债务ID | 当前状态 | 说明 |
 |:---|:---|:---:|:---|
-| `parseThinkingStream` 跨 chunk 标签截断 | DEBT-B09-001 | ✅ 已修复 | 实现了跨 chunk 保留残余 buffer 的流式切分状态机，支持完整的 SSE 分片级联组装 |
+| `parseThinkingStream` 跨 chunk 标签截断 | DEBT-B09-001 | ✅ 已修复 / 自动化通过 | 实现了跨 chunk 保留残余 buffer 的流式切分状态机，支持当前 fixture 覆盖的 SSE 分片组装 |
 | `streamChat` 与 `addThinking` 短暂双 div | DEBT-B09-002 | ✅ 已修复 | 彻底消除了思考面板在 SSE 高频刷新时的闪烁与冗余 DOM 创建 |
 | `TokenEvent` 未被后端 provider 使用 | DEBT-B09-003 | ⚠️ 未修 | 属于后端 provider 支持项，前端已完全兼容相关事件驱动逻辑 |
 
-**为什么是 P1**：Thinking UI 是 Hajimi IDE 最核心的差异化体验之一——让用户看到 Agent 是"怎么想的"。跨 chunk 截断会直接导致推理过程丢失，这已通过完美的 SSE 流式状态机在 TDD 覆盖下全面清债。
+**为什么是 P1**：Thinking UI 是 Hajimi IDE 最核心的差异化体验之一——让用户看到 Agent 是"怎么想的"。跨 chunk 截断会直接导致推理过程丢失，这已通过 SSE 流式状态机在 TDD 覆盖下完成自动化闭环。
 
 **已执行行动**：
-1. 开发了健壮的 SSE parser 状态缓存区，全面适配 `<thinking>` 标签被无情切断的 10 大边界测试案例并绿通。
+1. 开发了 SSE parser 状态缓存区，覆盖 `<thinking>` 标签切断等 10 个边界测试案例并绿通。
 2. 保证了在任何 SSE 异常中断/完成/取消时的缓冲区重置策略安全。
 
 ---
@@ -218,11 +218,11 @@
 
 | 等级 | 编号 | 债务名称 | 当前状态 | 预估工作量 |
 |:---:|:---|:---|:---:|:---:|
-| 🔴 P0 | P0-1 | 安全沙箱边界补全（文件工具/编辑器/Provider） | ⚠️ 部分修复 | 1-2 天 |
-| 🔴 P0 | P0-2 | Security Gate 反回退规则补全 | ⚠️ 部分覆盖 | 0.5 天 |
-| 🟠 P1 | P1-1 | 前端 `app.js` 模块化拆分 | ⚠️ 部分拆出 | 3-5 天 |
-| 🟠 P1 | P1-2 | Thinking UI 跨 chunk 流式解析修复 | ❌ 未修 | 1 天 |
-| 🟠 P1 | P1-3 | 1M 长上下文真实 Provider Probe | ⚠️ Gated | 2-3 天 |
+| 🔴 P0 | P0-1 | 安全沙箱边界补全（文件工具/编辑器/Provider） | ✅ 自动化通过 / 保留门禁精度债 | 0 天 |
+| 🔴 P0 | P0-2 | Security Gate 反回退规则补全 | ✅ 自动化通过 / 108 项 warning 债务 | 0 天 |
+| 🟠 P1 | P1-1 | 前端 `app.js` 模块化拆分 | ⚠️ 部分拆出 / Day9-10 已改善 | 3-5 天 |
+| 🟠 P1 | P1-2 | Thinking UI 跨 chunk 流式解析修复 | ✅ 自动化通过 / 待 WebView smoke | 0 天 |
+| 🟠 P1 | P1-3 | 1M 长上下文真实 Provider Probe | ⚠️ IMPLEMENTED-GATED / PENDING_REAL_PROVIDER_RECEIPT | 2-3 天 |
 | 🟡 P2 | P2-1 | Agent Skills V0c 图记忆/云同步 | 🔜 延后 | 5+ 天 |
 | 🟡 P2 | P2-2 | Thinking UI 虚拟 Diff / Markdown 增强 | ⚠️ 基础版 | 2-3 天 |
 | 🟡 P2 | P2-3 | 安全审计门禁精度提升 (innerHTML 清理) | ⚠️ 108 项 | 3-5 天 |
@@ -235,9 +235,9 @@
 ## 🎯 推荐执行顺序
 
 ```
-第 1 步: P0-1 + P0-2 （安全边界补全 + Gate 规则，约 2 天）
+第 1 步: P0-1 + P0-2 （安全边界补全 + Gate 规则，自动化已通过；后续仅保留门禁精度债）
     ↓
-第 2 步: P1-2 （Thinking UI 流式解析修复，约 1 天）
+第 2 步: P1-2 （Thinking UI 流式解析修复，自动化已通过；后续补 WebView smoke）
     ↓
 第 3 步: P1-3 （1M 真实 Provider Probe，约 2-3 天）
     ↓

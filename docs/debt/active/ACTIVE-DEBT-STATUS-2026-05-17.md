@@ -2,8 +2,8 @@
 
 > Revision Date: 2026-05-25
 > Branch: `codex/debtfix-v5-day11-closure`
-> HEAD: `88742309a93d53b39f6b9ed1bff1769ddc968d18`
-> Scope: `docs/debt` debt triage after DebtFix V5 Day 1-1milestones (P0 Security, Thinking UI, Long Context, Frontend modularization).
+> HEAD: `21cfec9167764e21812784505a16493c8db40385`
+> Scope: `docs/debt` debt triage after DebtFix V5 Day 1-11 milestones (P0 Security, Thinking UI, Long Context, Frontend modularization).
 > Archive target: `archive/05/debt-history`
 
 > [!NOTE]
@@ -23,7 +23,7 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 - `AD-001`: complex shell feature restoration remains intentionally deferred by design.
 - `AD-002`: `withGlobalTauri: false` is secured, and high-risk Tauri API references are centralized inside `tauri-bridge.js`.
 - `AD-004`: frontend modularization has made massive progress with `inspector.js` (Day 9) and `settings-panel.js` (Day 10) fully extracted.
-- `AD-005`: Thinking UI stream parser is 100% completed under TDD mode (tested against SSE split-chunks and malformed tokens); checkpoint management is fully integrated; remaining trace/checkpoint depth is ready for WebView verification.
+- `AD-005`: Thinking UI stream parser is completed under TDD mode for the current fixture matrix (tested against SSE split-chunks and malformed tokens); checkpoint management is integrated; remaining trace/checkpoint depth is ready for WebView verification.
 - `AD-006`: Agent Prompt productization is improved but not fully productized.
 - `AD-008`: Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green.
 
@@ -46,7 +46,7 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-002 Tauri global API migration | `IMPLEMENTED/PENDING-UI-SMOKE` | P1 | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` | `withGlobalTauri: false` is successfully secured, and high-risk Tauri API references are completely centralized in `tauri-bridge.js`. Only real WebView GUI smoke is pending. |
 | AD-003 Tauri GUI/WebView smoke blocker | `ACTIVE BLOCKED / MANUAL` | P1 | `docs/debt/DEBT-UX-B07-001-TAURI-DEV-SMOKE-BLOCKED.md`; `docs/debt/DEBT-FRONTEND-B13-UI-SMOKE-BLOCKED.md`; `docs/debt/DEBT-UX-AGENT-001.md` | Startup, file tree, sessions, malicious DOM samples, file-operation clicks, and slash palette interaction need real Tauri window evidence. This group is excluded from the "non-manual unhandled" count. |
 | AD-004 Frontend modularization | `PARTIAL/IMPROVED` | P2 | `docs/debt/DEBT-P0-UI-INTERACTION-REMEDIATION.md` | `security-dom`, `workspace`, `sessions`, `thinking-ui`, `slash-palette`, `inspector`, and `settings-panel` modules exist and are Node-smoked successfully. Decomposing other secondary parts of `app.js` and `style.css` remains open. |
-| AD-005 Thinking UI and checkpoint depth | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | `docs/debt/DEBT-THINKING-UI.md` | Thinking UI stream parser is 100% completed under TDD mode (tested against SSE split-chunks and malformed tokens); checkpoint management is fully integrated; remaining trace/checkpoint depth is ready for WebView verification. |
+| AD-005 Thinking UI and checkpoint depth | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | `docs/debt/DEBT-THINKING-UI.md` | Thinking UI stream parser is completed under TDD mode for the current fixture matrix (tested against SSE split-chunks and malformed tokens); checkpoint management is integrated; remaining trace/checkpoint depth is ready for WebView verification. |
 | AD-006 Agent Prompt productization | `PARTIAL/IMPROVED` | P2 | active summary; archived `archive/05/debt-history/DEBT-AGENT-PROMPT-001.md` | Agent Persona, context window manager, tool manifest, DTO/contracts, and prompt golden tests exist. Remaining work is productization: live runtime consistency, broader policy integration, and product scoring beyond deterministic golden cases. |
 | AD-007 Slash command suggestion panel | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | archived `archive/05/debt-history/02-slash-command-palette.md`; archived B16 receipt | Slash Palette V1 is implemented and Node-smoked. The old "panel missing" debt is archived. Only real Tauri/WebView interaction evidence remains before final UI closure. |
 | AD-008 SecurityAuditTool quality | `IMPLEMENTED/GATED` | P2 | archived B16 receipt; `tests/security/security_audit_gate.js` | Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green. Remaining work is AST-level syntax scanning. |
