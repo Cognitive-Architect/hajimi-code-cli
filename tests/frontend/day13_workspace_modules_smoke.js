@@ -105,6 +105,11 @@ async function main() {
     { filename: 'security-dom.js' },
   );
   vm.runInContext(
+    fs.readFileSync(path.join(root, 'src/interface/web/modules/tauri-bridge.js'), 'utf8'),
+    context,
+    { filename: 'tauri-bridge.js' },
+  );
+  vm.runInContext(
     fs.readFileSync(path.join(root, 'src/interface/web/modules/workspace.js'), 'utf8'),
     context,
     { filename: 'workspace.js' },

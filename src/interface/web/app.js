@@ -3215,6 +3215,7 @@ window.app = {
 
       if (result.error) {
         streamError = result.error;
+        buffer = '';
         console.warn('stream_chat event error:', streamError);
         pending = false;
         this.updateTurnResponse(turn, { state: 'error', error: streamError });
@@ -3241,7 +3242,7 @@ window.app = {
           msgContainer.scrollTop = msgContainer.scrollHeight;
         });
       }
-      if (event.done) {
+      if (event.done || event.cancelled || event.cancel) {
         // Capture precise token usage from backend
         if (event.promptTokens != null && event.completionTokens != null) {
           this.tokenStats = {
@@ -3254,12 +3255,14 @@ window.app = {
           this.cumulativeStats.requestCount += 1;
         }
         this.updateTokenDisplay();
+        buffer = '';
       }
     };
 
     try {
       await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
     } catch (err) {
+      buffer = '';
       if (turn.state.thinking.content) {
         this.updateTurnThinking(turn, { state: 'done' });
       } else {

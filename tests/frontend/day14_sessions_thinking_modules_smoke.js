@@ -5,6 +5,7 @@ const vm = require('vm');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const securityDomPath = path.join(repoRoot, 'src/interface/web/modules/security-dom.js');
+const tauriBridgePath = path.join(repoRoot, 'src/interface/web/modules/tauri-bridge.js');
 const sessionsPath = path.join(repoRoot, 'src/interface/web/modules/sessions.js');
 const thinkingUiPath = path.join(repoRoot, 'src/interface/web/modules/thinking-ui.js');
 
@@ -255,12 +256,18 @@ const context = {
       },
     },
   },
+  __TAURI_INTERNALS__: {
+    transformCallback(cb) {
+      channels.push({ onmessage: cb });
+      return 123;
+    },
+  },
 };
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);
 
-for (const file of [securityDomPath, sessionsPath, thinkingUiPath]) {
+for (const file of [securityDomPath, tauriBridgePath, sessionsPath, thinkingUiPath]) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
 }
 

@@ -96,8 +96,8 @@
 
 ---
 
-### P1-3: 1M 长上下文探针仍为 Mock 状态
-> 📄 来源: [DEBT-LONG-CONTEXT-1M.md](file:///f:/hajimi-code-cli/docs/debt/code-level/DEBT-LONG-CONTEXT-1M.md)
+### P1-3: 1M 长上下文探针仍为 Gated 状态
+> 📄 来源: [DEBT-LONG-CONTEXT-1M.md](file:///f:/hajimi-code-cli/docs/debt/DEBT-LONG-CONTEXT-1M.md)
 
 | 子项 | 当前状态 | 说明 |
 |:---|:---:|:---|
@@ -105,14 +105,14 @@
 | Bridge 8K 硬编码消除 | ✅ 已完成 | Planner/Reflector bridge 已动态化 |
 | Provider 能力字段扩展 | ✅ 已完成 | camelCase `maxContextTokens` 等已注入 Blackboard |
 | Memory 检索预算动态分配 | ✅ 已完成 | Focus/Working/Archive 三层按比例分配 |
-| **真实 Provider Probe** | ⚠️ Gated | 已实现默认关闭的 Gated 真实探针通道、缓存及降级梯度，在安全门禁下运行。 |
+| **真实 Provider Probe** | ⚠️ Gated | 已实现默认关闭的 Gated 真实探针通道、显式 ProbeResult cache API 及降级梯度；真实 provider receipt 仍为 pending。 |
 | Context 小票 token 估算 | ⚠️ 估算值 | 小票中的 token 数是词法估算，不是 LLM 服务端实际计费值 |
 
 **为什么是 P1**：1M 上下文是 Hajimi 对接高端模型的关键能力。目前预算引擎、Bridge、Memory 分配都已就位，但"最后一公里"——真实探针还没接上。这意味着系统无法确认某个 Provider 是否真正支持 1M 窗口，只能盲目信任配置声明。
 
 **建议行动**：
 1. 实现 `RealProviderProbe`，通过实际 API 调用验证 Provider 的上下文窗口容量（已以 Gated 形式实现 `ProviderProbeClient` 与 `run_probe` 通道）
-2. 探针结果持久化到本地 JSON，带 TTL 过期机制（已完成，支持 Stale TTL 降级及异常处理）
+2. ProbeResult 显式 save/load API 与 TTL/fallback 测试已覆盖；真实 provider receipt 仍 pending
 3. 探针失败时触发 Fallback 降级（900K → 512K → 256K → 128K → 32K）（已完成，预算解析级联降级已整合）
 
 ---

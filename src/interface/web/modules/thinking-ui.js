@@ -9,6 +9,9 @@
     '</thinking', '</thinkin', '</thinki', '</think', '</thin', '</thi', '</th', '</t', '</'
   ];
 
+  const MAX_MALFORMED_TAG_BUFFER_CHARS = 24;
+  const MAX_UNCLOSED_THINKING_BUFFER_CHARS = 8192;
+
   function getPartialOpenSuffix(text) {
     for (const prefix of PARTIAL_OPEN_TAGS) {
       if (text.endsWith(prefix)) {
@@ -25,6 +28,31 @@
       }
     }
     return '';
+  }
+
+  function findMalformedOpenStart(text) {
+    const starts = ['<thinking', '<think'];
+    let earliest = -1;
+    for (const startTag of starts) {
+      const idx = text.indexOf(startTag);
+      if (idx === -1 || text.indexOf('>', idx) !== -1) continue;
+      const nextChar = text.charAt(idx + startTag.length);
+      if (!nextChar) continue;
+      if (nextChar !== '>' && !startTag.startsWith(text.slice(idx))) {
+        if (earliest === -1 || idx < earliest) earliest = idx;
+      }
+      if (nextChar !== '>' && /\s/.test(nextChar)) {
+        if (earliest === -1 || idx < earliest) earliest = idx;
+      }
+    }
+    return earliest;
+  }
+
+  function findUnclosedThinkingStart(text) {
+    const tag = getThinkingTag(text);
+    if (!tag) return -1;
+    const contentStart = tag.index + tag.open.length;
+    return text.indexOf(tag.close, contentStart) === -1 ? tag.index : -1;
   }
 
   function getThinkingTag(buffer) {
@@ -145,41 +173,83 @@
       : '';
     const nextBuffer = chunk ? current + chunk : current;
     const done = Boolean(event && event.done);
+    const cancelled = Boolean(event && (event.cancelled || event.cancel));
+    const terminal = done || cancelled;
 
     if (event && event.error) {
       return {
-        buffer: nextBuffer,
+        buffer: '',
         type: 'error',
         state: 'error',
         thinking: null,
         response: null,
         error: String(event.chunk || event.error),
         done,
+        cancelled,
       };
     }
 
     if (event && Object.prototype.hasOwnProperty.call(event, 'thinking_content')) {
       return {
-        buffer: nextBuffer,
+        buffer: terminal ? '' : nextBuffer,
         type: 'thinking',
         state: 'thinking',
         thinking: String(event.thinking_content || ''),
         response: null,
         error: null,
         done,
+        cancelled,
       };
     }
 
     const parsed = parseThinkingStream(nextBuffer);
+    const malformedStart = findMalformedOpenStart(nextBuffer);
+    if (malformedStart !== -1) {
+      const malformedTail = nextBuffer.slice(malformedStart);
+      if (malformedTail.length > MAX_MALFORMED_TAG_BUFFER_CHARS || terminal) {
+        const retained = nextBuffer.slice(0, malformedStart);
+        const safeParsed = parseThinkingStream(retained);
+        return {
+          buffer: terminal ? '' : retained,
+          type: 'response',
+          state: safeParsed.state,
+          thinking: safeParsed.thinking,
+          response: safeParsed.response,
+          error: null,
+          done,
+          cancelled,
+          malformed: true,
+        };
+      }
+    }
+
+    if (parsed.state === 'thinking' && nextBuffer.length > MAX_UNCLOSED_THINKING_BUFFER_CHARS) {
+      const thinkingStart = findUnclosedThinkingStart(nextBuffer);
+      const retained = thinkingStart === -1 ? '' : nextBuffer.slice(0, thinkingStart);
+      const safeParsed = parseThinkingStream(retained);
+      return {
+        buffer: terminal ? '' : retained,
+        type: 'response',
+        state: safeParsed.state,
+        thinking: safeParsed.thinking,
+        response: safeParsed.response,
+        error: null,
+        done,
+        cancelled,
+        truncated: true,
+      };
+    }
+
     const type = parsed.state === 'thinking' ? 'thinking' : 'response';
     return {
-      buffer: nextBuffer,
+      buffer: terminal ? '' : nextBuffer,
       type,
       state: parsed.state,
       thinking: parsed.thinking,
       response: parsed.response,
       error: null,
       done,
+      cancelled,
     };
   }
 

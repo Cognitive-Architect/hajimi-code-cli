@@ -119,11 +119,12 @@ const testCases = [
   {
     id: 'NEG-001',
     name: 'Malformed / unterminated tag',
-    chunks: ['Hello <thinking', ' plan without close'],
+    chunks: ['Hello <thinking', ' plan without close', ' more text'],
     expected: [
-      // Mismatched or partial tags should be handled gracefully
+      // Mismatched or partial tags should be degraded once they are clearly not valid tags
       { step: 0, buffer: 'Hello <thinking', state: 'idle', thinking: null, response: 'Hello ' },
-      { step: 1, buffer: 'Hello <thinking plan without close', state: 'idle', thinking: null, response: 'Hello ' }
+      { step: 1, buffer: 'Hello ', state: 'idle', thinking: null, response: 'Hello ' },
+      { step: 2, buffer: 'Hello  more text', state: 'idle', thinking: null, response: 'Hello  more text' }
     ]
   },
   {
@@ -136,6 +137,55 @@ const testCases = [
       { step: 2, buffer: 'Hello <thinking></thinking>', state: 'empty', thinking: '', response: 'Hello ' },
       { step: 3, buffer: 'Hello <thinking></thinking>', state: 'empty', thinking: '', response: 'Hello ' }
     ]
+  }
+];
+
+const lifecycleCases = [
+  {
+    id: 'NEG-005',
+    name: 'Done event resets retained parser buffer',
+    run() {
+      const res = HajimiThinkingUI.parseStreamEvent('Hello <thinking>plan</thinking>done', { done: true });
+      assert.strictEqual(res.done, true);
+      assert.strictEqual(res.buffer, '');
+      assert.strictEqual(res.state, 'response');
+      assert.strictEqual(res.thinking, 'plan');
+      assert.strictEqual(res.response, 'Hello done');
+    }
+  },
+  {
+    id: 'NEG-006',
+    name: 'Error event resets retained parser buffer',
+    run() {
+      const res = HajimiThinkingUI.parseStreamEvent('partial <thinking data', { error: 'boom' });
+      assert.strictEqual(res.buffer, '');
+      assert.strictEqual(res.state, 'error');
+      assert.strictEqual(res.error, 'boom');
+    }
+  },
+  {
+    id: 'NEG-007',
+    name: 'Long unterminated thinking block is capped',
+    run() {
+      const longThinking = 'x'.repeat(9000);
+      const res = HajimiThinkingUI.parseStreamEvent('Prefix <thinking>' + longThinking, {});
+      assert.strictEqual(res.truncated, true);
+      assert.strictEqual(res.buffer, 'Prefix ');
+      assert.strictEqual(res.state, 'idle');
+      assert.strictEqual(res.thinking, null);
+      assert.strictEqual(res.response, 'Prefix ');
+    }
+  },
+  {
+    id: 'NEG-008',
+    name: 'Cancel event resets retained parser buffer',
+    run() {
+      const res = HajimiThinkingUI.parseStreamEvent('partial <thinking data', { cancelled: true });
+      assert.strictEqual(res.cancelled, true);
+      assert.strictEqual(res.buffer, '');
+      assert.strictEqual(res.state, 'idle');
+      assert.strictEqual(res.response, 'partial ');
+    }
   }
 ];
 
@@ -163,6 +213,7 @@ function runSuite() {
 
       // Verify the parsed properties
       const checks = [];
+      let passedStep = true;
       try {
         assert.strictEqual(res.buffer, expected.buffer, `Buffer mismatch: expected "${expected.buffer}", got "${res.buffer}"`);
         assert.strictEqual(res.state, expected.state, `State mismatch: expected "${expected.state}", got "${res.state}"`);
@@ -171,6 +222,7 @@ function runSuite() {
         checks.push('PASS');
       } catch (err) {
         checks.push(`FAIL: ${err.message}`);
+        passedStep = false;
         stepFailed = true;
       }
 
@@ -179,7 +231,7 @@ function runSuite() {
         chunk: JSON.stringify(chunk),
         expected: { state: expected.state, thinking: expected.thinking, response: expected.response },
         actual: { state: res.state, thinking: res.thinking, response: res.response },
-        status: stepFailed ? 'FAIL' : 'PASS',
+        status: passedStep ? 'PASS' : 'FAIL',
         details: checks.filter(c => c.startsWith('FAIL'))
       });
     }
@@ -209,6 +261,20 @@ function runSuite() {
     });
   }
 
+  for (const tc of lifecycleCases) {
+    console.log(`[CASE] ${tc.id}: ${tc.name}`);
+    try {
+      tc.run();
+      console.log(`  => Status: 🟢 GREEN LIGHT (Lifecycle invariant covered)\n`);
+      reports.push({ id: tc.id, name: tc.name, passed: true });
+    } catch (err) {
+      passedSuite = false;
+      console.log(`  => Status: 🔴 RED LIGHT (Lifecycle invariant failed)`);
+      console.log(`     Error: ${err.message}\n`);
+      reports.push({ id: tc.id, name: tc.name, passed: false });
+    }
+  }
+
   console.log('========================================================');
   console.log('TEST SUITE SUMMARY');
   console.log('========================================================');
@@ -218,9 +284,7 @@ function runSuite() {
   console.log('\nResult: ' + (passedSuite ? '🟢 ALL GREEN' : '⚠️ RED LIGHTS PRESENT (Perfect for Day 4 TDD Target)'));
   console.log('========================================================\n');
 
-  // Day 3 instructions specify "红灯可接受但必须说明 bug；绿灯需说明已覆盖"
-  // So the test runner runs to completion and exits with 0 as it is successfully documenting the bugs
-  process.exit(0);
+  process.exit(passedSuite ? 0 : 1);
 }
 
 runSuite();
