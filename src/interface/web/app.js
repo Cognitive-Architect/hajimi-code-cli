@@ -391,60 +391,15 @@ window.app = {
   },
 
   showSidebar(view) {
-    // Redirect old views to settings tabs
-    if (view === 'models' || view === 'system') {
-      this.showSidebar('settings');
-      this.switchSettingsTab(view === 'models' ? 'providers' : 'governance');
-      return;
-    }
-
-    this.sidebarView = view;
-    document.querySelectorAll('.activity-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.view === view);
-    });
-    document.querySelectorAll('.sidebar-panel').forEach(el => {
-      el.classList.toggle('active', el.dataset.panel === view);
-    });
-    if (view === 'git') {
-      this.loadGitStatus();
-    }
-    if (view === 'settings') {
-      this.loadProviders();
-      this.loadAgentProviders();
-      this.loadMcpServers();
-    }
+    window.HajimiSettingsPanel.showSidebar(this, view);
   },
 
   setupSettingsTabs() {
-    const tabs = document.querySelectorAll('.settings-tab');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        this.switchSettingsTab(tab.dataset.tab);
-      });
-    });
+    window.HajimiSettingsPanel.setupSettingsTabs(this);
   },
 
   switchSettingsTab(tabId) {
-    document.querySelectorAll('.settings-tab').forEach(el => {
-      el.classList.toggle('active', el.dataset.tab === tabId);
-    });
-    document.querySelectorAll('.settings-tab-panel').forEach(el => {
-      const isActive = el.dataset.settingsPanel === tabId;
-      el.classList.toggle('active', isActive);
-      el.style.display = isActive ? 'block' : 'none';
-    });
-
-    if (tabId === 'providers') {
-      this.loadProviders();
-      this.loadAgentProviders();
-    } else if (tabId === 'mcp') {
-      this.loadMcpServers();
-    } else if (tabId === 'governance') {
-      // Governance logic if needed
-    } else if (tabId === 'audit') {
-      this.loadCheckpoints();
-      this.loadAuditLogs();
-    }
+    window.HajimiSettingsPanel.switchSettingsTab(this, tabId);
   },
 
   toggleSidebar() {
@@ -3809,14 +3764,7 @@ window.app = {
 
   /** Load latest context receipt from backend and render the token usage panel. */
   async loadLatestReceipt() {
-    if (!this.isTauriAvailable()) return;
-    try {
-      const receipt = await this.invokeTauri('get_latest_receipt');
-      this.renderContextReceiptPanel(receipt);
-    } catch (e) {
-      // Non-fatal: render empty state
-      this.renderContextReceiptPanel(null);
-    }
+    return window.HajimiInspector.loadLatestReceipt(this);
   },
 
   /**
@@ -3827,74 +3775,12 @@ window.app = {
    * MUST NOT display raw prompt content — only structured block metadata.
    */
   renderContextReceiptPanel(receipt) {
-    // Target is contextReceiptBody (the inner scrollable card body, not the outer panel wrapper).
-    const panel = document.getElementById('contextReceiptBody');
-    if (!panel) return;
-
-    if (!receipt) {
-      panel.innerHTML = `
-        <div class="receipt-empty">
-          <span class="receipt-empty-icon">📋</span>
-          <span>暂无上下文小票（Context Receipt）</span>
-          <span class="receipt-hint">每次 Agent LLM 请求后自动记录。</span>
-        </div>`;
-      return;
-    }
-
-    const mode = receipt.mode || 'Unknown';
-    const maxCtx = (receipt.maxContextTokens || 0).toLocaleString();
-    const inputBudget = (receipt.inputBudget || 0).toLocaleString();
-    const estimatedInputTokens = (receipt.estimatedInputTokens || 0).toLocaleString();
-    const longCtx = receipt.longContextMode ? 'Long Context ✓' : 'Fast / Standard';
-    const includedCount = (receipt.includedBlocks || []).length;
-    const omittedCount = (receipt.omittedBlocks || []).length;
-    const bridgeRole = receipt.bridgeRole || '-';
-    const model = receipt.model || '-';
-    const provider = receipt.providerId || '-';
-    const ts = receipt.timestamp
-      ? new Date(receipt.timestamp * 1000).toLocaleTimeString()
-      : '-';
-
-    // Build omitted reasons list (truncated to 5)
-    const omittedItems = (receipt.omittedBlocks || []).slice(0, 5).map(b =>
-      `<li class="receipt-omit-item"><span class="omit-name">${this.escapeHtml(b.name)}</span><span class="omit-reason">${this.escapeHtml(b.reason)}</span><span class="omit-tokens">${(b.tokenEstimate ?? b.token_estimate ?? 0).toLocaleString()} tokens</span></li>`
-    ).join('');
-    const moreOmitted = omittedCount > 5 ? `<li class="receipt-omit-more">…还有 ${omittedCount - 5} 个省略块</li>` : '';
-
-    panel.innerHTML = `
-      <div class="receipt-header">
-        <span class="receipt-title">Context Receipt</span>
-        <span class="receipt-time">${this.escapeHtml(ts)}</span>
-      </div>
-      <div class="receipt-grid">
-        <div class="receipt-row"><span class="receipt-label">Provider</span><span class="receipt-value">${this.escapeHtml(provider)}</span></div>
-        <div class="receipt-row"><span class="receipt-label">Model</span><span class="receipt-value">${this.escapeHtml(model)}</span></div>
-        <div class="receipt-row"><span class="receipt-label">Bridge Role</span><span class="receipt-value">${this.escapeHtml(bridgeRole)}</span></div>
-        <div class="receipt-row"><span class="receipt-label">Mode</span><span class="receipt-value receipt-mode">${this.escapeHtml(mode)} · ${this.escapeHtml(longCtx)}</span></div>
-        <div class="receipt-row"><span class="receipt-label">Max Context</span><span class="receipt-value">${maxCtx} tokens</span></div>
-        <div class="receipt-row"><span class="receipt-label">Input Budget</span><span class="receipt-value receipt-budget">${inputBudget} tokens</span></div>
-        <div class="receipt-row receipt-highlight"><span class="receipt-label">Estimated Input</span><span class="receipt-value receipt-estimate">${estimatedInputTokens} tokens</span></div>
-        <div class="receipt-row"><span class="receipt-label">Included Blocks</span><span class="receipt-value receipt-included">${includedCount}</span></div>
-        <div class="receipt-row"><span class="receipt-label">Omitted Blocks</span><span class="receipt-value receipt-omitted">${omittedCount}</span></div>
-      </div>
-      ${omittedCount > 0 ? `
-      <div class="receipt-omitted-section">
-        <div class="receipt-omitted-title">省略块 (Omitted Blocks)</div>
-        <ul class="receipt-omit-list">${omittedItems}${moreOmitted}</ul>
-      </div>` : ''}
-      <div class="receipt-disclaimer">⚠️ 以上 Token 数为估算值，非 Provider 实际计费用量。</div>
-    `;
+    window.HajimiInspector.renderContextReceiptPanel(this, receipt);
   },
 
   /** Wire the refreshReceiptBtn click handler and initial load. */
   setupReceiptPanel() {
-    // Load on init (best-effort, non-fatal).
-    this.loadLatestReceipt();
-    // Wire refresh button inside the inspector.
-    const refreshBtn = document.getElementById('refreshReceiptBtn');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => this.loadLatestReceipt());
-    }
+    window.HajimiInspector.setupReceiptPanel(this);
   },
 
   closeProviderModal() {

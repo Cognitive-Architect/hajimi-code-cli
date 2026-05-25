@@ -184,11 +184,25 @@ Day 9 wrapper 必须至少覆盖：
 - `DEBT-SCOPE-DFV5-DAY08`: 已完成候选扫描、切片选择、wrapper/DOM/load-order/rollback/verification 边界；未完成真实模块提取，Day 9 才允许新增 `modules/inspector.js`。
 
 #### H. Day 9 模块化第一阶段提取完成结果
-- **实际完成状态**: 🟢 已成功创建 `src/interface/web/modules/inspector.js` 并将 17 个只读渲染/切换方法完全从 `app.js` 物理抽取。
-- **兼容性保障**: `app.js` 完美保留了全部 17 个同名 forwarding wrappers，保证了前后端调用的完全无缝向下兼容。
+- **实际完成状态**: 已成功创建 `src/interface/web/modules/inspector.js` 并将 20 个 Right Inspector / Context Receipt 只读渲染、切换、刷新方法从 `app.js` 物理抽取。
+- **兼容性保障**: `app.js` 保留全部 20 个同名 forwarding wrappers，保证既有调用路径向下兼容。
 - **安全检查门锁**: `tests/security/security_audit_allowlist.json` 已追加 `inspector.js` 的 allowlist entry；`npm run test:security-gate` 安全门锁 100% 绿通通过！
 - **自动化测试**:
   - `node --check src/interface/web/modules/inspector.js` -> 🟢 PASS
+  - `node --check src/interface/web/app.js` -> 🟢 PASS
+  - `node tests/frontend/day13_workspace_modules_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day14_sessions_thinking_modules_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day16_slash_palette_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day17_thinking_ui_v2_security_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day18_inspector_smoke.js` -> 🟢 PASS
+  - `cargo check -p hajimi-desktop` -> 🟢 PASS
+
+#### I. Day 10 前端第二切片 Settings Panel 提取完成结果
+- **实际完成状态**: 🟢 已成功创建 `src/interface/web/modules/settings-panel.js` 并将 sidebar 切换与 settings tab 导航方法 (`showSidebar`, `setupSettingsTabs`, `switchSettingsTab`) 从 `app.js` 物理抽取。
+- **低风险与兼容性保障**: `app.js` 完美保留了全部 3 个同名 forwarding wrappers，保证了前后端调用路径的 100% 向下兼容。设置模块仅处理页面 DOM 类 toggle 与 sidebar 显示状态，所有的 Provider 添加、更新、删除等高内聚写逻辑完全保留在 `app.js` 原有高可靠位置，绝不越界。
+- **安全免审合规**: 新增模块不使用任何 raw `innerHTML` 或 `insertAdjacentHTML`，完全满足 P0 级安全沙箱零新增安全隐患要求，无需修改 allowlist 文件。
+- **自动化测试**:
+  - `node --check src/interface/web/modules/settings-panel.js` -> 🟢 PASS
   - `node --check src/interface/web/app.js` -> 🟢 PASS
   - `node tests/frontend/day13_workspace_modules_smoke.js` -> 🟢 PASS
   - `node tests/frontend/day14_sessions_thinking_modules_smoke.js` -> 🟢 PASS

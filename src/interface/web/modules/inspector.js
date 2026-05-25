@@ -221,6 +221,82 @@
     `;
   }
 
+  async function loadLatestReceipt(app) {
+    if (!app.isTauriAvailable()) return;
+    try {
+      const receipt = await app.invokeTauri('get_latest_receipt');
+      app.renderContextReceiptPanel(receipt);
+    } catch (e) {
+      app.renderContextReceiptPanel(null);
+    }
+  }
+
+  function renderContextReceiptPanel(app, receipt) {
+    const panel = document.getElementById('contextReceiptBody');
+    if (!panel) return;
+
+    if (!receipt) {
+      panel.innerHTML = `
+        <div class="receipt-empty">
+          <span class="receipt-empty-icon">📋</span>
+          <span>暂无上下文小票（Context Receipt）</span>
+          <span class="receipt-hint">每次 Agent LLM 请求后自动记录。</span>
+        </div>`;
+      return;
+    }
+
+    const mode = receipt.mode || 'Unknown';
+    const maxCtx = (receipt.maxContextTokens || 0).toLocaleString();
+    const inputBudget = (receipt.inputBudget || 0).toLocaleString();
+    const estimatedInputTokens = (receipt.estimatedInputTokens || 0).toLocaleString();
+    const longCtx = receipt.longContextMode ? 'Long Context ✓' : 'Fast / Standard';
+    const includedCount = (receipt.includedBlocks || []).length;
+    const omittedCount = (receipt.omittedBlocks || []).length;
+    const bridgeRole = receipt.bridgeRole || '-';
+    const model = receipt.model || '-';
+    const provider = receipt.providerId || '-';
+    const ts = receipt.timestamp
+      ? new Date(receipt.timestamp * 1000).toLocaleTimeString()
+      : '-';
+
+    const omittedItems = (receipt.omittedBlocks || []).slice(0, 5).map(b =>
+      `<li class="receipt-omit-item"><span class="omit-name">${app.escapeHtml(b.name)}</span><span class="omit-reason">${app.escapeHtml(b.reason)}</span><span class="omit-tokens">${(b.tokenEstimate ?? b.token_estimate ?? 0).toLocaleString()} tokens</span></li>`
+    ).join('');
+    const moreOmitted = omittedCount > 5 ? `<li class="receipt-omit-more">…还有 ${omittedCount - 5} 个省略块</li>` : '';
+
+    panel.innerHTML = `
+      <div class="receipt-header">
+        <span class="receipt-title">Context Receipt</span>
+        <span class="receipt-time">${app.escapeHtml(ts)}</span>
+      </div>
+      <div class="receipt-grid">
+        <div class="receipt-row"><span class="receipt-label">Provider</span><span class="receipt-value">${app.escapeHtml(provider)}</span></div>
+        <div class="receipt-row"><span class="receipt-label">Model</span><span class="receipt-value">${app.escapeHtml(model)}</span></div>
+        <div class="receipt-row"><span class="receipt-label">Bridge Role</span><span class="receipt-value">${app.escapeHtml(bridgeRole)}</span></div>
+        <div class="receipt-row"><span class="receipt-label">Mode</span><span class="receipt-value receipt-mode">${app.escapeHtml(mode)} · ${app.escapeHtml(longCtx)}</span></div>
+        <div class="receipt-row"><span class="receipt-label">Max Context</span><span class="receipt-value">${maxCtx} tokens</span></div>
+        <div class="receipt-row"><span class="receipt-label">Input Budget</span><span class="receipt-value receipt-budget">${inputBudget} tokens</span></div>
+        <div class="receipt-row receipt-highlight"><span class="receipt-label">Estimated Input</span><span class="receipt-value receipt-estimate">${estimatedInputTokens} tokens</span></div>
+        <div class="receipt-row"><span class="receipt-label">Included Blocks</span><span class="receipt-value receipt-included">${includedCount}</span></div>
+        <div class="receipt-row"><span class="receipt-label">Omitted Blocks</span><span class="receipt-value receipt-omitted">${omittedCount}</span></div>
+      </div>
+      ${omittedCount > 0 ? `
+      <div class="receipt-omitted-section">
+        <div class="receipt-omitted-title">省略块 (Omitted Blocks)</div>
+        <ul class="receipt-omit-list">${omittedItems}${moreOmitted}</ul>
+      </div>` : ''}
+      <div class="receipt-disclaimer">⚠️ 以上 Token 数为估算值，非 Provider 实际计费用量。</div>
+    `;
+  }
+
+  function setupReceiptPanel(app) {
+    loadLatestReceipt(app);
+    const refreshBtn = document.getElementById('refreshReceiptBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => loadLatestReceipt(app));
+    }
+  }
+
   global.HajimiInspector = {
     init,
     showInspectorTab,
@@ -239,5 +315,8 @@
     renderInspectorDiffPreview,
     renderDiffPreview,
     renderTraceInspector,
+    loadLatestReceipt,
+    renderContextReceiptPanel,
+    setupReceiptPanel,
   };
 })(window);
