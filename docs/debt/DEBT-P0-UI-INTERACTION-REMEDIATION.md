@@ -60,15 +60,15 @@ git diff --check
 | 候选模块 | 功能范围 | 写入/修改操作 | 后端/Tauri 交互 | DOM 边界与 IDs | 模块化风险评估 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Settings Panel** (设置面板) | 通用、模型、MCP、治理、审计五个 Tab 页设置 | 包含 LocalStorage 读写，以及大量**写入**命令（如 `save_provider`, `connect_mcp`, `pause_agent_loop`, `inject_memory`） | 高频，涉及 10+ Tauri 读写命令交互 | `#settingsPanel`, `#settingsTabs`, `#profileSelect`, `#settingTheme` 等 40+ 复杂跨域 DOM 节点 | **极高**。跨越模型、安全、MCP、治理等多业务状态，写操作复杂，极易发生状态不一致或数据丢失。 |
-| **Right Inspector** (右侧检查器) | 任务详情、Diff 预览、Agent Trace、Context 小票 | **无**（完全只读渲染） | 仅在旧 Diff 回退按钮处触发只读 RAG 命令 | `#rightInspector` 容器内部，涉及 15 个清晰的只读与状态面板元素 | **极低**。状态单一纯粹，职责完全聚焦于 RAG 上下文与 Trace 数据只读展现，是最佳架构解耦切片。 |
+| **Right Inspector** (右侧检查器) | 任务详情、Diff 预览、Agent Trace、Context 小票 | **无写入**（只读渲染 + 只读 receipt refresh） | 仅包含旧 Diff 回退入口与 `get_latest_receipt` 只读小票读取，不触发 write/delete/update | `#rightInspector` 容器内部，涉及 18 个清晰的只读与状态面板元素 | **低**。状态较纯粹，职责聚焦于 RAG 上下文、Trace 与 Context Receipt 只读展现，是最佳架构解耦切片。 |
 | **Agent Cards** (智能体卡片) | Chat Feed 中动态插入的文件预览、Diff 预览、步骤与摘要卡片 | **包含写入**（Diff 卡片的 Apply 按钮会触发 `apply_edits` 写入修改） | 中频，包含文件修改写入与 RAG 动作 | 无固定静态 DOM 父节点，动态生成并插入到 `#aiChatMessages` | **高**。事件监听动态绑定，且卡片生命周期受 AI 聊天会话流控管辖，过度解耦易导致流式渲染错乱。 |
 
 ### 9.2 目标切片：右侧检查器 (window.HajimiInspector)
 
-经过评估，**Right Inspector** (右侧检查器) 状态最为纯粹、与后端无高危交互，被选为 Day 9 模块化提取的低风险切片。
+经过评估，**Right Inspector** (右侧检查器) 状态最为纯粹、与后端无高危写入交互，被选为 Day 9 模块化提取的低风险切片。Context Receipt 属于 Inspector 内部只读面板，Day 9 不得遗漏其刷新按钮与小票渲染路径。
 
 #### A. 目标命名空间与 API 接口
-在 `src/interface/web/modules/inspector.js` 中创建 IIFE 命名空间 `window.HajimiInspector`，提取并治理以下 17 个方法：
+在 `src/interface/web/modules/inspector.js` 中创建 IIFE 命名空间 `window.HajimiInspector`，提取并治理以下 20 个方法：
 1. `init(app)`: 初始化检查器 Tab 点击事件与关闭按钮监听。
 2. `showInspectorTab(tabId)`: 切换检查器活动 Tab 页样式与可见性。
 3. `withInspectorGuard(label, renderFn)`: 隔离渲染异常的保护装饰器。
@@ -86,6 +86,9 @@ git diff --check
 15. `renderInspectorDiffPreview()`: 核心 Diff 引擎，对比渲染 Hunks。
 16. `renderDiffPreview()`: 回退代理方法。
 17. `renderTraceInspector()`: 渲染 Agent Trace 迭代循环详情。
+18. `setupReceiptPanel()`: 绑定 `#refreshReceiptBtn` 并触发初次只读小票加载。
+19. `loadLatestReceipt()`: 通过 `invokeTauri('get_latest_receipt')` 读取最新 Context Receipt，不执行写入。
+20. `renderContextReceiptPanel(receipt)`: 渲染 Context Receipt 估算 token、预算、省略块与免责声明。
 
 #### B. 治理 DOM IDs 与 Class 边界
 `HajimiInspector` 严格管理且仅限管辖以下 DOM 边界：
@@ -94,6 +97,7 @@ git diff --check
 - 面板节点: `.inspector-panel` (包含 `data-inspector-panel` 属性)
 - 动作按钮: `#inspectorCloseBtn`, `#refreshReceiptBtn`
 - 渲染挂载点:
+  - `#inspectorTaskDetail` (任务详情面板)
   - `#inspectorTaskStatus` (任务详情状态)
   - `#inspectorContextFiles` (上下文列表)
   - `#inspectorModelInfo` (模型状态)
@@ -101,9 +105,17 @@ git diff --check
   - `#inspectorEditSummary` (修改建议摘要)
   - `#inspectorDiffContent` (Diff 预览内容容器)
   - `#inspectorTraceContent` (Trace 步骤内容容器)
+  - `#contextReceiptTab` (Context 小票 Tab)
+  - `#contextReceiptPanel` (Context 小票面板)
   - `#contextReceiptBody` (Context 小票容器)
 
-#### C. 加载顺序 (Loading Sequence in index.html)
+#### C. 后端交互边界
+- 允许：`loadLatestReceipt()` 调用 `get_latest_receipt`，该路径只读取最近 Context Receipt。
+- 允许：旧 Diff 回退按钮沿用现有只读/预览入口。
+- 禁止：Day 9 在 `HajimiInspector` 中新增 `write_file`、`apply_edits`、`delete_*`、`update_*`、`save_*` 等写入命令。
+- 禁止：把 Settings、Provider 配置、Agent Cards 或 Chat stream 生命周期代码并入 `inspector.js`。
+
+#### D. 加载顺序 (Loading Sequence in index.html)
 为了保证依赖正确，`inspector.js` 应在 Tauri 适配层加载完毕后、主入口加载前加载：
 ```html
   <script defer src="modules/security-dom.js"></script>
@@ -116,7 +128,7 @@ git diff --check
   <script defer src="app.js"></script>
 ```
 
-#### D. 后端兼容性与平滑代理层
+#### E. 后端兼容性与平滑代理层
 在 `app.js` 中保留同名方法代理，将 `window.app.setupInspector` 等调用无缝重定向到 `HajimiInspector` 上，以确保主干逻辑零修改：
 ```javascript
   setupInspector() {
@@ -128,11 +140,59 @@ git diff --check
   // ... 其他方法同理重定向
 ```
 
-#### E. 验证与回滚边界 (Verification & Rollback)
+Day 9 wrapper 必须至少覆盖：
+- `setupInspector`
+- `showInspectorTab`
+- `safeUpdateTaskDetails`
+- `safeRenderContextFiles`
+- `safeRenderModelInfo`
+- `safeRenderInspectorDiffPreview`
+- `safeRenderTraceInspector`
+- `openDiffPreview`
+- `updateTaskDetails`
+- `renderTaskSteps`
+- `renderEditSummary`
+- `renderContextFiles`
+- `renderModelInfo`
+- `renderInspectorDiffPreview`
+- `renderDiffPreview`
+- `renderTraceInspector`
+- `setupReceiptPanel`
+- `loadLatestReceipt`
+- `renderContextReceiptPanel`
+
+#### F. 验证与回滚边界 (Verification & Rollback)
 - **回滚文件列表**: Day 9 若发生任何回归故障，应无条件一键回滚以下文件：
   - `src/interface/web/app.js`
   - `src/interface/web/index.html`
+  - `src/interface/web/modules/inspector.js`
+  - `tests/frontend/day18_inspector_smoke.js`
 - **基线验证命令**:
-  - `node tests/frontend/day14_sessions_thinking_modules_smoke.js` (确保历史模块冒烟测试 100% 通过)
-  - Day 9 新增 `node tests/frontend/day18_inspector_smoke.js` 测试，对 `HajimiInspector` 进行完全隔离测试。
+  - `node --check src/interface/web/app.js`
+  - `node --check src/interface/web/modules/inspector.js` (Day 9 新增后执行)
+  - `node tests/frontend/day13_workspace_modules_smoke.js`
+  - `node tests/frontend/day14_sessions_thinking_modules_smoke.js`
+  - `node tests/frontend/day17_thinking_ui_v2_security_smoke.js`
+  - `node tests/frontend/day18_inspector_smoke.js` (Day 9 新增后执行，覆盖 tab 切换、关闭按钮、Diff fallback、Context Receipt refresh)
+  - `npm run test:security-gate`
+  - `git diff --check`
+
+#### G. Day 8 范围收卷说明
+- Day 8 的正式交付物是本节切片方案；不以减少 `app.js` 行数作为成功标准。
+- 本分支同时带有前序 baseline 稳定化修正：thinking parser 生命周期、Day13/Day14 smoke 的 Tauri bridge stub、Day4/Day7 debt 文档同步。上述修正用于保证 Day 8 baseline smoke 可复现，不属于 `HajimiInspector` 提取范围，Day 9 不应继续扩大到 thinking stream 或 provider/long-context 文档。
+- WebView manual smoke 仍为开放债务：Node smoke 不能替代真实 Tauri 窗口点击。Day 9 提取完成后必须在真实窗口手动确认 Inspector Tab、关闭按钮、Context Receipt 刷新、旧 Diff fallback 均可用。
+- `DEBT-SCOPE-DFV5-DAY08`: 已完成候选扫描、切片选择、wrapper/DOM/load-order/rollback/verification 边界；未完成真实模块提取，Day 9 才允许新增 `modules/inspector.js`。
+
+#### H. Day 9 模块化第一阶段提取完成结果
+- **实际完成状态**: 🟢 已成功创建 `src/interface/web/modules/inspector.js` 并将 17 个只读渲染/切换方法完全从 `app.js` 物理抽取。
+- **兼容性保障**: `app.js` 完美保留了全部 17 个同名 forwarding wrappers，保证了前后端调用的完全无缝向下兼容。
+- **安全检查门锁**: `tests/security/security_audit_allowlist.json` 已追加 `inspector.js` 的 allowlist entry；`npm run test:security-gate` 安全门锁 100% 绿通通过！
+- **自动化测试**:
+  - `node --check src/interface/web/modules/inspector.js` -> 🟢 PASS
+  - `node --check src/interface/web/app.js` -> 🟢 PASS
+  - `node tests/frontend/day13_workspace_modules_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day14_sessions_thinking_modules_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day16_slash_palette_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day17_thinking_ui_v2_security_smoke.js` -> 🟢 PASS
+  - `cargo check -p hajimi-desktop` -> 🟢 PASS
 

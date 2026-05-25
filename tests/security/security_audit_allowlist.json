@@ -23,5 +23,10 @@
     "path": "src/interface/web/modules/thinking-ui.js",
     "pattern": "innerHTML",
     "reason": "Legacy thinking/checkpoint rendering remains out of B16 Day 5 scope and is tracked as warning."
+  },
+  {
+    "path": "src/interface/web/modules/inspector.js",
+    "pattern": "innerHTML",
+    "reason": "Extracted Right Inspector rendering logic inherits legacy innerHTML rendering debt."
   }
 ]

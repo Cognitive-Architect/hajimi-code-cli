@@ -1,0 +1,243 @@
+(function (global) {
+  'use strict';
+
+  function init(app) {
+    const tabs = document.querySelectorAll('.inspector-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabId = tab.dataset.inspectorTab;
+        app.showInspectorTab(tabId);
+      });
+    });
+
+    const closeBtn = document.getElementById('inspectorCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        const inspector = document.getElementById('rightInspector');
+        if (inspector) inspector.style.display = 'none';
+      });
+    }
+  }
+
+  function showInspectorTab(app, tabId) {
+    document.querySelectorAll('.inspector-tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.inspectorTab === tabId);
+    });
+
+    document.querySelectorAll('.inspector-panel').forEach(el => {
+      const isActive = el.dataset.inspectorPanel === tabId;
+      el.classList.toggle('active', isActive);
+      if (isActive) {
+        if (tabId === 'diff-preview') app.safeRenderInspectorDiffPreview();
+        if (tabId === 'agent-trace') app.safeRenderTraceInspector();
+      }
+    });
+  }
+
+  function withInspectorGuard(app, label, renderFn) {
+    try {
+      renderFn();
+    } catch (e) {
+      console.warn(`Inspector render skipped (${label}):`, e);
+    }
+  }
+
+  function safeUpdateTaskDetails(app, statusText) {
+    app.withInspectorGuard('task details', () => app.updateTaskDetails(statusText));
+  }
+
+  function safeRenderContextFiles(app) {
+    app.withInspectorGuard('context files', () => app.renderContextFiles());
+  }
+
+  function safeRenderModelInfo(app) {
+    app.withInspectorGuard('model info', () => app.renderModelInfo());
+  }
+
+  function safeRenderInspectorDiffPreview(app) {
+    app.withInspectorGuard('diff preview', () => app.renderInspectorDiffPreview());
+  }
+
+  function safeRenderTraceInspector(app) {
+    app.withInspectorGuard('trace summary', () => app.renderTraceInspector());
+  }
+
+  function openDiffPreview(app, file = null) {
+    if (file) app.currentDiffFile = file;
+    const inspector = document.getElementById('rightInspector');
+    if (inspector) inspector.style.display = '';
+    app.showInspectorTab('diff-preview');
+  }
+
+  function updateTaskDetails(app, statusText) {
+    const text = statusText || (app.isProcessing ? '处理中...' : '就绪');
+    app.renderInspectorTaskStatus(text);
+    app.renderChatShellStatus(text);
+    app.renderInspectorSessionStats();
+  }
+
+  function renderTaskSteps(app) {
+    app.renderInspectorSessionStats();
+  }
+
+  function renderEditSummary(app) {
+    const el = document.getElementById('inspectorEditSummary');
+    if (!el) return;
+    if (!app.currentEditPayload) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">无待处理修改</span>';
+      return;
+    }
+    const hunks = app.currentEditPayload.hunks;
+    const count = typeof hunks === 'number' ? hunks : (hunks ? hunks.length : 0);
+    el.innerHTML = `
+      <div style="font-size:11px;">
+        <div style="font-weight:bold;color:var(--fg-magenta);">${count} 个待处理修改</div>
+        <div style="color:var(--fg-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${app.escapeHtml(app.currentEditPayload.summary || '无')}</div>
+      </div>
+    `;
+  }
+
+  function renderContextFiles(app) {
+    const contextEl = document.getElementById('inspectorContextFiles');
+    if (contextEl) {
+      if (!app.chatContextFiles || app.chatContextFiles.length === 0) {
+        contextEl.innerHTML = '<span style="color:var(--fg-dim);">暂无上下文文件</span>';
+      } else {
+        contextEl.innerHTML = app.chatContextFiles.map(path => {
+          const name = String(path).split(/[\\/]/).pop();
+          return `<div style="font-size:12px;margin-bottom:4px;color:var(--fg-default);">${app.escapeHtml(name)}</div>`;
+        }).join('');
+      }
+    }
+  }
+
+  function renderModelInfo(app) {
+    const modelEl = document.getElementById('inspectorModelInfo');
+    if (modelEl) {
+      if (!app.activeProviderId) {
+        modelEl.innerHTML = '<span style="color:var(--fg-dim);">未选择模型</span>';
+      } else {
+        const cfg = app.providerConfigs.find(c => c.id === app.activeProviderId);
+        const name = cfg ? (cfg.name || cfg.id) : app.activeProviderId;
+        const model = cfg ? cfg.model : '';
+        modelEl.innerHTML = `<div style="font-size:12px;color:var(--fg-default);">
+          <div style="font-weight:bold;">${app.escapeHtml(name)}</div>
+          <div style="color:var(--fg-dim);margin-top:2px;">${app.escapeHtml(model || '')}</div>
+        </div>`;
+      }
+    }
+  }
+
+  function renderInspectorDiffPreview(app) {
+    const container = document.getElementById('inspectorDiffContent');
+    if (!container) return;
+
+    if (!app.currentEditPayload || !app.currentEditPayload.hunks) {
+      const fallbackText = app.currentDiffFile
+        ? `可通过旧 Diff 入口查看 ${app.escapeHtml(app.currentDiffFile)}`
+        : '选择文件或等待 Agent 建议修改后显示 Diff';
+      container.innerHTML = `<div class="inspector-empty-state">
+        <span>${fallbackText}</span>
+        ${app.currentDiffFile ? '<button class="modal-btn secondary btn-secondary" id="inspectorOldDiffBtn" style="margin-top:8px;">打开旧 Diff 入口</button>' : ''}
+      </div>`;
+      const fallbackBtn = document.getElementById('inspectorOldDiffBtn');
+      if (fallbackBtn) fallbackBtn.addEventListener('click', () => app.showGitDiff(app.currentDiffFile));
+      return;
+    }
+
+    let html = `<div class="inspector-card" style="padding:0; overflow:hidden;">
+      <div class="inspector-card-title" style="padding:12px 12px 8px;">${app.escapeHtml(app.currentEditPayload.summary || '修改建议')}</div>
+      <div class="inspector-card-body" id="inspectorDiffList" style="padding:0;">`;
+
+    const hunks = app.currentEditPayload.hunks;
+    if (typeof hunks === 'number') {
+      html += `<div style="padding:12px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容见主编辑器)</div>`;
+    } else {
+      const displayHunks = Array.isArray(hunks) ? hunks : [];
+      if (displayHunks.length === 0) {
+        html += `<div style="padding:12px;color:var(--fg-dim);font-size:12px;">无可用修改详情</div>`;
+      } else {
+        displayHunks.forEach((hunk, i) => {
+          const oldLines = Array.isArray(hunk.old_lines) ? hunk.old_lines : [];
+          const newLines = Array.isArray(hunk.new_lines) ? hunk.new_lines : [];
+          const filePath = hunk.file_path || app.currentDiffFile || 'unknown';
+          const startLine = hunk.start_line || 0;
+          html += `
+            <div class="inspector-diff-hunk" style="border-top:1px solid var(--border);padding:8px;">
+              <div style="font-size:10px;color:var(--fg-dim);margin-bottom:4px;font-family:var(--font-mono);">${app.escapeHtml(filePath)}:${startLine}</div>
+              <div style="font-family:var(--font-mono);font-size:11px;background:var(--bg-subtle);border-radius:4px;padding:6px;overflow-x:auto;line-height:1.4;">
+                ${oldLines.slice(0, 5).map(l => `<div style="color:var(--fg-red);white-space:pre;">- ${app.escapeHtml(l)}</div>`).join('')}
+                ${oldLines.length > 5 ? '<div style="color:var(--fg-dim);font-size:9px;">...</div>' : ''}
+                ${newLines.slice(0, 5).map(l => `<div style="color:var(--fg-green);white-space:pre;">+ ${app.escapeHtml(l)}</div>`).join('')}
+                ${newLines.length > 5 ? '<div style="color:var(--fg-dim);font-size:9px;">...</div>' : ''}
+              </div>
+            </div>
+          `;
+        });
+      }
+    }
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+  }
+
+  function renderDiffPreview(app) {
+    app.renderInspectorDiffPreview();
+  }
+
+  function renderTraceInspector(app) {
+    const container = document.getElementById('inspectorTraceContent');
+    if (!container) return;
+
+    if (!app.traceEvents || app.traceEvents.length === 0) {
+      container.innerHTML = '<div class="inspector-empty-state"><span>任务执行后显示 Trace</span></div>';
+      return;
+    }
+
+    const recentEvents = app.traceEvents.slice(-15).reverse();
+    const colors = { Observe: 'var(--fg-green)', Retrieve: 'var(--fg-cyan)', Plan: 'var(--fg-red)', Act: 'var(--fg-magenta)', Reflect: 'var(--fg-magenta)', Store: 'var(--fg-dim)', Decide: 'var(--fg-cyan)', Other: 'var(--fg-dim)' };
+
+    container.innerHTML = `
+      <div class="inspector-card" style="padding:8px;">
+        <div class="inspector-card-title">最近执行步骤</div>
+        <div class="inspector-card-body" style="padding:0;">
+          ${recentEvents.map(ev => {
+            const color = colors[ev.step_type] || colors.Other;
+            const step = app.escapeHtml(ev.step || ev.step_type || 'Other');
+            const iteration = app.escapeHtml(String(ev.iteration ?? '-'));
+            const details = app.escapeHtml(ev.details || '');
+            return `
+              <div style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;font-size:11px;line-height:1.4;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                  <span style="font-weight:bold;color:${color};text-transform:uppercase;">${step}</span>
+                  <span style="color:var(--fg-dim);font-size:10px;">#${iteration}</span>
+                </div>
+                <div style="color:var(--fg-default);">${details}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  global.HajimiInspector = {
+    init,
+    showInspectorTab,
+    withInspectorGuard,
+    safeUpdateTaskDetails,
+    safeRenderContextFiles,
+    safeRenderModelInfo,
+    safeRenderInspectorDiffPreview,
+    safeRenderTraceInspector,
+    openDiffPreview,
+    updateTaskDetails,
+    renderTaskSteps,
+    renderEditSummary,
+    renderContextFiles,
+    renderModelInfo,
+    renderInspectorDiffPreview,
+    renderDiffPreview,
+    renderTraceInspector,
+  };
+})(window);
