@@ -149,6 +149,7 @@ HAJIMI_CONTEXT_RECEIPT_ENABLED
 - Day 11-12: [CLEARED] Dynamic context capacity probe model, local JSON persistence, auto fallback levels, and UI presets.
 - Day 13: [CLEARED] Context receipt token usage tracking (included vs omitted blocks) and right inspector UI rendering.
 - Day 14-15: Day14 matrix recorded / automated checks reported pass / Day15 closure pending.
+- DebtFix V5 Day 5: [IMPLEMENTED-GATED] Defined `ProviderProbeClient` trait, neutral request/response DTOs, and env gate `HAJIMI_CONTEXT_PROBE_REAL=false` for RealProviderProbe. Real provider probe remains strictly `IMPLEMENTED-GATED` and not verified.
 
 ---
 

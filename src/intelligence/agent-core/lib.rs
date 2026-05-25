@@ -38,7 +38,10 @@ pub mod tool_manifest;
 pub mod tools;
 pub mod worker_lifecycle_manager;
 pub mod workflow_orchestrator;
-pub use context_probe::{ContextProbeRunner, ProbeLevel, ProbeResult, ProbeUsage};
+pub use context_probe::{
+    is_real_context_probe_enabled, ContextProbeRunner, ProbeLevel, ProbeRequest, ProbeResponse,
+    ProbeResult, ProbeUsage, ProviderProbeClient,
+};
 pub use edit_applier::{edit_summary, AppliedEdit, EditApplier, EditHunk, EditState, ProposedEdit};
 pub use workflow_orchestrator::{WorkflowOrchestrator, WorkflowOutcome};
 

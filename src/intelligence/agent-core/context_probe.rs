@@ -1,7 +1,56 @@
 //! Day 11 — Provider Probe 后端能力、ProbeResult 与 TTL/取消语义
 //! Provides capability mapping, execution wrappers, and local JSON persistence.
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+/// Read the feature gate to determine if real provider probing is enabled.
+/// Defaults to false.
+pub fn is_real_context_probe_enabled() -> bool {
+    std::env::var("HAJIMI_CONTEXT_PROBE_REAL")
+        .map(|val| val.eq_ignore_ascii_case("true") || val == "1")
+        .unwrap_or(false)
+}
+
+/// Neutral DTO for a capability probe request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeRequest {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+
+    pub model: String,
+
+    pub level: ProbeLevel,
+
+    #[serde(rename = "timeoutSeconds")]
+    pub timeout_seconds: u64,
+
+    #[serde(rename = "tokenCap")]
+    pub token_cap: Option<usize>,
+}
+
+/// Neutral DTO for a capability probe response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeResponse {
+    pub success: bool,
+
+    pub usage: Option<ProbeUsage>,
+
+    #[serde(rename = "latencyMs")]
+    pub latency_ms: u64,
+
+    pub error: Option<String>,
+
+    pub cancelled: bool,
+}
+
+/// Trait for executing a real provider capability probe.
+/// Pure boundary design: does not depend on interface/desktop or ProviderConfig.
+#[async_trait]
+pub trait ProviderProbeClient: Send + Sync {
+    /// Execute a real capability probe using the specified request.
+    async fn run_probe(&self, req: ProbeRequest) -> Result<ProbeResponse, String>;
+}
 
 /// Probe levels: 128K, 256K, 512K, 900K.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -352,6 +401,94 @@ mod tests {
         };
 
         assert!(res.is_expired());
+    }
+
+    #[test]
+    fn test_real_probe_disabled_by_default() {
+        // By default, the real context probe should be disabled (gate is false)
+        std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
+        assert!(!is_real_context_probe_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_provider_probe_client_mock_implementation() {
+        struct MockProbeClient;
+
+        #[async_trait]
+        impl ProviderProbeClient for MockProbeClient {
+            async fn run_probe(&self, req: ProbeRequest) -> Result<ProbeResponse, String> {
+                if req.provider_id == "unsupported" {
+                    return Ok(ProbeResponse {
+                        success: false,
+                        usage: None,
+                        latency_ms: 5,
+                        error: Some("Provider unsupported".to_string()),
+                        cancelled: false,
+                    });
+                }
+                if req.level.is_high_cost() {
+                    return Ok(ProbeResponse {
+                        success: false,
+                        usage: None,
+                        latency_ms: 10,
+                        error: Some("cancelled".to_string()),
+                        cancelled: true,
+                    });
+                }
+                Ok(ProbeResponse {
+                    success: true,
+                    usage: Some(ProbeUsage {
+                        prompt_tokens: req.level.tokens(),
+                        completion_tokens: 5,
+                    }),
+                    latency_ms: 42,
+                    error: None,
+                    cancelled: false,
+                })
+            }
+        }
+
+        let client = MockProbeClient;
+
+        // Test success case
+        let req = ProbeRequest {
+            provider_id: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            level: ProbeLevel::Level128K,
+            timeout_seconds: 30,
+            token_cap: Some(150_000),
+        };
+        let resp = client.run_probe(req).await.unwrap();
+        assert!(resp.success);
+        assert_eq!(resp.usage.unwrap().prompt_tokens, 128_000);
+        assert!(!resp.cancelled);
+        assert!(resp.error.is_none());
+
+        // Test unsupported case
+        let req_unsupported = ProbeRequest {
+            provider_id: "unsupported".to_string(),
+            model: "gpt-4o".to_string(),
+            level: ProbeLevel::Level128K,
+            timeout_seconds: 30,
+            token_cap: None,
+        };
+        let resp_unsupported = client.run_probe(req_unsupported).await.unwrap();
+        assert!(!resp_unsupported.success);
+        assert_eq!(resp_unsupported.error.unwrap(), "Provider unsupported");
+        assert!(!resp_unsupported.cancelled);
+
+        // Test cancelled case
+        let req_high = ProbeRequest {
+            provider_id: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            level: ProbeLevel::Level900K,
+            timeout_seconds: 30,
+            token_cap: None,
+        };
+        let resp_high = client.run_probe(req_high).await.unwrap();
+        assert!(!resp_high.success);
+        assert!(resp_high.cancelled);
+        assert_eq!(resp_high.error.unwrap(), "cancelled");
     }
 
     #[tokio::test]
