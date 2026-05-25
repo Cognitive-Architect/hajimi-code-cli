@@ -45,7 +45,7 @@ pub struct ProbeResponse {
 }
 
 /// Trait for executing a real provider capability probe.
-/// Pure boundary design: does not depend on interface/desktop or ProviderConfig.
+/// Pure boundary design: accepts only neutral DTOs; upper layers adapt provider settings.
 #[async_trait]
 pub trait ProviderProbeClient: Send + Sync {
     /// Execute a real capability probe using the specified request.
@@ -225,6 +225,111 @@ impl Default for ContextProbeRunner {
 impl ContextProbeRunner {
     pub fn new() -> Self {
         Self {}
+    }
+
+    /// Run the probe, checking the gate and executing the real client if gate is enabled.
+    /// Short-circuits safely when HAJIMI_CONTEXT_PROBE_REAL is false/unset.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_probe(
+        &self,
+        provider_id: String,
+        model: String,
+        level: ProbeLevel,
+        declared_max: usize,
+        ttl_seconds: u64,
+        timeout_seconds: u64,
+        client: Option<&dyn ProviderProbeClient>,
+    ) -> ProbeResult {
+        let start = std::time::Instant::now();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Safety guard: high-cost levels (900K) require explicit confirmation
+        if level.is_high_cost() {
+            tracing::warn!("Warning: Level 900K is a high cost probe and should only be triggered with explicit user consent!");
+        }
+
+        // 1. Gate check: if real probe is disabled, short-circuit immediately.
+        if !is_real_context_probe_enabled() {
+            // Gate is off: DO NOT call client. Return a fallback mock successful ProbeResult.
+            let token_count = level.tokens();
+            return ProbeResult {
+                provider_id,
+                model,
+                declared_max,
+                tested_input_tokens: token_count,
+                success: true,
+                usage: Some(ProbeUsage {
+                    prompt_tokens: token_count,
+                    completion_tokens: 10,
+                }),
+                latency_ms: start.elapsed().as_millis() as u64,
+                error: None,
+                timestamp,
+                ttl_seconds,
+                cancelled: false,
+            };
+        }
+
+        // 2. Gate is on: check if a client has been provided
+        let Some(c) = client else {
+            return ProbeResult {
+                provider_id,
+                model,
+                declared_max,
+                tested_input_tokens: level.tokens(),
+                success: false,
+                usage: None,
+                latency_ms: start.elapsed().as_millis() as u64,
+                error: Some("No provider client configured".to_string()),
+                timestamp,
+                ttl_seconds,
+                cancelled: false,
+            };
+        };
+
+        // 3. Execute the probe using the client DTO request
+        let req = ProbeRequest {
+            provider_id: provider_id.clone(),
+            model: model.clone(),
+            level,
+            timeout_seconds,
+            token_cap: Some(declared_max),
+        };
+
+        match c.run_probe(req).await {
+            Ok(resp) => ProbeResult {
+                provider_id,
+                model,
+                declared_max,
+                tested_input_tokens: level.tokens(),
+                success: resp.success,
+                usage: resp.usage,
+                latency_ms: resp.latency_ms,
+                error: resp.error,
+                timestamp,
+                ttl_seconds,
+                cancelled: resp.cancelled,
+            },
+            Err(err) => {
+                let is_cancelled = err == "cancelled" || err == "canceled";
+                ProbeResult {
+                    provider_id,
+                    model,
+                    declared_max,
+                    tested_input_tokens: level.tokens(),
+                    success: false,
+                    usage: None,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                    error: Some(err),
+                    timestamp,
+                    ttl_seconds,
+                    cancelled: is_cancelled,
+                }
+            }
+        }
     }
 
     /// Performs a controlled mock probe runner to avoid expensive default LLM startup.
@@ -492,6 +597,219 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_run_probe_gate_off_short_circuits() {
+        struct TrackingClient {
+            called: std::sync::atomic::AtomicBool,
+        }
+        #[async_trait]
+        impl ProviderProbeClient for TrackingClient {
+            async fn run_probe(&self, _req: ProbeRequest) -> Result<ProbeResponse, String> {
+                self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(ProbeResponse {
+                    success: true,
+                    usage: None,
+                    latency_ms: 10,
+                    error: None,
+                    cancelled: false,
+                })
+            }
+        }
+
+        std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
+
+        let client = TrackingClient {
+            called: std::sync::atomic::AtomicBool::new(false),
+        };
+        let runner = ContextProbeRunner::new();
+        let res = runner
+            .run_probe(
+                "test_provider".to_string(),
+                "test_model".to_string(),
+                ProbeLevel::Level128K,
+                131_072,
+                3600,
+                30,
+                Some(&client),
+            )
+            .await;
+
+        // Gate is off: client must NEVER be called, but it returns a simulated successful ProbeResult.
+        assert!(!client.called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(res.success);
+        assert_eq!(res.tested_input_tokens, 128_000);
+    }
+
+    #[tokio::test]
+    async fn test_run_probe_gate_on_success() {
+        struct TrackingClient {
+            called: std::sync::atomic::AtomicBool,
+        }
+        #[async_trait]
+        impl ProviderProbeClient for TrackingClient {
+            async fn run_probe(&self, req: ProbeRequest) -> Result<ProbeResponse, String> {
+                self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(ProbeResponse {
+                    success: true,
+                    usage: Some(ProbeUsage {
+                        prompt_tokens: req.level.tokens(),
+                        completion_tokens: 5,
+                    }),
+                    latency_ms: 15,
+                    error: None,
+                    cancelled: false,
+                })
+            }
+        }
+
+        std::env::set_var("HAJIMI_CONTEXT_PROBE_REAL", "true");
+
+        let client = TrackingClient {
+            called: std::sync::atomic::AtomicBool::new(false),
+        };
+        let runner = ContextProbeRunner::new();
+        let res = runner
+            .run_probe(
+                "test_provider".to_string(),
+                "test_model".to_string(),
+                ProbeLevel::Level256K,
+                262_144,
+                3600,
+                30,
+                Some(&client),
+            )
+            .await;
+
+        // Gate is on: client MUST be called, returning real success ProbeResult.
+        assert!(client.called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(res.success);
+        assert_eq!(res.tested_input_tokens, 256_000);
+
+        std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
+    }
+
+    #[tokio::test]
+    async fn test_run_probe_gate_on_unsupported_provider_fallback() {
+        std::env::set_var("HAJIMI_CONTEXT_PROBE_REAL", "true");
+
+        let runner = ContextProbeRunner::new();
+        let res = runner
+            .run_probe(
+                "unsupported_provider".to_string(),
+                "unsupported_model".to_string(),
+                ProbeLevel::Level128K,
+                131_072,
+                3600,
+                30,
+                None, // Missing/unsupported client
+            )
+            .await;
+
+        // Should return a failed ProbeResult with description
+        assert!(!res.success);
+        assert!(res.error.unwrap().contains("No provider client"));
+
+        std::env::remove_var("HAJIMI_CONTEXT_PROBE_REAL");
+    }
+
+    #[tokio::test]
+    async fn test_run_probe_malformed_cache_fallback() {
+        let path = resolve_probe_path("malformed_provider", "malformed_model");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // Write invalid JSON content
+        std::fs::write(&path, "{malformed_json_here:").unwrap();
+
+        // Load must return an error and NOT panic
+        let load_res = ProbeResult::load_from_file("malformed_provider", "malformed_model").await;
+        assert!(load_res.is_err());
+
+        let load_sync_res =
+            ProbeResult::load_from_file_sync("malformed_provider", "malformed_model");
+        assert!(load_sync_res.is_err());
+
+        // Cleanup
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_budget_stale_ttl_fallback() {
+        use crate::context_budget::{
+            resolve_context_budget, BudgetResolveInput, ContextCapabilityStatus,
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Create an expired probe result
+        let probe = ProbeResult {
+            provider_id: "deepseek".to_string(),
+            model: "deepseek-v4-pro".to_string(),
+            declared_max: 1_000_000,
+            tested_input_tokens: 900_000,
+            success: true,
+            usage: Some(ProbeUsage {
+                prompt_tokens: 900_000,
+                completion_tokens: 10,
+            }),
+            latency_ms: 1200,
+            error: None,
+            timestamp: now - 3600, // 1 hour ago
+            ttl_seconds: 1800,     // TTL is 30 mins
+            cancelled: false,
+        };
+
+        let budget = resolve_context_budget(BudgetResolveInput {
+            provider_id: Some("deepseek".to_string()),
+            model: Some("deepseek-v4-pro".to_string()),
+            probe_result: Some(probe),
+            ..BudgetResolveInput::default()
+        });
+
+        // Expired probe should mark it as Stale and fall back to 128K budget
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Stale);
+        assert_eq!(budget.max_context_tokens, 128_000);
+        assert!(budget.fallback_reason.unwrap().contains("expired"));
+    }
+
+    #[test]
+    fn test_budget_cascade_gradient_fallback() {
+        use crate::context_budget::{
+            resolve_context_budget, BudgetResolveInput, ContextCapabilityStatus,
+        };
+
+        // 900K failed probe should cascade fallback to 512K limit
+        let probe_900k = ProbeResult {
+            provider_id: "deepseek".to_string(),
+            model: "deepseek-v4-pro".to_string(),
+            declared_max: 1_000_000,
+            tested_input_tokens: 900_000,
+            success: false,
+            usage: None,
+            latency_ms: 100,
+            error: Some("OOM".to_string()),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            ttl_seconds: 3600,
+            cancelled: false,
+        };
+
+        let budget = resolve_context_budget(BudgetResolveInput {
+            provider_id: Some("deepseek".to_string()),
+            model: Some("deepseek-v4-pro".to_string()),
+            probe_result: Some(probe_900k),
+            ..BudgetResolveInput::default()
+        });
+
+        assert_eq!(budget.capability_status, ContextCapabilityStatus::Fallback);
+        assert_eq!(budget.max_context_tokens, 512_000);
+    }
+
+    #[tokio::test]
     async fn test_probe_save_load() {
         let res = ProbeResult {
             provider_id: "test_provider".to_string(),
@@ -516,7 +834,6 @@ mod tests {
         // Save
         res.save_to_file().await.unwrap();
 
-        // Load
         let loaded = ProbeResult::load_from_file("test_provider", "test_model")
             .await
             .unwrap();
