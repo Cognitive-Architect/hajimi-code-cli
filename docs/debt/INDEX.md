@@ -20,6 +20,11 @@ Use this file first:
 | `DEBT-UX-B07-001-TAURI-DEV-SMOKE-BLOCKED.md` | Tauri dev smoke blocker remains active. |
 | `SHELL-FEATURE-DEBT-002.md` | Complex shell features remain intentionally downgraded by design. |
 
+## Code-Level Guides & Closure Receipts
+
+- `docs/debt/code-level/PRIORITY-GUIDE.md`: Actions and prioritization guide for P0/P1/P1-C security and functional debt.
+- `docs/debt/code-level/DEBTFIX-V5-CLOSURE-RECEIPT.md`: Closure receipt for the entire DebtFix V5 cluster.
+
 ## Archived In Latest Pass
 
 Moved to `archive/05/debt-history`:

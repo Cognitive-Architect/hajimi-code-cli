@@ -198,6 +198,7 @@ Day 9 wrapper 必须至少覆盖：
   - `cargo check -p hajimi-desktop` -> 🟢 PASS
 
 #### I. Day 10 前端第二切片 Settings Panel 提取完成结果
+- **路径选择**: `SECOND-SLICE`。Day 9 `inspector.js` 已通过 Day18 smoke / security gate / desktop check，因此 Day 10 继续提取第二切片，而非走 `REGRESSION-BUFFER`。
 - **实际完成状态**: 🟢 已成功创建 `src/interface/web/modules/settings-panel.js` 并将 sidebar 切换与 settings tab 导航方法 (`showSidebar`, `setupSettingsTabs`, `switchSettingsTab`) 从 `app.js` 物理抽取。
 - **低风险与兼容性保障**: `app.js` 完美保留了全部 3 个同名 forwarding wrappers，保证了前后端调用路径的 100% 向下兼容。设置模块仅处理页面 DOM 类 toggle 与 sidebar 显示状态，所有的 Provider 添加、更新、删除等高内聚写逻辑完全保留在 `app.js` 原有高可靠位置，绝不越界。
 - **安全免审合规**: 新增模块不使用任何 raw `innerHTML` 或 `insertAdjacentHTML`，完全满足 P0 级安全沙箱零新增安全隐患要求，无需修改 allowlist 文件。
@@ -208,5 +209,13 @@ Day 9 wrapper 必须至少覆盖：
   - `node tests/frontend/day14_sessions_thinking_modules_smoke.js` -> 🟢 PASS
   - `node tests/frontend/day16_slash_palette_smoke.js` -> 🟢 PASS
   - `node tests/frontend/day17_thinking_ui_v2_security_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day18_inspector_smoke.js` -> 🟢 PASS
+  - `node tests/frontend/day19_settings_smoke.js` -> 🟢 PASS
+  - `npm run test:security-gate` -> 🟢 PASS
   - `cargo check -p hajimi-desktop` -> 🟢 PASS
-
+- **Day 11 closure input**:
+  - 模块化状态：`inspector.js` 与 `settings-panel.js` 均已抽取，`app.js` 保留兼容 wrappers。
+  - 自动化状态：前端语法、Day13/14/16/17/18/19 smoke、security gate、desktop check、`git diff --check` 均为绿灯。
+  - 回滚点：`src/interface/web/app.js`、`src/interface/web/index.html`、`src/interface/web/modules/inspector.js`、`src/interface/web/modules/settings-panel.js`、`tests/frontend/day18_inspector_smoke.js`、`tests/frontend/day19_settings_smoke.js`。
+  - Day 11 closure blocker：无自动化 blocker。
+  - 残余风险：真实 Tauri WebView manual smoke 待补，需人工确认 Inspector Tab、Context Receipt refresh、Settings tab/sidebar navigation 在真实窗口内可点击。

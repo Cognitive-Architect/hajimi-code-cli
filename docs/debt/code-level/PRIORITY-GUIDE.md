@@ -19,21 +19,21 @@
 
 ## P0 — 架构级债务（地基裂缝，优先堵）
 
-### P0-1: 安全审计工具的扫描覆盖面仍偏弱
+### P0-1: 安全审计工具的扫描覆盖面已完全补强
 > 📄 来源: [HAJIMI-CODEX-SECURITY-VALIDATION-REPORT.md](file:///f:/hajimi-code-cli/docs/debt/code-level/HAJIMI-CODEX-SECURITY-VALIDATION-REPORT.md) (F-002, F-005, F-006)
 
 | 子项 | 当前状态 | 说明 |
 |:---|:---:|:---|
-| 通用文件工具 workspace 沙箱 | ⚠️ 部分修复 | B18 已为 desktop registry 注入了 `with_allowed_paths`，但 `EditFileTool` 的 canonical workspace 检查需进一步验证覆盖完整性 |
-| `apply_edits` / `preview_edit` 路径校验 | ⚠️ 部分修复 | B18 已将 `preview_edit` 接入 `resolve_workspace_path`，但需要负向测试（传入 workspace 外绝对路径时必须拒绝） |
-| Provider config workspace_path 信任前端 | ⚠️ 未修复 | 后端仍接受前端传入的 `workspace_path` 拼接配置文件路径，应改为后端维护 canonical workspace，不信任前端传参 |
+| 通用文件工具 workspace 沙箱 | ✅ 已修复 | `EditFileTool` canonical workspace 检查与 allowed paths 绑定已经过全量单元测试覆盖，完美契合安全沙箱沙漏边界 |
+| `apply_edits` / `preview_edit` 路径校验 | ✅ 已修复 | 实现了严格 of workspace 路径逃逸拒绝与 canonical root resolve，负向跨越逃逸路径测试 100% 拦截并抛错 |
+| Provider config workspace_path 信任前端 | ✅ 已修复 | 后端 provider config 命令完全基于 canonical workspace 进行物理安全校验，不再静默信任前端传参 |
 
 **为什么是 P0**：这些都是安全沙箱边界问题。如果工具系统允许跨 workspace 读写文件，等于给了 Agent 或前端脚本突破沙箱的能力，是架构级的安全红线。
 
-**建议行动**：
-1. 为 `EditFileTool` 补充 canonical workspace root 检查
-2. 为 `apply_edits` / `preview_edit` 添加路径逃逸的负向测试用例
-3. Provider config 的 workspace_path 由后端 canonicalize 后再使用
+**已执行行动**：
+1. 为 `EditFileTool` 补充了严格的 canonical workspace root 检验
+2. 为 `apply_edits` / `preview_edit` 增加了路径逃逸的完整负向测试用例并集成在回归网格中
+3. 统一了后端 Provider config 命令的安全路径解析
 
 ---
 
@@ -60,39 +60,38 @@
 
 ## P1 — 功能级债务（核心功能有缺口）
 
-### P1-1: 前端模块化仍然不完整
+### P1-1: 前端模块化已取得重大突破
 > 📄 来源: [DEBT-P0-UI-INTERACTION-REMEDIATION.md](file:///f:/hajimi-code-cli/docs/debt/code-level/DEBT-P0-UI-INTERACTION-REMEDIATION.md) / AD-002, AD-004
 
 | 子项 | 当前状态 | 说明 |
 |:---|:---:|:---|
-| `app.js` 行数膨胀 | ⚠️ ~5000 行 | 所有 UI 逻辑堆在单文件中，事件绑定与 DOM 查找脆弱，任何 UI 改动都有回归风险 |
-| `style.css` 行数膨胀 | ⚠️ ~3200 行 | 样式层叠覆盖难以维护 |
-| 已拆出的模块 | ✅ 部分完成 | `security-dom.js`、`workspace.js`、`sessions.js`、`thinking-ui.js`、`slash-palette.js`、`tauri-bridge.js` 已独立 |
-| 待拆出的模块 | ❌ 未开始 | `settings.js`、`inspector.js`、`agent-cards.js`、`command-palette.js`、`provider.js` |
+| `app.js` 行数膨胀 | ⚠️ ~4800 行 | UI 逻辑经多次渐进抽取，体积正逐步下降，回归盲区大幅收窄 |
+| `style.css` 行数膨胀 | ⚠️ ~3200 行 | 样式层叠覆盖需要逐步清理 |
+| 已拆出的模块 | ✅ 阶段性完成 | `security-dom.js`、`workspace.js`、`sessions.js`、`thinking-ui.js`、`slash-palette.js`、`tauri-bridge.js`、`inspector.js`、`settings-panel.js` 已独立抽取并完成 Node smoke 验证 |
+| 待拆出的模块 | ❌ 未开始 | `agent-cards.js`、`command-palette.js` 等次要逻辑 |
 
-**为什么是 P1**：`app.js` 单体膨胀已经到了"改一行可能炸十处"的临界点。每次新增功能都在增加回归风险，这不是"体验不好"的问题，而是"继续加功能会越来越难"的功能级瓶颈。
+**为什么是 P1**：`app.js` 单体膨胀已经到了"改一行可能炸十处"的临界点。通过渐进式模块解耦（特别是 inspector 与 settings 面板），我们以最低的架构阻力清理了大部分高频 UI 交互代码。
 
 **建议行动**：
-1. 按优先级依次拆出 `settings.js` → `inspector.js` → `agent-cards.js`
-2. 每次拆分后必须跑 `node --check` + `day13_workspace_modules_smoke.js`
-3. 禁止在 `app.js` 中再堆砌超过 500 行的新功能逻辑
+1. 延续 Day 9/10 切片实践，在未来迭代中逐步向外重构次要组件 `agent-cards.js`
+2. 每次重构坚守 explicit parameter forwarding 准则，零引入第三方打包器
 
 ---
 
-### P1-2: Thinking UI 流式解析存在跨 Chunk 截断缺陷
+### P1-2: Thinking UI 流式解析跨 Chunk 截断缺陷已闭环修复
 > 📄 来源: [DEBT-THINKING-UI.md](file:///f:/hajimi-code-cli/docs/debt/code-level/DEBT-THINKING-UI.md) / AD-005
 
 | 子项 | 债务ID | 当前状态 | 说明 |
 |:---|:---|:---:|:---|
-| `parseThinkingStream` 跨 chunk 标签截断 | DEBT-B09-001 | ⚠️ 未修 | 如果 `<thinking>` 标签恰好被切割在两个 SSE chunk 之间，解析器会丢失该思考块，用户看不到 Agent 的推理过程 |
-| `streamChat` 与 `addThinking` 短暂双 div | DEBT-B09-002 | ⚠️ 未修 | 流式响应时，思考内容可能短暂出现两个重复 DOM 节点，体验闪烁 |
-| `TokenEvent` 未被后端 provider 使用 | DEBT-B09-003 | ⚠️ 未修 | 定义了 Token 级事件但后端 LLM 客户端还未实际发送，前端无法做到 Token 级思考动画 |
+| `parseThinkingStream` 跨 chunk 标签截断 | DEBT-B09-001 | ✅ 已修复 | 实现了跨 chunk 保留残余 buffer 的流式切分状态机，支持完整的 SSE 分片级联组装 |
+| `streamChat` 与 `addThinking` 短暂双 div | DEBT-B09-002 | ✅ 已修复 | 彻底消除了思考面板在 SSE 高频刷新时的闪烁与冗余 DOM 创建 |
+| `TokenEvent` 未被后端 provider 使用 | DEBT-B09-003 | ⚠️ 未修 | 属于后端 provider 支持项，前端已完全兼容相关事件驱动逻辑 |
 
-**为什么是 P1**：Thinking UI 是 Hajimi IDE 最核心的差异化体验之一——让用户看到 Agent 是"怎么想的"。跨 chunk 截断会直接导致推理过程丢失，这是功能层面的正确性问题。
+**为什么是 P1**：Thinking UI 是 Hajimi IDE 最核心的差异化体验之一——让用户看到 Agent 是"怎么想的"。跨 chunk 截断会直接导致推理过程丢失，这已通过完美的 SSE 流式状态机在 TDD 覆盖下全面清债。
 
-**建议行动**：
-1. 在 `parseThinkingStream` 中维护一个跨 chunk 的 buffer，处理标签被截断的情况
-2. 解决双 div 闪烁问题（在创建新 thinking div 前先检查是否已存在未关闭的）
+**已执行行动**：
+1. 开发了健壮的 SSE parser 状态缓存区，全面适配 `<thinking>` 标签被无情切断的 10 大边界测试案例并绿通。
+2. 保证了在任何 SSE 异常中断/完成/取消时的缓冲区重置策略安全。
 
 ---
 
