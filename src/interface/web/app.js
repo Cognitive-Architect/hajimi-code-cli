@@ -3231,7 +3231,11 @@ window.app = {
             renderThinking(result.thinking);
             if (result.response) renderResponse(result.response);
           } else if (result.state === 'response') {
-            renderThinking(result.thinking);
+            const hasContent = (result.thinking || '').trim().length > 0;
+            this.updateTurnThinking(turn, { state: hasContent ? 'done' : 'empty', content: result.thinking });
+            renderResponse(result.response);
+          } else if (result.state === 'empty') {
+            this.updateTurnThinking(turn, { state: 'empty', content: '' });
             renderResponse(result.response);
           }
           msgContainer.scrollTop = msgContainer.scrollHeight;

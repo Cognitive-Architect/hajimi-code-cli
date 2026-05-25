@@ -1,6 +1,32 @@
 (function (global) {
   'use strict';
 
+  const PARTIAL_OPEN_TAGS = [
+    '<thinking', '<thinkin', '<thinki', '<think', '<thin', '<thi', '<th', '<t', '<'
+  ];
+
+  const PARTIAL_CLOSE_TAGS = [
+    '</thinking', '</thinkin', '</thinki', '</think', '</thin', '</thi', '</th', '</t', '</'
+  ];
+
+  function getPartialOpenSuffix(text) {
+    for (const prefix of PARTIAL_OPEN_TAGS) {
+      if (text.endsWith(prefix)) {
+        return prefix;
+      }
+    }
+    return '';
+  }
+
+  function getPartialCloseSuffix(text) {
+    for (const prefix of PARTIAL_CLOSE_TAGS) {
+      if (text.endsWith(prefix)) {
+        return prefix;
+      }
+    }
+    return '';
+  }
+
   function getThinkingTag(buffer) {
     const tags = [
       { open: '<thinking>', close: '</thinking>' },
@@ -13,32 +39,103 @@
   }
 
   function parseThinkingStream(buffer) {
-    const text = String(buffer || '');
+    const rawText = String(buffer || '');
+    let text = rawText;
+
+    const openTagStarts = ['<thinking', '<think'];
+    let earliestStart = -1;
+    for (const startTag of openTagStarts) {
+      const idx = text.indexOf(startTag);
+      if (idx !== -1 && (earliestStart === -1 || idx < earliestStart)) {
+        earliestStart = idx;
+      }
+    }
+
+    if (earliestStart !== -1) {
+      const closingBracketIdx = text.indexOf('>', earliestStart);
+      if (closingBracketIdx === -1) {
+        text = text.slice(0, earliestStart);
+      }
+    } else {
+      const partialOpen = getPartialOpenSuffix(text);
+      if (partialOpen) {
+        text = text.slice(0, -partialOpen.length);
+      }
+    }
+
+    let response = '';
+    let thinkings = [];
+    let state = 'idle';
+    let currentIndex = 0;
+
+    while (currentIndex < text.length) {
+      const remaining = text.slice(currentIndex);
+      const tags = [
+        { open: '<thinking>', close: '</thinking>' },
+        { open: '<think>', close: '</think>' },
+      ];
+      const tagMatches = tags
+        .map(tag => ({ ...tag, index: remaining.indexOf(tag.open) }))
+        .filter(tag => tag.index !== -1)
+        .sort((a, b) => a.index - b.index);
+
+      if (tagMatches.length === 0) {
+        response += remaining;
+        break;
+      }
+
+      const tag = tagMatches[0];
+      const tStart = currentIndex + tag.index;
+      response += text.slice(currentIndex, tStart);
+
+      const contentStart = tStart + tag.open.length;
+      let tEnd = text.indexOf(tag.close, contentStart);
+
+      if (tEnd === -1) {
+        let thinkingContent = text.slice(contentStart);
+        const partialClose = getPartialCloseSuffix(thinkingContent);
+        if (partialClose) {
+          thinkingContent = thinkingContent.slice(0, -partialClose.length);
+        }
+        thinkings.push(thinkingContent);
+        state = 'thinking';
+        currentIndex = text.length;
+      } else {
+        const thinkingContent = text.slice(contentStart, tEnd).trim();
+        thinkings.push(thinkingContent);
+        state = 'response';
+        currentIndex = tEnd + tag.close.length;
+      }
+    }
+
+    let thinking = thinkings.length > 0 ? thinkings.join('\n') : null;
+    if (thinking === '') {
+      state = 'empty';
+    }
+
+    // Strip/parse <response> block if present in final response
     const respOpen = '<response>';
     const respClose = '</response>';
-    const tag = getThinkingTag(text);
-    if (!tag) {
-      return { thinking: null, response: text, state: 'idle' };
-    }
-    const tStart = tag.index;
-    const beforeThinking = text.slice(0, tStart);
-    const tEnd = text.indexOf(tag.close, tStart + tag.open.length);
-    if (tEnd === -1) {
-      const thinking = text.slice(tStart + tag.open.length);
-      return { thinking, response: beforeThinking || null, state: 'thinking' };
-    }
-    const thinking = text.slice(tStart + tag.open.length, tEnd).trim();
-    let response = '';
-    const rStart = text.indexOf(respOpen, tEnd);
+    const rStart = response.indexOf(respOpen);
     if (rStart !== -1) {
-      const rEnd = text.indexOf(respClose, rStart);
+      const rEnd = response.indexOf(respClose, rStart + respOpen.length);
       response = rEnd !== -1
-        ? text.slice(rStart + respOpen.length, rEnd)
-        : text.slice(rStart + respOpen.length);
+        ? response.slice(rStart + respOpen.length, rEnd)
+        : response.slice(rStart + respOpen.length);
     } else {
-      response = beforeThinking + text.slice(tEnd + tag.close.length);
+      // Strip partial response tag at the end
+      const partialResponseTags = [
+        '<response', '<respon', '<respo', '<resp', '<res', '<re', '<r'
+      ];
+      for (const prefix of partialResponseTags) {
+        if (response.endsWith(prefix)) {
+          response = response.slice(0, -prefix.length);
+          break;
+        }
+      }
     }
-    return { thinking, response, state: 'response' };
+
+    return { thinking, response, state };
   }
 
   function parseStreamEvent(buffer, event = {}) {
