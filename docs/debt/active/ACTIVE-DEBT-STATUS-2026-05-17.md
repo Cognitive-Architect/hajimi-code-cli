@@ -74,6 +74,7 @@ Moved to `archive/05/debt-history`:
 | `DEBT-B16-SLASH-SAFETY-REMEDIATION.md` | B16 receipt accepted as implementation history; active statuses are promoted into this summary. |
 | `ACTIVE-DEBT-STATUS-2026-05-17-B16-D06-SUGGESTED.md` | Suggested B16 update promoted into the current active source of truth. |
 | `DEBT-AGENT-PROMPT-001.md` | Original "core prompt entirely missing" baseline is superseded by Agent Persona, context window, tool manifest, and prompt golden implementation. Residual productization remains as AD-006. |
+| `DEBT-B18-SECURITY-HARDENING-CLOSURE.md` | B18 security hardening is 100% completed and cleared at code level; allowlisted warnings remain tracked by the gate. |
 
 Previously archived cleared, inactive, or superseded documents remain in `archive/05/debt-history`.
 

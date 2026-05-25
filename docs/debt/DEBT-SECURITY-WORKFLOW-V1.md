@@ -30,7 +30,7 @@
 | SecurityAuditTool | `rg -n "SecurityAuditTool|security_audit|Finding|AuditResult" src/engine/tool-system/src/security.rs src/engine/tool-system/src/mod.rs` | Found `SecurityAuditTool`, `Finding`, `AuditResult`, and tool name `security_audit` |
 | Gate script | `rg -n "security_audit_gate|test:security-gate" tests/security package.json` | `package.json:12` points to `node tests/security/security_audit_gate.js` |
 | CI | `rg -n "security\\.yml|test:security-gate" .github/workflows/security.yml package.json` | `.github/workflows/security.yml:25` runs `npm run test:security-gate` |
-| B18 closure | `rg -n "withGlobalTauri=false|withGlobalTauri|run_command|Security Audit Gate V1|B-18|B18" docs/debt/DEBT-B18-SECURITY-HARDENING-CLOSURE.md tests/security/security_audit_gate.js` | B18 closure and gate fail checks found |
+| B18 closure | `rg -n "withGlobalTauri=false|withGlobalTauri|run_command|Security Audit Gate V1|B-18|B18" archive/05/debt-history/DEBT-B18-SECURITY-HARDENING-CLOSURE.md tests/security/security_audit_gate.js` | B18 closure and gate fail checks found |
 | Tauri config | `rg -n '"csp"|withGlobalTauri' src/interface/desktop/tauri.conf.json` | `withGlobalTauri=false`; CSP is non-null |
 | DOM surface | `rg -n "innerHTML|outerHTML|insertAdjacentHTML|onclick=|onerror=|onload=" src/interface/web` | 108 matches, matching current gate warning count |
 | Direct Tauri global usage | `rg -n "window\\.__TAURI__|tauri\\.core|tauri\\.invoke" src/interface/web` | 0 matches |
