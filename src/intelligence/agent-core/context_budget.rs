@@ -294,11 +294,6 @@ pub fn resolve_context_budget(input: BudgetResolveInput) -> ContextBudget {
             limit,
             ContextCapabilityStatus::Declared,
         )
-    } else if is_local_model(&provider_id, &model) {
-        let mut fallback = ModelContextCaps::legacy_8k();
-        fallback.provider_id = provider_id.clone();
-        fallback.model = model.clone();
-        fallback
     } else {
         let mut fallback = ModelContextCaps::legacy_8k();
         fallback.provider_id = provider_id.clone();
@@ -561,12 +556,6 @@ fn read_env_usize(key: &str) -> Option<usize> {
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-}
-
-fn is_local_model(provider_id: &str, model: &str) -> bool {
-    let provider = provider_id.to_ascii_lowercase();
-    let model = model.to_ascii_lowercase();
-    provider.contains("local") || provider.contains("ollama") || model.contains("local")
 }
 
 fn mode_for_limit(max_context_tokens: usize) -> ContextBudgetMode {

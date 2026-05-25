@@ -29,10 +29,7 @@ impl ProbeLevel {
     /// Check if the level is high_cost / requires_confirmation.
     /// 900K probe is identified as a high cost level.
     pub fn is_high_cost(&self) -> bool {
-        match self {
-            ProbeLevel::Level900K => true,
-            _ => false,
-        }
+        matches!(self, ProbeLevel::Level900K)
     }
 
     pub fn requires_confirmation(&self) -> bool {
@@ -169,6 +166,12 @@ pub fn generate_deterministic_payload(token_count: usize) -> String {
 // full_prompt, or promptText be saved to ProbeResult or written to disk.
 
 pub struct ContextProbeRunner {}
+
+impl Default for ContextProbeRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ContextProbeRunner {
     pub fn new() -> Self {

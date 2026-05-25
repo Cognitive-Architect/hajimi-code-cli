@@ -62,9 +62,11 @@ impl MemoryRetriever {
             resolve_input.model = Some(entry.value.clone());
         }
 
-        let mut caps = crate::context_budget::ProviderContextCaps::default();
-        caps.provider_id = resolve_input.provider_id.clone();
-        caps.model = resolve_input.model.clone();
+        let mut caps = crate::context_budget::ProviderContextCaps {
+            provider_id: resolve_input.provider_id.clone(),
+            model: resolve_input.model.clone(),
+            ..Default::default()
+        };
 
         let mut has_caps = false;
         if let Some(entry) = self.blackboard.read("__hajimi_max_context_tokens").await {

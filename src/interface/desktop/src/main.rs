@@ -1129,6 +1129,7 @@ struct ProviderConfig {
 }
 
 impl ProviderConfig {
+    #[allow(deprecated)]
     fn get_normalized_max_context_tokens(&self) -> Option<usize> {
         self.max_context_tokens.or(self.context_threshold)
     }
@@ -1199,6 +1200,60 @@ fn trusted_workspace_path_for_current(
         return Err("workspace 参数越界: 请求 workspace 不是当前 workspace".to_string());
     }
     Ok(Some(canonical_current))
+}
+
+fn trusted_workspace_config_path_for_current(
+    workspace_path: Option<&str>,
+    current: &Path,
+) -> Result<PathBuf, String> {
+    let workspace = trusted_workspace_path_for_current(workspace_path, current)?
+        .ok_or_else(|| "workspace 参数缺失".to_string())?;
+    Ok(workspace_config_path(&workspace))
+}
+
+fn add_workspace_provider_config_for_current(
+    config: ProviderConfig,
+    workspace_path: Option<&str>,
+    current: &Path,
+) -> Result<(), String> {
+    let path = trusted_workspace_config_path_for_current(workspace_path, current)?;
+    let mut configs = read_configs_at(&path);
+    if configs.iter().any(|c| c.id == config.id) {
+        return Err(format!("Provider '{}' already exists", config.id));
+    }
+    configs.push(config);
+    write_configs_to_path(&path, &configs)
+}
+
+fn update_workspace_provider_config_for_current(
+    config: ProviderConfig,
+    workspace_path: Option<&str>,
+    current: &Path,
+) -> Result<(), String> {
+    let path = trusted_workspace_config_path_for_current(workspace_path, current)?;
+    let mut configs = read_configs_at(&path);
+    let idx = configs
+        .iter()
+        .position(|c| c.id == config.id)
+        .ok_or_else(|| format!("Provider '{}' not found", config.id))?;
+    configs[idx] = config;
+    write_configs_to_path(&path, &configs)
+}
+
+fn delete_workspace_provider_config_for_current(
+    id: &str,
+    workspace_path: Option<&str>,
+    current: &Path,
+) -> Result<(), String> {
+    let path = trusted_workspace_config_path_for_current(workspace_path, current)?;
+    let mut configs = read_configs_at(&path);
+    configs.retain(|c| c.id != id);
+    if configs.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    } else {
+        write_configs_to_path(&path, &configs)
+    }
 }
 
 // Profile-level config lives in profiles/{name}/providers.json (B-05/01)
@@ -1480,22 +1535,24 @@ fn add_provider_config(
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
+    let target = save_target.as_deref().unwrap_or("global");
+    if target == "workspace" {
+        let current = get_workspace_dir(&app_handle)?;
+        trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
+        if !config.api_key.trim().is_empty() {
+            save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+        }
+        config.api_key.clear();
+        return add_workspace_provider_config_for_current(
+            config,
+            workspace_path.as_deref(),
+            &current,
+        );
+    }
     if !config.api_key.trim().is_empty() {
         save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
     }
     config.api_key.clear();
-    let target = save_target.as_deref().unwrap_or("global");
-    if target == "workspace" {
-        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
-            let path = workspace_config_path(&ws);
-            let mut configs = read_configs_at(&path);
-            if configs.iter().any(|c| c.id == config.id) {
-                return Err(format!("Provider '{}' already exists", config.id));
-            }
-            configs.push(config);
-            return write_configs_to_path(&path, &configs);
-        }
-    }
     let mut configs = read_provider_configs_with_profile(profile.as_deref());
     if configs.iter().any(|c| c.id == config.id) {
         return Err(format!("Provider '{}' already exists", config.id));
@@ -1517,23 +1574,24 @@ fn update_provider_config(
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
+    let target = save_target.as_deref().unwrap_or("global");
+    if target == "workspace" {
+        let current = get_workspace_dir(&app_handle)?;
+        trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
+        if !config.api_key.trim().is_empty() {
+            save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+        }
+        config.api_key.clear();
+        return update_workspace_provider_config_for_current(
+            config,
+            workspace_path.as_deref(),
+            &current,
+        );
+    }
     if !config.api_key.trim().is_empty() {
         save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
     }
     config.api_key.clear();
-    let target = save_target.as_deref().unwrap_or("global");
-    if target == "workspace" {
-        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
-            let path = workspace_config_path(&ws);
-            let mut configs = read_configs_at(&path);
-            let idx = configs
-                .iter()
-                .position(|c| c.id == config.id)
-                .ok_or_else(|| format!("Provider '{}' not found", config.id))?;
-            configs[idx] = config;
-            return write_configs_to_path(&path, &configs);
-        }
-    }
     let mut configs = read_provider_configs_with_profile(profile.as_deref());
     let idx = configs
         .iter()
@@ -1556,21 +1614,17 @@ fn delete_provider_config(
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let _ = delete_api_key_with_profile(&id, profile.as_deref());
     let target = delete_target.as_deref().unwrap_or("global");
     if target == "workspace" {
-        if let Some(ws) = trusted_workspace_path(workspace_path.as_deref(), &app_handle)? {
-            let path = workspace_config_path(&ws);
-            let mut configs = read_configs_at(&path);
-            configs.retain(|c| c.id != id);
-            if configs.is_empty() {
-                let _ = std::fs::remove_file(&path);
-                return Ok(());
-            } else {
-                return write_configs_to_path(&path, &configs);
-            }
+        let current = get_workspace_dir(&app_handle)?;
+        let result =
+            delete_workspace_provider_config_for_current(&id, workspace_path.as_deref(), &current);
+        if result.is_ok() {
+            let _ = delete_api_key_with_profile(&id, profile.as_deref());
         }
+        return result;
     }
+    let _ = delete_api_key_with_profile(&id, profile.as_deref());
     let mut configs = read_provider_configs_with_profile(profile.as_deref());
     configs.retain(|c| c.id != id);
     write_provider_configs_with_profile(profile.as_deref(), &configs)
@@ -1960,6 +2014,7 @@ async fn optimize_context(
 }
 
 #[tauri::command]
+#[allow(deprecated)]
 fn export_provider_backup(
     password: String,
     workspace_path: Option<String>,
@@ -2001,6 +2056,7 @@ fn export_provider_backup(
 }
 
 #[tauri::command]
+#[allow(deprecated)]
 fn import_provider_backup(
     password: String,
     file_path: String,
@@ -2240,6 +2296,7 @@ async fn set_agent_provider(
     Ok(())
 }
 
+#[allow(deprecated)]
 async fn write_provider_caps_to_blackboard(
     bb: &agent_core::blackboard::Blackboard,
     agent_id: &str,
@@ -2779,7 +2836,7 @@ fn preview_edit_for_path(
         ));
     }
     let content = std::fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
-    if !content.contains(&old_string) {
+    if !content.contains(old_string) {
         return Err("Old string not found in file".to_string());
     }
     let lines: Vec<&str> = content.lines().collect();
@@ -2902,8 +2959,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
-            let workspace_root = get_workspace_dir(app.handle())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let workspace_root = get_workspace_dir(app.handle()).map_err(std::io::Error::other)?;
             let state = AppState {
                 registry: build_registry(&workspace_root),
                 active_profile: std::sync::Mutex::new(None),
@@ -2999,6 +3055,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #![allow(deprecated)]
+
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3699,6 +3757,96 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("workspace 参数越界"));
         assert!(!err.contains(&temp.to_string_lossy().to_string()));
+        cleanup_test_workspace(&temp);
+    }
+
+    fn sample_provider_config(id: &str, name: &str) -> ProviderConfig {
+        ProviderConfig {
+            id: id.to_string(),
+            name: name.to_string(),
+            provider_type: "openai-compatible".to_string(),
+            api_key: String::new(),
+            base_url: "https://api.example.test/v1".to_string(),
+            model: "example-model".to_string(),
+            system_prompt: None,
+            context_threshold: None,
+            max_context_tokens: Some(128_000),
+            max_output_tokens: Some(8_192),
+            reserve_output_tokens: Some(1_024),
+            safety_margin_tokens: Some(512),
+            retrieval_budget_tokens: Some(4_096),
+            long_context_mode: Some(false),
+        }
+    }
+
+    #[test]
+    fn provider_workspace_write_helpers_add_update_delete_current_workspace() {
+        let (temp, workspace) = setup_test_workspace();
+        let path = workspace_config_path(&workspace);
+
+        add_workspace_provider_config_for_current(
+            sample_provider_config("workspace-provider", "Original"),
+            Some(&workspace.to_string_lossy()),
+            &workspace,
+        )
+        .expect("add workspace provider");
+        let configs = read_configs_at(&path);
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].name, "Original");
+
+        update_workspace_provider_config_for_current(
+            sample_provider_config("workspace-provider", "Updated"),
+            Some(&workspace.to_string_lossy()),
+            &workspace,
+        )
+        .expect("update workspace provider");
+        let configs = read_configs_at(&path);
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].name, "Updated");
+
+        delete_workspace_provider_config_for_current(
+            "workspace-provider",
+            Some(&workspace.to_string_lossy()),
+            &workspace,
+        )
+        .expect("delete workspace provider");
+        assert!(!path.exists());
+        cleanup_test_workspace(&temp);
+    }
+
+    #[test]
+    fn provider_workspace_write_helpers_reject_mismatched_workspace_without_writes() {
+        let (temp, workspace) = setup_test_workspace();
+        let outside = temp.join("outside-workspace");
+        std::fs::create_dir_all(&outside).expect("create outside workspace");
+        let outside_config_path = workspace_config_path(&outside);
+
+        let add_result = add_workspace_provider_config_for_current(
+            sample_provider_config("outside-provider", "Outside"),
+            Some(&outside.to_string_lossy()),
+            &workspace,
+        );
+        assert!(add_result.is_err());
+        assert!(add_result.unwrap_err().contains("workspace 参数越界"));
+        assert!(!outside_config_path.exists());
+
+        let update_result = update_workspace_provider_config_for_current(
+            sample_provider_config("outside-provider", "Outside"),
+            Some(&outside.to_string_lossy()),
+            &workspace,
+        );
+        assert!(update_result.is_err());
+        assert!(update_result.unwrap_err().contains("workspace 参数越界"));
+        assert!(!outside_config_path.exists());
+
+        let delete_result = delete_workspace_provider_config_for_current(
+            "outside-provider",
+            Some(&outside.to_string_lossy()),
+            &workspace,
+        );
+        assert!(delete_result.is_err());
+        assert!(delete_result.unwrap_err().contains("workspace 参数越界"));
+        assert!(!outside_config_path.exists());
         cleanup_test_workspace(&temp);
     }
 

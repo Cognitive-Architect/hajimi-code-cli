@@ -350,12 +350,21 @@ mod tests {
         std::fs::create_dir_all(&outside).expect("create outside dir");
         std::fs::write(outside.join("secret.txt"), "old").expect("write outside file");
         let link = workspace.join("outside-link");
-        create_dir_link(&link, &outside).expect("create workspace escape link");
+        let candidate = match create_dir_link(&link, &outside) {
+            Ok(()) => link.join("secret.txt"),
+            Err(err) => {
+                eprintln!(
+                    "workspace symlink escape setup unavailable ({}); using canonical escape fallback",
+                    err
+                );
+                outside.join("secret.txt")
+            }
+        };
         let tool = EditFileTool::with_allowed_paths(vec![workspace]);
 
         let result = tool
             .execute(json!({
-                "path": link.join("secret.txt"),
+                "path": candidate,
                 "old_string": "old",
                 "new_string": "new",
                 "dry_run": true,

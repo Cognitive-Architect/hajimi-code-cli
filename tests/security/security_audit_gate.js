@@ -239,6 +239,42 @@ function scanFileOpsBypass(files) {
   }
 }
 
+function scanProviderWorkspaceConfigSecurity() {
+  const raw = readText(desktopMainPath);
+  const commands = [
+    'fn get_provider_configs',
+    'fn add_provider_config',
+    'fn update_provider_config',
+    'fn delete_provider_config',
+    'fn get_providers',
+  ];
+  const workspaceSecurityPatterns = [
+    'trusted_workspace_path',
+    'trusted_workspace_path_for_current',
+    'trusted_workspace_config_path_for_current',
+    'delete_workspace_provider_config_for_current',
+  ];
+  for (const command of commands) {
+    const index = raw.indexOf(command);
+    if (index < 0) {
+      addFailure('desktop-provider-command-missing', desktopMainPath, 1, `${command} not found`);
+      continue;
+    }
+    let nextIndex = raw.indexOf('#[tauri::command]', index + command.length);
+    if (nextIndex < 0) {
+      nextIndex = raw.indexOf('fn ', index + command.length);
+    }
+    if (nextIndex < 0 || nextIndex > index + 4000) {
+      nextIndex = index + 4000;
+    }
+    const body = raw.slice(index, nextIndex);
+    const hasSecurityCheck = workspaceSecurityPatterns.some(pat => body.includes(pat));
+    if (!hasSecurityCheck) {
+      addFailure('desktop-provider-workspace-security', desktopMainPath, findLine(raw, command), `${command} must validate workspace path through workspace safety functions`);
+    }
+  }
+}
+
 function findLine(text, needle) {
   const index = text.split(/\r?\n/).findIndex(line => line.includes(needle));
   return index >= 0 ? index + 1 : 1;
@@ -284,7 +320,9 @@ function main() {
   scanWorkspaceBoundFileTools();
   scanInlineEditWorkspaceResolver();
   scanFileOpsBypass(webFiles);
+  scanProviderWorkspaceConfigSecurity();
   printSummary();
 }
 
 main();
+
