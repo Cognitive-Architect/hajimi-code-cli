@@ -2810,6 +2810,8 @@ name = "hajimi-desktop"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "async-trait",
+ "chimera-repl",
  "chrono",
  "codex-twist",
  "engine-llm-core",
@@ -2819,6 +2821,7 @@ dependencies = [
  "memory",
  "pbkdf2",
  "rand 0.8.5",
+ "regex",
  "secrecy 0.10.3",
  "serde",
  "serde_json",
@@ -2828,6 +2831,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-shell",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

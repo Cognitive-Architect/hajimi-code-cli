@@ -22,6 +22,8 @@ engine-llm-core = { path = "../../engine/llm-core" }
 codex-twist = { path = "../../intelligence/codex-twist" }
 intelligence-agent-core = { path = "../../intelligence/agent-core" }
 memory = { path = "../../intelligence/memory" }
+chimera-repl = { path = "../../intelligence/chimera/chimera-repl" }
+async-trait = "0.1"
 tokio = { version = "1.37", features = ["full"] }
 keyring = { version = "3", features = ["windows-native", "linux-native", "apple-native"] }
 secrecy = "0.10"
@@ -30,5 +32,8 @@ pbkdf2 = { version = "0.12", features = ["simple"] }
 sha2 = "0.10"
 rand = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
+uuid = { workspace = true }
+regex = { workspace = true }
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+stream-diagnostics = []

@@ -3,7 +3,7 @@
 use tokio::sync::mpsc;
 
 /// Stream chunk types for LLM responses
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamChunk {
     /// Output text chunk
     Output(String),

@@ -4710,6 +4710,99 @@ window.app = {
       if (!confirm('确定要手动修改执行 Plan 吗？')) return;
       this.invokeGovernance('update_plan', { plan });
     });
+
+    // Register Tauri event listener for agent approval request (Day 06)
+    const tauri = window.__TAURI__;
+    if (tauri && tauri.event && typeof tauri.event.listen === 'function') {
+      tauri.event.listen('approval_request', (event) => {
+        const payload = event.payload;
+        if (payload && payload.request_id) {
+          this.showApprovalModal(payload);
+        }
+      });
+    }
+  },
+
+  showApprovalModal(payload) {
+    const { request_id, action_type, risk_score, description } = payload;
+    
+    // Check if modal already exists
+    if (document.getElementById(`approval-overlay-${request_id}`)) return;
+    
+    const overlay = document.createElement('div');
+    overlay.id = `approval-overlay-${request_id}`;
+    overlay.className = 'premium-approval-overlay';
+    
+    let riskColor = '#4caf50'; // Low risk (green)
+    let riskText = '安全';
+    if (risk_score > 0.7) {
+      riskColor = '#ff453a'; // High risk (red)
+      riskText = '高危';
+    } else if (risk_score > 0.4) {
+      riskColor = '#ff9f0a'; // Medium risk (orange)
+      riskText = '中危';
+    }
+    
+    overlay.innerHTML = `
+      <div class="premium-approval-modal">
+        <div class="premium-approval-header">
+          <div class="premium-approval-title-row">
+            <span class="premium-approval-icon">🛡️</span>
+            <span class="premium-approval-title">安全治理审核</span>
+          </div>
+          <div class="premium-approval-risk-badge" style="background-color: ${riskColor}1A; color: ${riskColor}; border: 1px solid ${riskColor}40;">
+            <span class="risk-dot" style="background-color: ${riskColor};"></span>
+            ${riskText} (${(risk_score * 100).toFixed(0)}分)
+          </div>
+        </div>
+        <div class="premium-approval-body">
+          <div class="premium-approval-field">
+            <label>高危操作类型</label>
+            <div class="premium-approval-value-badge">${this.escapeHtml(action_type)}</div>
+          </div>
+          <div class="premium-approval-field">
+            <label>安全风险详情评估</label>
+            <div class="premium-approval-description">${this.escapeHtml(description)}</div>
+          </div>
+          <div class="premium-approval-warning">
+            ⚠️ 此操作属于受控或关键行为，可能影响系统配置或文件。请确认是否批准该操作？
+          </div>
+        </div>
+        <div class="premium-approval-footer">
+          <button class="premium-approval-btn reject-btn">拒绝执行</button>
+          <button class="premium-approval-btn approve-btn">批准授权</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    // Quick micro-animations trigger
+    setTimeout(() => {
+      overlay.classList.add('active');
+    }, 10);
+    
+    overlay.querySelector('.reject-btn').addEventListener('click', async () => {
+      overlay.classList.remove('active');
+      setTimeout(() => overlay.remove(), 300);
+      try {
+        await this.invokeTauri('resolve_agent_approval', { requestId: request_id, approved: false });
+        this.showToast('已拒绝该项操作的执行');
+      } catch (e) {
+        this.showErrorToast(`回传操作失败: ${e}`);
+      }
+    });
+    
+    overlay.querySelector('.approve-btn').addEventListener('click', async () => {
+      overlay.classList.remove('active');
+      setTimeout(() => overlay.remove(), 300);
+      try {
+        await this.invokeTauri('resolve_agent_approval', { requestId: request_id, approved: true });
+        this.showToast('已批准该项操作的执行');
+      } catch (e) {
+        this.showErrorToast(`回传操作失败: ${e}`);
+      }
+    });
   },
 
   async invokeGovernance(cmd, args = {}) {

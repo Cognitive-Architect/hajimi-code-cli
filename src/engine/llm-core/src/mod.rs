@@ -17,6 +17,30 @@ use std::env;
 pub use streaming::channel_stream::ChannelStream;
 pub use streaming::StreamChunk;
 
+/// Build a chat completions URL for OpenAI-compatible providers.
+///
+/// Many compatible providers ask users to paste a versioned base URL such as
+/// `https://api.example.com/v1` or `https://open.bigmodel.cn/api/paas/v4`.
+/// Appending another `/v1` breaks those endpoints, so versioned base paths get
+/// `/chat/completions` directly while host-only base URLs keep OpenAI's `/v1`.
+pub fn openai_chat_completions_url(base_url: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        return base.to_string();
+    }
+
+    let last_segment = base.rsplit('/').next().unwrap_or_default();
+    let versioned_base = last_segment.len() > 1
+        && last_segment.starts_with('v')
+        && last_segment[1..].chars().all(|c| c.is_ascii_digit());
+
+    if versioned_base {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    }
+}
+
 /// LLM provider enumeration
 ///
 /// Note: Debug is manually implemented to prevent api_key leakage
@@ -210,6 +234,39 @@ pub trait LlmClient: Send + Sync {
     /// Returns `None` if the provider did not include usage data in the
     /// response (e.g. older API versions or unsupported local models).
     fn last_usage(&self) -> Option<Usage>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::openai_chat_completions_url;
+
+    #[test]
+    fn openai_chat_url_appends_v1_for_host_only_base() {
+        assert_eq!(
+            openai_chat_completions_url("https://api.openai.com"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn openai_chat_url_preserves_versioned_provider_base() {
+        assert_eq!(
+            openai_chat_completions_url("https://api.deepseek.com/v1"),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert_eq!(
+            openai_chat_completions_url("https://open.bigmodel.cn/api/paas/v4"),
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        );
+    }
+
+    #[test]
+    fn openai_chat_url_keeps_explicit_endpoint() {
+        assert_eq!(
+            openai_chat_completions_url("https://api.example.test/v1/chat/completions"),
+            "https://api.example.test/v1/chat/completions"
+        );
+    }
 }
 
 /// Convert internal `ChatMessage` to tiktoken-rs format for exact counting.

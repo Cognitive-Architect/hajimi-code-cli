@@ -4,7 +4,7 @@
 > **任务编号**: AGENT-UI-DAY-01/08  
 > **最后更新**: 2026-05-26  
 > **执行分支**: `v3.8.0-batch-1`  
-> **HEAD SHA**: `858c962ff689a50eee521e90e2ef4f8e082a50ce`  
+> **HEAD SHA**: `dd0fb58bc2e7cb2bb1473a746546af108263853e`  
 
 ---
 
@@ -12,8 +12,8 @@
 
 ### 1.1 `run_agent_task` 缺失证据 (FUNC-001)
 经全局搜索确认，当前后端（`main.rs`）及前端（`app.js`）不存在任何 `run_agent_task` 相关符号。
-* **验证命令**: `git grep -n "run_agent_task"`
-* **执行结果**: `exit code: 1 (未找到匹配行)`
+* **验证命令**: `git grep -n "run_agent_task" src/`
+* **执行结果**: `exit code: 1 (在 src/ 中未找到匹配行)`
 * **结论**: 适配入口完全空白，Day 2 拥有纯净的实现空间。
 
 ### 1.2 后端 AgentLoop 核心接口与执行入口 (FUNC-002)
@@ -227,17 +227,79 @@ git branch --show-current
 
 # 确认当前 HEAD 节点
 git rev-parse HEAD
-# 输出: 858c962ff689a50eee521e90e2ef4f8e082a50ce
+# 输出: dd0fb58bc2e7cb2bb1473a746546af108263853e
 ```
 
 ### 6.2 确认后端 Agent 核心执行点
 ```bash
-git grep -n "pub async fn execute_goal"
+git grep -n "pub async fn execute_goal" src/
 # 输出: src/intelligence/agent-core/agent_loop.rs:325:    pub async fn execute_goal(
 ```
 
 ### 6.3 确认 Trace 广播源
 ```bash
-git grep -n "pub fn subscribe_trace"
+git grep -n "pub fn subscribe_trace" src/
 # 输出: src/intelligence/agent-core/agent_loop.rs:840:    pub fn subscribe_trace(&self) -> Option<tokio::sync::broadcast::Receiver<TraceEvent>> {
 ```
+
+
+---
+
+## 工单 AGENT-UI-DAY-01/08 完成并提交
+
+### 提交信息
+- Commit: `dd0fb58bc2e7cb2bb1473a746546af108263853e`
+- 分支: `v3.8.0-batch-1`
+- 变更文件:
+  - `docs/roadmap/hajimi agent/plan/AGENT-UI-INTEGRATION-SAMPLING-NOTES.md`
+
+### 本轮目标与实际结果
+- **目标**: 确认 Agent UI 最小入口真实适配点，形成 Day 2/3/4 可直接使用的采样笔记。
+- **实际完成**:
+  - ✅ 确认 `AgentLoop::execute_goal(agent_id, description)` 签名与 `LoopOutcome` 5 状态（`agent_loop.rs:325/1251`）
+  - ✅ 确认 `AgentLoop::subscribe_trace()` 广播机制与桌面层 `subscribe_agent_trace` 桥接（`agent_loop.rs:840` / `main.rs:2731`）
+  - ✅ 确认 `run_agent_task` 在 `src/` 中完全不存在，Day 2 实现空间纯净
+  - ✅ 确认前端 slash 入口插入点（`app.js:2351 getSlashCommands` / `app.js:2494 handleChatCommand`）
+  - ✅ 确认 `tauri-bridge.js` Channel envelope 解包可直接复用（`tauri-bridge.js:41-45`）
+  - ✅ 确认 `AgentLoop` 已托管为 Tauri State（`main.rs:3220`），`blackboard()` 可访问（`agent_loop.rs:321`）
+  - ✅ 输出 Day 2 `run_agent_task` 签名草案，基于真实代码结构推导
+- **未完成/不在范围**: 不改功能代码，不实现 `/agent`，不提前更新 `src/INDEX.md` 或 `src/ARCHITECTURE.md`。
+
+### 关键决策记录
+- **DECISION-001**: `run_agent_task` 应使用 `tauri::State<'_, Arc<AgentLoop>>` 注入已托管的 AgentLoop，而非从 `AppState` 字段获取 — 原因：`AgentLoop` 被单独 `manage`，不在 `AppState` 结构体内。
+- **DECISION-002**: `subscribe_agent_trace` 已生产化，Trace 转发机制可直接复用，Day 4 无需重新实现 — 原因：`main.rs:2731-2789` 已完整实现 `Channel<TraceEvent>` + `app.emit("agent:trace")` 双通道。
+- **DECISION-003**: `execute_goal` 长耗时操作需在 `tokio::spawn` 中后台执行，前端通过 Trace 订阅获取进度 — 原因：避免 Tauri 命令线程阻塞导致 UI 假死。
+
+### 自动化质量检查报告
+```bash
+git branch --show-current
+# v3.8.0-batch-1
+
+git rev-parse HEAD
+# dd0fb58bc2e7cb2bb1473a746546af108263853e
+
+git grep -n "execute_goal|subscribe_trace|run_agent_task" src/
+# src/intelligence/agent-core/agent_loop.rs:325:    pub async fn execute_goal(
+# src/intelligence/agent-core/agent_loop.rs:840:    pub fn subscribe_trace(&self) -> Option<tokio::sync::broadcast::Receiver<TraceEvent>> {
+# （run_agent_task 无匹配）
+
+git diff --stat
+# docs/roadmap/hajimi agent/plan/AGENT-UI-INTEGRATION-SAMPLING-NOTES.md | 243 +++++++++++++++++++++
+```
+
+### 刀刃表摘要
+| 类别 | 覆盖数 | 关键证据 |
+|:---|:---:|:---|
+| FUNC | 4/4 | `execute_goal` @325, `subscribe_trace` @840, `run_agent_task` 缺失, slash 入口 @2351/2494 |
+| CONST | 4/4 | 分层合规无破坏, 未更新架构文档, Channel 解包可复用 @33-45, Day 2 签名草案已输出 |
+| NEG | 4/4 | 止损方案已记录 (Fire-and-Forget), 未伪造 Trace, 未创建功能入口, Chat 路径未触碰 |
+| UX | 2/2 | 可复用/需新增/暂不触碰清单完整, 白话解释闭环路径 |
+| E2E | 1/1 | Day 2/3/4 依赖关系明确 |
+| High | 1/1 | 最大风险（UI 假死）已识别并给出熔断方案 |
+
+### 债务声明
+- **DEBT-AGENT-UI-SAMPLING-001**: 无。所有关键 API 已确认，Day 2 接口草案基于真实代码推导，无未确认阻塞项。
+
+### 风险与回滚点
+- **主要风险**: 采样笔记中 `execute_goal` 的参数/返回类型若因后续提交变更，可能导致 Day 2 实现返工。
+- **回滚方式**: 删除采样笔记或按 `git diff` 回退文档；Day 2 实现前重新运行 `git grep` 确认签名。

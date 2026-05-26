@@ -51,6 +51,8 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-007 Slash command suggestion panel | `IMPLEMENTED/PENDING-UI-SMOKE` | P1/P2 | archived `archive/05/debt-history/02-slash-command-palette.md`; archived B16 receipt | Slash Palette V1 is implemented and Node-smoked. The old "panel missing" debt is archived. Only real Tauri/WebView interaction evidence remains before final UI closure. |
 | AD-008 SecurityAuditTool quality | `IMPLEMENTED/GATED` | P2 | archived B16 receipt; `tests/security/security_audit_gate.js` | Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green. Remaining work is AST-level syntax scanning, narrower allowlist precision, and broader sink coverage. |
 | AD-009 Agent Skills V0 integration | `PARTIAL` | P2 | `docs/debt/DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is partially integrated: V0a (manifest, registry, router, planner/reflector injection, output evaluation) and V0b (constrained runtime permissions) are complete. V0c (Blackboard receipts and templates) is partially completed; Graph memory, Cloud sync, and Interface list-validate are deferred. |
+| AD-010 Agent UI integration | `OPEN` | **P0** | `docs/debt/DEBT-AGENT-UI-INTEGRATION.md` | Agent Core backend (7-step loop, Swarm, 40+ tools, Governance, Trace, Checkpoint) is fully implemented, but the chat UI has **no Agent mode entry point**. Users can only access `stream_chat` (pure chat), not `agent_loop`. This blocks all agent capabilities: tool calling, Trace, Operation Summary, Diff Preview, and Checkpoint. Product is currently a chatbot with Thinking UI decoration, not an agent IDE. |
+| AD-011 Agent Governance UI waiting | `IMPLEMENTED/PENDING-UI-SMOKE` | P1 | `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
 
 ## 4. Manual Verification Debt
 
@@ -83,7 +85,9 @@ Previously archived cleared, inactive, or superseded documents remain in `archiv
 The root `docs/debt` directory intentionally keeps only active debt declarations plus this index layer:
 
 ```text
+DEBT-AGENT-GOVERNANCE-UI-WAITING.md
 DEBT-AGENT-SKILLS-V0.md
+DEBT-AGENT-UI-INTEGRATION.md
 DEBT-FRONTEND-B13-UI-SMOKE-BLOCKED.md
 DEBT-P0-UI-INTERACTION-REMEDIATION.md
 DEBT-THINKING-UI.md
