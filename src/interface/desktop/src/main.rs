@@ -10,7 +10,8 @@ use agent_core::{
 };
 use codex_twist::memory::{MemoryGateway, MemoryTier, TokenBudget, TokenUsageTracker};
 use engine_llm_core::{
-    AnthropicClient, ChatMessage, Client, LlmClient, OllamaClient, OpenAiClient,
+    openai_chat_completions_url, AnthropicClient, ChatMessage, Client, LlmClient, OllamaClient,
+    OpenAiClient,
 };
 use engine_tool_system::lsp_integration::ASTContextProvider;
 use engine_tool_system::PermissionLevel;
@@ -1089,6 +1090,76 @@ struct StreamEvent {
     completion_tokens: Option<u64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamDiagnosticEvent {
+    stage: String,
+    session_id: Option<String>,
+    data: Value,
+}
+
+#[cfg(feature = "stream-diagnostics")]
+fn stream_diag_path() -> PathBuf {
+    if let Ok(path) = std::env::var("HAJIMI_STREAM_DIAG_PATH") {
+        return PathBuf::from(path);
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| std::env::temp_dir())
+        .join("hajimi-stream-diagnostics.jsonl")
+}
+
+#[cfg(feature = "stream-diagnostics")]
+fn preview_for_diagnostic(text: &str) -> String {
+    text.chars().take(120).collect()
+}
+
+#[cfg(feature = "stream-diagnostics")]
+fn write_stream_diagnostic(stage: &str, session_id: Option<&str>, data: Value) {
+    use std::io::Write;
+
+    let path = stream_diag_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let record = json!({
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "stage": stage,
+        "sessionId": session_id,
+        "data": data,
+    });
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{}", record);
+    }
+}
+
+#[cfg(not(feature = "stream-diagnostics"))]
+fn write_stream_diagnostic(_stage: &str, _session_id: Option<&str>, _data: Value) {}
+
+#[tauri::command]
+fn record_stream_diagnostic(event: StreamDiagnosticEvent) -> Result<(), String> {
+    write_stream_diagnostic(&event.stage, event.session_id.as_deref(), event.data);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_stream_diagnostic_info() -> Value {
+    #[cfg(feature = "stream-diagnostics")]
+    let path = Some(stream_diag_path().display().to_string());
+    #[cfg(not(feature = "stream-diagnostics"))]
+    let path: Option<String> = None;
+
+    json!({
+        "enabled": cfg!(feature = "stream-diagnostics"),
+        "path": path,
+    })
+}
+
 #[derive(Serialize, Clone)]
 struct ProviderInfo {
     name: String,
@@ -1132,6 +1203,47 @@ impl ProviderConfig {
     #[allow(deprecated)]
     fn get_normalized_max_context_tokens(&self) -> Option<usize> {
         self.max_context_tokens.or(self.context_threshold)
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ProviderConfigView {
+    id: String,
+    name: String,
+    provider_type: String,
+    base_url: String,
+    model: String,
+    system_prompt: Option<String>,
+    context_threshold: Option<usize>,
+    max_context_tokens: Option<usize>,
+    max_output_tokens: Option<usize>,
+    reserve_output_tokens: Option<usize>,
+    safety_margin_tokens: Option<usize>,
+    retrieval_budget_tokens: Option<usize>,
+    long_context_mode: Option<bool>,
+    has_api_key: bool,
+}
+
+impl ProviderConfigView {
+    #[allow(deprecated)]
+    fn from_config(config: ProviderConfig, has_api_key: bool) -> Self {
+        Self {
+            id: config.id,
+            name: config.name,
+            provider_type: config.provider_type,
+            base_url: config.base_url,
+            model: config.model,
+            system_prompt: config.system_prompt,
+            context_threshold: config.context_threshold,
+            max_context_tokens: config.max_context_tokens,
+            max_output_tokens: config.max_output_tokens,
+            reserve_output_tokens: config.reserve_output_tokens,
+            safety_margin_tokens: config.safety_margin_tokens,
+            retrieval_budget_tokens: config.retrieval_budget_tokens,
+            long_context_mode: config.long_context_mode,
+            has_api_key,
+        }
     }
 }
 
@@ -1316,20 +1428,45 @@ fn keyring_entry_id(id: &str, profile: Option<&str>) -> String {
     }
 }
 
+fn is_masked_api_key_placeholder(api_key: &str) -> bool {
+    let trimmed = api_key.trim();
+    trimmed.contains('•') || trimmed.contains("re-enter to update")
+}
+
+fn submitted_api_key(api_key: &str) -> Option<&str> {
+    let trimmed = api_key.trim();
+    if trimmed.is_empty() || is_masked_api_key_placeholder(trimmed) {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn provider_config_has_api_key(config: &ProviderConfig, profile: Option<&str>) -> bool {
+    submitted_api_key(&config.api_key).is_some()
+        || get_api_key_with_profile(&config.id, profile).is_ok()
+}
+
 #[allow(dead_code)]
 fn save_api_key(id: &str, api_key: &str) -> Result<(), String> {
     save_api_key_with_profile(id, api_key, None)
 }
 
 fn save_api_key_with_profile(id: &str, api_key: &str, profile: Option<&str>) -> Result<(), String> {
-    if api_key.trim().is_empty() {
+    let Some(api_key) = submitted_api_key(api_key) else {
         return Ok(());
-    }
+    };
     let entry = Entry::new("hajimi", &keyring_entry_id(id, profile))
         .map_err(|e| format!("keyring entry failed: {}", e))?;
     entry
         .set_password(api_key)
         .map_err(|e| format!("keyring set failed: {}", e))?;
+    let stored = entry
+        .get_password()
+        .map_err(|e| format!("keyring verify failed: {}", e))?;
+    if stored != api_key {
+        return Err("keyring verify failed: stored key mismatch".to_string());
+    }
     Ok(())
 }
 
@@ -1368,8 +1505,8 @@ fn migrate_provider_keys(
 ) -> Result<(), String> {
     let mut migrated = false;
     for cfg in configs.iter_mut() {
-        if !cfg.api_key.trim().is_empty() {
-            save_api_key_with_profile(&cfg.id, &cfg.api_key, profile)?;
+        if let Some(api_key) = submitted_api_key(&cfg.api_key) {
+            save_api_key_with_profile(&cfg.id, api_key, profile)?;
             cfg.api_key.clear(); // sanitize in memory too
             migrated = true;
         }
@@ -1507,7 +1644,7 @@ fn get_provider_configs(
     workspace_path: Option<String>,
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
-) -> Result<Vec<ProviderConfig>, String> {
+) -> Result<Vec<ProviderConfigView>, String> {
     // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
     let profile = state
         .active_profile
@@ -1515,10 +1652,15 @@ fn get_provider_configs(
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
-    Ok(read_merged_configs(
-        trusted_workspace.as_deref(),
-        profile.as_deref(),
-    ))
+    Ok(
+        read_merged_configs(trusted_workspace.as_deref(), profile.as_deref())
+            .into_iter()
+            .map(|config| {
+                let has_api_key = provider_config_has_api_key(&config, profile.as_deref());
+                ProviderConfigView::from_config(config, has_api_key)
+            })
+            .collect(),
+    )
 }
 
 #[tauri::command]
@@ -1539,8 +1681,8 @@ fn add_provider_config(
     if target == "workspace" {
         let current = get_workspace_dir(&app_handle)?;
         trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
-        if !config.api_key.trim().is_empty() {
-            save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+        if let Some(api_key) = submitted_api_key(&config.api_key) {
+            save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
         }
         config.api_key.clear();
         return add_workspace_provider_config_for_current(
@@ -1549,8 +1691,8 @@ fn add_provider_config(
             &current,
         );
     }
-    if !config.api_key.trim().is_empty() {
-        save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+    if let Some(api_key) = submitted_api_key(&config.api_key) {
+        save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
     }
     config.api_key.clear();
     let mut configs = read_provider_configs_with_profile(profile.as_deref());
@@ -1578,8 +1720,8 @@ fn update_provider_config(
     if target == "workspace" {
         let current = get_workspace_dir(&app_handle)?;
         trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
-        if !config.api_key.trim().is_empty() {
-            save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+        if let Some(api_key) = submitted_api_key(&config.api_key) {
+            save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
         }
         config.api_key.clear();
         return update_workspace_provider_config_for_current(
@@ -1588,8 +1730,8 @@ fn update_provider_config(
             &current,
         );
     }
-    if !config.api_key.trim().is_empty() {
-        save_api_key_with_profile(&config.id, &config.api_key, profile.as_deref())?;
+    if let Some(api_key) = submitted_api_key(&config.api_key) {
+        save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
     }
     config.api_key.clear();
     let mut configs = read_provider_configs_with_profile(profile.as_deref());
@@ -1673,7 +1815,7 @@ fn get_providers(
             || cfg.name.to_lowercase() == "openai";
         if !is_official {
             let available = get_api_key_with_profile(&cfg.id, profile.as_deref()).is_ok()
-                || !cfg.api_key.trim().is_empty();
+                || submitted_api_key(&cfg.api_key).is_some();
             providers.push(ProviderInfo {
                 name: cfg.id.clone(),
                 available,
@@ -1702,10 +1844,10 @@ async fn validate_provider(
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let key = if config.api_key.trim().is_empty() {
-        get_api_key_with_profile(&config.id, profile.as_deref())?
+    let key = if let Some(api_key) = submitted_api_key(&config.api_key) {
+        api_key.to_string()
     } else {
-        config.api_key
+        get_api_key_with_profile(&config.id, profile.as_deref())?
     };
     if key.trim().is_empty() {
         return Err("No API key available in keyring or config".to_string());
@@ -1726,13 +1868,7 @@ async fn validate_provider(
     } else {
         config.base_url.clone()
     };
-    // Normalize base URL: avoid double /v1 if base_url already ends with /v1
-    let base_trimmed = base.trim_end_matches('/');
-    let chat_url = if base_trimmed.ends_with("/v1") {
-        format!("{}/chat/completions", base_trimmed)
-    } else {
-        format!("{}/v1/chat/completions", base_trimmed)
-    };
+    let chat_url = openai_chat_completions_url(&base);
     let test_payload = serde_json::json!({
         "model": config.model.as_str(),
         "messages": [{"role": "user", "content": "hi"}],
@@ -1809,11 +1945,11 @@ fn create_llm_client(
         _ => {
             let cfg = config
                 .ok_or_else(|| format!("config required for custom provider: {}", provider))?;
-            let api_key = if cfg.api_key.trim().is_empty() {
+            let api_key = if let Some(api_key) = submitted_api_key(&cfg.api_key) {
+                api_key.to_string()
+            } else {
                 get_api_key_with_profile(&cfg.id, profile)
                     .map_err(|e| format!("Failed to retrieve key for {}: {}", cfg.id, e))?
-            } else {
-                cfg.api_key
             };
             match cfg.provider_type.as_str() {
                 "anthropic" => {
@@ -1853,8 +1989,24 @@ async fn stream_chat(
         .clone();
     let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
     let system_prompt = config.as_ref().and_then(|c| c.system_prompt.clone());
+    let diagnostic_session_id = format!(
+        "stream:{}:{}",
+        provider,
+        chrono::Utc::now().timestamp_millis()
+    );
 
     let msg_count = messages.as_ref().map(|m| m.len()).unwrap_or(1);
+    write_stream_diagnostic(
+        "backend_command_start",
+        Some(&diagnostic_session_id),
+        json!({
+            "provider": provider.clone(),
+            "model": model.clone(),
+            "messageCount": msg_count,
+            "hasConfig": config.is_some(),
+            "baseUrl": config.as_ref().map(|c| c.base_url.clone()),
+        }),
+    );
 
     let chat_result = async {
         let client = create_llm_client(&provider, profile.as_deref(), config)?;
@@ -1903,32 +2055,92 @@ async fn stream_chat(
             .await
             .map_err(|e| format!("stream start failed: {}", e))?;
 
+        write_stream_diagnostic(
+            "backend_stream_started",
+            Some(&diagnostic_session_id),
+            json!({ "provider": provider.clone(), "model": model.clone() }),
+        );
+
+        let mut output_events = 0_u64;
+        let mut output_chars = 0_u64;
+        let mut done_events = 0_u64;
+        let mut error_events = 0_u64;
+        let mut channel_send_events = 0_u64;
+        let mut channel_send_errors = 0_u64;
+        #[cfg(feature = "stream-diagnostics")]
+        let mut first_output_preview: Option<String> = None;
+        #[cfg(not(feature = "stream-diagnostics"))]
+        let first_output_preview: Option<String> = None;
+
         while let Some(chunk) = stream.next().await {
             let (text, is_done, is_error) = match chunk {
                 engine_llm_core::StreamChunk::Output(t) => (t, false, false),
                 engine_llm_core::StreamChunk::Error(e) => (e, false, true),
                 engine_llm_core::StreamChunk::Done => (String::new(), true, false),
             };
+            if is_done {
+                done_events += 1;
+            } else if is_error {
+                error_events += 1;
+            } else {
+                output_events += 1;
+                output_chars += text.chars().count() as u64;
+                #[cfg(feature = "stream-diagnostics")]
+                if first_output_preview.is_none() && !text.is_empty() {
+                    first_output_preview = Some(preview_for_diagnostic(&text));
+                }
+            }
             let usage = if is_done { client.last_usage() } else { None };
-            on_event
-                .send(StreamEvent {
-                    chunk: text,
-                    done: is_done,
-                    error: if is_error {
-                        Some("LLM error".into())
-                    } else {
-                        None
-                    },
-                    prompt_tokens: usage.as_ref().map(|u| u.prompt_tokens),
-                    completion_tokens: usage.as_ref().map(|u| u.completion_tokens),
-                })
-                .map_err(|e| e.to_string())?;
+            channel_send_events += 1;
+            let send_result = on_event.send(StreamEvent {
+                chunk: text,
+                done: is_done,
+                error: if is_error {
+                    Some("LLM error".into())
+                } else {
+                    None
+                },
+                prompt_tokens: usage.as_ref().map(|u| u.prompt_tokens),
+                completion_tokens: usage.as_ref().map(|u| u.completion_tokens),
+            });
+            if let Err(e) = send_result {
+                channel_send_errors += 1;
+                write_stream_diagnostic(
+                    "backend_channel_send_error",
+                    Some(&diagnostic_session_id),
+                    json!({
+                        "error": e.to_string(),
+                        "outputEvents": output_events,
+                        "outputChars": output_chars,
+                        "doneEvents": done_events,
+                        "errorEvents": error_events,
+                        "channelSendEvents": channel_send_events,
+                        "channelSendErrors": channel_send_errors,
+                    }),
+                );
+                return Err(e.to_string());
+            }
             if is_done {
                 break;
             }
         }
 
         let usage = client.last_usage();
+        write_stream_diagnostic(
+            "backend_stream_summary",
+            Some(&diagnostic_session_id),
+            json!({
+                "outputEvents": output_events,
+                "outputChars": output_chars,
+                "doneEvents": done_events,
+                "errorEvents": error_events,
+                "channelSendEvents": channel_send_events,
+                "channelSendErrors": channel_send_errors,
+                "firstOutputPreview": first_output_preview,
+                "promptTokens": usage.as_ref().map(|u| u.prompt_tokens),
+                "completionTokens": usage.as_ref().map(|u| u.completion_tokens),
+            }),
+        );
 
         // Record token usage for persistent cumulative tracking (P1-02/05)
         if let Some(ref u) = usage {
@@ -1943,7 +2155,17 @@ async fn stream_chat(
         }
 
         // Trigger compression via LLM-driven summary
+        write_stream_diagnostic(
+            "backend_optimize_start",
+            Some(&diagnostic_session_id),
+            json!({ "messageCount": msgs_for_opt.len() }),
+        );
         let _ = gateway.optimize(msgs_for_opt, client.as_ref()).await;
+        write_stream_diagnostic(
+            "backend_optimize_done",
+            Some(&diagnostic_session_id),
+            json!({}),
+        );
         let stats_after = gateway.stats().await;
         let token_after = stats_after.working_tokens as u64;
 
@@ -1964,6 +2186,19 @@ async fn stream_chat(
     } else {
         (None, None)
     };
+
+    write_stream_diagnostic(
+        "backend_command_result",
+        Some(&diagnostic_session_id),
+        json!({
+            "ok": chat_result.is_ok(),
+            "error": chat_result.as_ref().err(),
+            "tokenBefore": token_before_val,
+            "tokenAfter": token_after_val,
+            "promptTokens": precise_prompt_end,
+            "completionTokens": precise_completion_end,
+        }),
+    );
 
     // Audit: completed or failed (B-05/03)
     let _ = audit::log_usage(&audit::KeyUsageRecord {
@@ -2122,8 +2357,8 @@ fn import_provider_backup(
                 .or_else(|| item.get("longContextMode"))
                 .and_then(|v| v.as_bool()),
         };
-        if !cfg.api_key.trim().is_empty() {
-            save_api_key_with_profile(&cfg.id, &cfg.api_key, profile.as_deref())?;
+        if let Some(api_key) = submitted_api_key(&cfg.api_key) {
+            save_api_key_with_profile(&cfg.id, api_key, profile.as_deref())?;
         }
         let mut sanitized = cfg.clone();
         sanitized.api_key.clear();
@@ -2479,6 +2714,89 @@ async fn create_agent_with_provider(
         Ok((output, _)) => Ok(format!("Agent {} completed. Output:\n{}", agent_id, output)),
         Err(e) => Err(e),
     }
+}
+
+// Phase 4 Day 2: Event structure for backend agent execution monitoring.
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentUiEvent {
+    Status { message: String },
+    Result { output: String },
+    Done,
+    Error { message: String },
+}
+
+/// 启动并运行 Proactive Agent 核心任务循环
+#[tauri::command]
+async fn run_agent_task(
+    agent_id: String,
+    goal: String,
+    provider_id: Option<String>,
+    on_event: Channel<AgentUiEvent>,
+    state: tauri::State<'_, AppState>,
+    agent_loop: tauri::State<'_, std::sync::Arc<agent_core::agent_loop::AgentLoop>>,
+) -> Result<(), String> {
+    let trimmed_goal = goal.trim();
+    if trimmed_goal.is_empty() {
+        return Err("goal cannot be empty".to_string());
+    }
+
+    let profile = state
+        .active_profile
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
+
+    // Load provider config for custom providers
+    let config = if provider == "ollama" || provider == "anthropic" || provider == "openai" {
+        None
+    } else {
+        let configs = read_merged_configs(None, profile.as_deref());
+        configs.into_iter().find(|c| c.id == provider)
+    };
+
+    // Write capability fields to blackboard for context budget resolution
+    write_provider_caps_to_blackboard(
+        agent_loop.blackboard(),
+        &agent_id,
+        &provider,
+        config.as_ref(),
+    )
+    .await;
+
+    // Send initial status event
+    let _ = on_event.send(AgentUiEvent::Status {
+        message: format!("Agent task started with goal: {}", trimmed_goal),
+    });
+
+    let agent_id_clone = agent_id.clone();
+    let goal_clone = goal.clone();
+    let agent_loop_clone = agent_loop.inner().clone();
+    let on_event_clone = on_event.clone();
+
+    // Run long asynchronous goal execution in a background tokio task
+    tokio::spawn(async move {
+        match agent_loop_clone
+            .execute_goal(agent_id_clone, &goal_clone)
+            .await
+        {
+            Ok(outcome) => {
+                let outcome_str = format!("{:?}", outcome);
+                let _ = on_event_clone.send(AgentUiEvent::Result {
+                    output: outcome_str,
+                });
+                let _ = on_event_clone.send(AgentUiEvent::Done);
+            }
+            Err(e) => {
+                let _ = on_event_clone.send(AgentUiEvent::Error {
+                    message: format!("Agent loop execution failed: {}", e),
+                });
+            }
+        }
+    });
+
+    Ok(())
 }
 
 // ------------------------------------------------------------------
@@ -3004,6 +3322,8 @@ fn main() {
             get_current_workspace,
             export_provider_backup,
             import_provider_backup,
+            record_stream_diagnostic,
+            get_stream_diagnostic_info,
             stream_chat,
             compact_context,
             optimize_context,
@@ -3017,6 +3337,7 @@ fn main() {
             get_agent_providers,
             set_agent_provider,
             create_agent_with_provider,
+            run_agent_task,
             // B-05/03 Audit
             get_audit_logs,
             // B-02/06 Trace
@@ -3780,6 +4101,28 @@ mod tests {
     }
 
     #[test]
+    fn provider_api_key_placeholders_are_not_treated_as_secret_updates() {
+        assert_eq!(submitted_api_key(""), None);
+        assert_eq!(submitted_api_key("sk-•••••••• (re-enter to update)"), None);
+        assert_eq!(
+            submitted_api_key("  real-secret-key  "),
+            Some("real-secret-key")
+        );
+    }
+
+    #[test]
+    fn provider_config_view_exposes_key_presence_without_secret_value() {
+        let mut cfg = sample_provider_config("provider-view", "Provider View");
+        cfg.api_key = "must-not-serialize".to_string();
+
+        let value = serde_json::to_value(ProviderConfigView::from_config(cfg, true))
+            .expect("serialize provider config view");
+
+        assert_eq!(value["hasApiKey"], true);
+        assert!(value.get("apiKey").is_none());
+    }
+
+    #[test]
     fn provider_workspace_write_helpers_add_update_delete_current_workspace() {
         let (temp, workspace) = setup_test_workspace();
         let path = workspace_config_path(&workspace);
@@ -4188,5 +4531,19 @@ mod tests {
             bb.read("__hajimi_context_threshold").await.map(|e| e.value),
             Some("".to_string())
         );
+    }
+
+    #[test]
+    fn test_agent_ui_event_serialization() {
+        let status_event = AgentUiEvent::Status {
+            message: "Starting...".to_string(),
+        };
+        let status_json = serde_json::to_string(&status_event).unwrap();
+        assert!(status_json.contains(r#""type":"status""#));
+        assert!(status_json.contains(r#""message":"Starting...""#));
+
+        let done_event = AgentUiEvent::Done;
+        let done_json = serde_json::to_string(&done_event).unwrap();
+        assert_eq!(done_json, r#"{"type":"done"}"#);
     }
 }
