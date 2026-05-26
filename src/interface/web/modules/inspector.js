@@ -74,6 +74,9 @@
     app.renderInspectorTaskStatus(text);
     app.renderChatShellStatus(text);
     app.renderInspectorSessionStats();
+    if (typeof app.renderInspectorOperationSummary === 'function') {
+      app.renderInspectorOperationSummary();
+    }
   }
 
   function renderTaskSteps(app) {

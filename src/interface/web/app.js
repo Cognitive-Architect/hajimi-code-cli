@@ -252,20 +252,44 @@ window.app = {
     const statusEl = document.getElementById('chatRunStatus');
     if (!statusEl) return;
     const text = statusText || (this.isProcessing ? '处理中...' : '就绪');
-    statusEl.textContent = text;
-    const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
-    statusEl.className = `run-status ${busy ? 'active' : 'idle'}`;
+    statusEl.textContent = text === 'running' ? '运行中' : text === 'completed' ? '已完成' : text === 'failed' ? '已失败' : text;
+    
+    let className = 'run-status';
+    if (text === 'running') {
+      className += ' running';
+    } else if (text === 'completed') {
+      className += ' completed';
+    } else if (text === 'failed') {
+      className += ' failed';
+    } else {
+      const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
+      className += ` ${busy ? 'active' : 'idle'}`;
+    }
+    statusEl.className = className;
   },
 
   renderInspectorTaskStatus(statusText) {
     const statusEl = document.getElementById('inspectorTaskStatus');
     if (!statusEl) return;
     const text = statusText || (this.isProcessing ? '处理中...' : '就绪');
-    const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
+    const displayStatus = text === 'running' ? '运行中' : text === 'completed' ? '已完成' : text === 'failed' ? '已失败' : text;
+    
+    let statusClass = 'run-status small';
+    if (text === 'running') {
+      statusClass += ' running';
+    } else if (text === 'completed') {
+      statusClass += ' completed';
+    } else if (text === 'failed') {
+      statusClass += ' failed';
+    } else {
+      const busy = this.isProcessing || /处理|运行|working|stream/i.test(text);
+      statusClass += ` ${busy ? 'active' : 'idle'}`;
+    }
+    
     statusEl.innerHTML = `
       <div class="inspector-task-title">
         ${this.escapeHtml(this.getDisplaySessionTitle())}
-        <span class="run-status small ${busy ? 'active' : 'idle'}">${this.escapeHtml(text)}</span>
+        <span class="${statusClass}">${this.escapeHtml(displayStatus)}</span>
       </div>
       <div class="inspector-key-values">
         <span>上下文文件</span><strong>${this.chatContextFiles.length}</strong>
@@ -373,6 +397,52 @@ window.app = {
         <span>助手消息</span><strong>${assistantMessages}</strong>
         <span>Tokens 估算</span><strong>${promptTokens + completionTokens}</strong>
         <span>请求轮次</span><strong>${requestCount}</strong>
+      </div>
+    `;
+  },
+
+  renderInspectorOperationSummary() {
+    const el = document.getElementById('inspectorOperationSummary');
+    if (!el) return;
+
+    if (!this.traceEvents || this.traceEvents.length === 0) {
+      el.innerHTML = '<span style="color:var(--fg-dim);">未启动智能体任务</span>';
+      return;
+    }
+
+    const traceCount = this.traceEvents.length;
+    const knownActionCount = this.traceEvents.filter(ev => ev.step_type === 'Act' || ev.step_type === 'EditApplied').length;
+
+    // Check if we have any actual operation_summary data from the backend
+    let hasSummary = false;
+    let filesEdited = 0;
+    let filesCreated = 0;
+    let filesDeleted = 0;
+    let commandsRun = 0;
+
+    this.traceEvents.forEach(ev => {
+      if (ev.operation_summary) {
+        hasSummary = true;
+        filesEdited += ev.operation_summary.files_edited || 0;
+        filesCreated += ev.operation_summary.files_created || 0;
+        filesDeleted += ev.operation_summary.files_deleted || 0;
+        commandsRun += ev.operation_summary.commands_run || 0;
+      }
+    });
+
+    const displayFilesEdited = hasSummary ? filesEdited : 'unknown';
+    const displayFilesCreated = hasSummary ? filesCreated : 'unknown';
+    const displayFilesDeleted = hasSummary ? filesDeleted : 'unknown';
+    const displayCommandsRun = hasSummary ? commandsRun : 'unknown';
+
+    el.innerHTML = `
+      <div class="inspector-key-values">
+        <span>Trace 事件数</span><strong>${traceCount}</strong>
+        <span>已证明动作数</span><strong>${knownActionCount}</strong>
+        <span>文件编辑数</span><strong>${displayFilesEdited}</strong>
+        <span>文件创建数</span><strong>${displayFilesCreated}</strong>
+        <span>文件删除数</span><strong>${displayFilesDeleted}</strong>
+        <span>命令运行数</span><strong>${displayCommandsRun}</strong>
       </div>
     `;
   },
@@ -3011,6 +3081,9 @@ window.app = {
       traceTab.textContent = 'Agent Trace';
     }
     this.safeRenderTraceInspector();
+    if (typeof this.renderInspectorOperationSummary === 'function') {
+      this.renderInspectorOperationSummary();
+    }
 
     const Channel = this.getTauriChannel();
     if (!Channel) {
@@ -3035,6 +3108,13 @@ window.app = {
     };
 
     try {
+      this.isProcessing = true;
+      const chatSendBtn = document.getElementById('aiChatSendBtn');
+      if (chatSendBtn) chatSendBtn.disabled = true;
+      this.showStatusIndicator('working');
+      this.safeUpdateTaskDetails('running');
+      this.renderLiveShellState('running');
+
       await this.invokeTauri('run_agent_task', {
         agentId: 'agent-session',
         goal: goal,
@@ -3044,13 +3124,13 @@ window.app = {
     } catch (err) {
       console.error('run_agent_task invoke error:', err);
       this.updateTurnResponse(turn, { state: 'error', error: err.message || err });
-    } finally {
+      
       this.isProcessing = false;
       const chatSendBtn = document.getElementById('aiChatSendBtn');
       if (chatSendBtn) chatSendBtn.disabled = false;
       this.hideStatusIndicator();
-      this.safeUpdateTaskDetails('就绪');
-      this.renderLiveShellState('就绪');
+      this.safeUpdateTaskDetails('failed');
+      this.renderLiveShellState('failed');
       this.updateTokenDisplay();
       this.saveChatSessions();
       this.renderSessionList();
@@ -3067,15 +3147,61 @@ window.app = {
         content: `**智能体执行中...**\n\n${statusHistory.join('\n')}`
       });
     } else if (event.type === 'result') {
+      const outcome = event.output;
+      let friendlyOutcome = '';
+      let isSuccess = false;
+      
+      if (outcome === 'Success') {
+        friendlyOutcome = '✅ 智能体任务已成功完成！(Success)';
+        isSuccess = true;
+      } else if (outcome === 'Aborted') {
+        friendlyOutcome = '⚠️ 智能体任务被终止或自动退出。(Aborted)';
+      } else if (outcome === 'BudgetExceeded') {
+        friendlyOutcome = '🛑 智能体执行已超出预定步骤预算。(BudgetExceeded)';
+      } else if (outcome && outcome.startsWith('ActFailed')) {
+        const errorDetail = outcome.slice(10, -1) || '';
+        friendlyOutcome = `❌ 智能体在执行动作时失败：${errorDetail} (ActFailed)`;
+      } else {
+        friendlyOutcome = `⚠️ 智能体任务结束，结果为：${outcome}`;
+      }
+
       this.updateTurnResponse(turn, {
         state: 'done',
-        content: `**智能体任务执行完毕！**\n\n${statusHistory.join('\n')}\n\n**最终结果：**\n\`\`\`rust\n${event.output}\n\`\`\``
+        content: `**智能体任务执行完毕！**\n\n${statusHistory.join('\n')}\n\n**最终结果：**\n${friendlyOutcome}`
       });
+
+      // Terminal cleanup
+      this.isProcessing = false;
+      const chatSendBtn = document.getElementById('aiChatSendBtn');
+      if (chatSendBtn) chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      
+      this.safeUpdateTaskDetails(isSuccess ? 'completed' : 'failed');
+      this.renderLiveShellState(isSuccess ? 'completed' : 'failed');
+      
+      this.updateTokenDisplay();
+      this.saveCumulativeToLocalStorage();
+      this.saveChatSessions();
+      this.renderSessionList();
     } else if (event.type === 'error') {
       this.updateTurnResponse(turn, {
         state: 'error',
-        error: event.message
+        error: `智能体执行过程中发生异常：${event.message}`
       });
+
+      // Terminal cleanup
+      this.isProcessing = false;
+      const chatSendBtn = document.getElementById('aiChatSendBtn');
+      if (chatSendBtn) chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      
+      this.safeUpdateTaskDetails('failed');
+      this.renderLiveShellState('failed');
+      
+      this.updateTokenDisplay();
+      this.saveCumulativeToLocalStorage();
+      this.saveChatSessions();
+      this.renderSessionList();
     } else if (event.type === 'trace') {
       if (!this.traceEvents) this.traceEvents = [];
       this.traceEvents.push(event.event);
@@ -3084,6 +3210,9 @@ window.app = {
         traceTab.textContent = `Agent Trace (${this.traceEvents.length})`;
       }
       this.safeRenderTraceInspector();
+      if (typeof this.renderInspectorOperationSummary === 'function') {
+        this.renderInspectorOperationSummary();
+      }
     } else if (event.type === 'done') {
       // Completed
     }
