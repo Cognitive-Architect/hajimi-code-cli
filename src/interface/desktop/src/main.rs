@@ -2720,10 +2720,19 @@ async fn create_agent_with_provider(
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentUiEvent {
-    Status { message: String },
-    Result { output: String },
+    Status {
+        message: String,
+    },
+    Result {
+        output: String,
+    },
     Done,
-    Error { message: String },
+    Error {
+        message: String,
+    },
+    Trace {
+        event: agent_core::agent_loop::TraceEvent,
+    },
 }
 
 /// 启动并运行 Proactive Agent 核心任务循环
@@ -2769,6 +2778,28 @@ async fn run_agent_task(
     let _ = on_event.send(AgentUiEvent::Status {
         message: format!("Agent task started with goal: {}", trimmed_goal),
     });
+
+    // Subscribe to real-time TraceEvent stream from the AgentLoop
+    if let Some(mut rx) = agent_loop.subscribe_trace() {
+        let on_event_trace = on_event.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if on_event_trace.send(AgentUiEvent::Trace { event }).is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        continue;
+                    }
+                }
+            }
+        });
+    }
 
     let agent_id_clone = agent_id.clone();
     let goal_clone = goal.clone();

@@ -3004,11 +3004,19 @@ window.app = {
     msgContainer.scrollTop = msgContainer.scrollHeight;
     this.updateTurnResponse(turn, { state: 'pending', pendingText: '正在启动智能体任务...' });
 
+    // Initialize fresh trace event stream for this session
+    this.traceEvents = [];
+    const traceTab = document.querySelector('.inspector-tab[data-inspector-tab="agent-trace"]');
+    if (traceTab) {
+      traceTab.textContent = 'Agent Trace';
+    }
+    this.safeRenderTraceInspector();
+
     const Channel = this.getTauriChannel();
     if (!Channel) {
       this.updateTurnResponse(turn, {
-        state: 'done',
-        content: `**[Demo 模式] 智能体任务已触发！**\n\n- 🔄 正在初始化 Agent context...\n- 🔄 正在规划任务步骤...\n- 🔄 正在执行本地模拟...\n\n**最终结果：**\n\`\`\`json\n{\n  "status": "success",\n  "goal": "${goal.replace(/"/g, '\\"')}"\n}\n\`\`\``
+        state: 'error',
+        error: 'Agent 执行环境不可用：Tauri Channel 未初始化。请在桌面端应用中运行。'
       });
       this.isProcessing = false;
       const chatSendBtn = document.getElementById('aiChatSendBtn');
@@ -3068,6 +3076,14 @@ window.app = {
         state: 'error',
         error: event.message
       });
+    } else if (event.type === 'trace') {
+      if (!this.traceEvents) this.traceEvents = [];
+      this.traceEvents.push(event.event);
+      const traceTab = document.querySelector('.inspector-tab[data-inspector-tab="agent-trace"]');
+      if (traceTab) {
+        traceTab.textContent = `Agent Trace (${this.traceEvents.length})`;
+      }
+      this.safeRenderTraceInspector();
     } else if (event.type === 'done') {
       // Completed
     }
