@@ -39,7 +39,12 @@
       this.__TAURI_CHANNEL_MARKER__ = true;
       this._handler = () => {};
       this.id = internals.transformCallback((message) => {
-        this._handler(message);
+        const payload = message
+          && typeof message === 'object'
+          && Object.prototype.hasOwnProperty.call(message, 'message')
+          ? message.message
+          : message;
+        this._handler(payload);
       });
     }
 

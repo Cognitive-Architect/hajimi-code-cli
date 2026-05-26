@@ -2342,7 +2342,9 @@ window.app = {
 
     const newSessionBtn = document.getElementById('newSessionBtn');
     if (newSessionBtn) {
-      newSessionBtn.addEventListener('click', () => this.newChatSession());
+      newSessionBtn.addEventListener('click', () => {
+        this.newChatSession();
+      });
     }
 
     this.updateTokenDisplay();
@@ -2359,6 +2361,7 @@ window.app = {
       { id: 'git', trigger: '/git', title: 'Git helper', description: 'Fill /git status/diff/commit', category: 'git', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/git ' },
       { id: 'extensions', trigger: '/extensions', title: 'List extensions', description: 'Show available extensions', category: 'extension', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['plugins'] },
       { id: 'compact', trigger: '/compact', title: 'Compact context', description: 'Fill compact command for explicit submit', category: 'context', riskLevel: 'medium', enabled: true, executeMode: 'fill' },
+      { id: 'agent', trigger: '/agent', title: 'Run agent task', description: 'Fill /agent <goal>', category: 'agent', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/agent ' },
     ];
   },
 
@@ -2492,6 +2495,21 @@ window.app = {
   },
 
   async handleChatCommand(text) {
+    if (text === '/agent') {
+      this.addChatMessage('ai', '用法: `/agent <任务目标>`\n\n例如: `/agent 帮我把 App.js 的背景改成暗色模式`');
+      return;
+    }
+
+    if (text.startsWith('/agent ')) {
+      const goal = text.slice(7).trim();
+      if (!goal) {
+        this.addChatMessage('ai', '用法: `/agent <任务目标>`');
+        return;
+      }
+      await this.invokeAgentTask(goal);
+      return;
+    }
+
     if (text === '/tools') {
       if (!this.isTauriAvailable()) { this.addChatMessage('ai', 'Tauri 不可用'); return; }
       try {
@@ -2768,6 +2786,23 @@ window.app = {
     return window.HajimiThinkingUI.scheduleDomUpdate(this, fn);
   },
 
+  recordStreamDiagnostic(stage, sessionId, data = {}) {
+    if (!this.isTauriAvailable()) return;
+    const invoke = this.getTauriInvoke();
+    if (!invoke) return;
+    try {
+      Promise.resolve(invoke('record_stream_diagnostic', {
+        event: {
+          stage,
+          sessionId,
+          data
+        }
+      })).catch(() => {});
+    } catch (_) {
+      // Diagnostic logging is best-effort and must not affect chat behavior.
+    }
+  },
+
   createAssistantTurn() {
     const container = document.getElementById('aiChatMessages');
     if (!container) return null;
@@ -2961,6 +2996,83 @@ window.app = {
     turn.responseEl.innerHTML = this.formatText(turn.state.response.content);
   },
 
+  async invokeAgentTask(goal) {
+    const msgContainer = document.getElementById('aiChatMessages');
+    const turn = this.createAssistantTurn();
+    if (!turn) throw new Error('Chat message container not found');
+    this._lastAssistantTurn = null;
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+    this.updateTurnResponse(turn, { state: 'pending', pendingText: '正在启动智能体任务...' });
+
+    const Channel = this.getTauriChannel();
+    if (!Channel) {
+      this.updateTurnResponse(turn, {
+        state: 'done',
+        content: `**[Demo 模式] 智能体任务已触发！**\n\n- 🔄 正在初始化 Agent context...\n- 🔄 正在规划任务步骤...\n- 🔄 正在执行本地模拟...\n\n**最终结果：**\n\`\`\`json\n{\n  "status": "success",\n  "goal": "${goal.replace(/"/g, '\\"')}"\n}\n\`\`\``
+      });
+      this.isProcessing = false;
+      const chatSendBtn = document.getElementById('aiChatSendBtn');
+      if (chatSendBtn) chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      this.safeUpdateTaskDetails('就绪');
+      this.renderLiveShellState('就绪');
+      return;
+    }
+
+    const channel = new Channel();
+    const statusHistory = [];
+
+    channel.onmessage = (event) => {
+      this.handleAgentEvent(turn, event, statusHistory);
+    };
+
+    try {
+      await this.invokeTauri('run_agent_task', {
+        agentId: 'agent-session',
+        goal: goal,
+        providerId: this.activeProviderId || 'openai',
+        onEvent: channel
+      });
+    } catch (err) {
+      console.error('run_agent_task invoke error:', err);
+      this.updateTurnResponse(turn, { state: 'error', error: err.message || err });
+    } finally {
+      this.isProcessing = false;
+      const chatSendBtn = document.getElementById('aiChatSendBtn');
+      if (chatSendBtn) chatSendBtn.disabled = false;
+      this.hideStatusIndicator();
+      this.safeUpdateTaskDetails('就绪');
+      this.renderLiveShellState('就绪');
+      this.updateTokenDisplay();
+      this.saveChatSessions();
+      this.renderSessionList();
+    }
+  },
+
+  handleAgentEvent(turn, event, statusHistory) {
+    if (!event || !event.type) return;
+
+    if (event.type === 'status') {
+      statusHistory.push(`- 🔄 ${event.message}`);
+      this.updateTurnResponse(turn, {
+        state: 'streaming',
+        content: `**智能体执行中...**\n\n${statusHistory.join('\n')}`
+      });
+    } else if (event.type === 'result') {
+      this.updateTurnResponse(turn, {
+        state: 'done',
+        content: `**智能体任务执行完毕！**\n\n${statusHistory.join('\n')}\n\n**最终结果：**\n\`\`\`rust\n${event.output}\n\`\`\``
+      });
+    } else if (event.type === 'error') {
+      this.updateTurnResponse(turn, {
+        state: 'error',
+        error: event.message
+      });
+    } else if (event.type === 'done') {
+      // Completed
+    }
+  },
+
   async streamChat(provider, prompt, config, messages) {
     if (!this.isTauriAvailable()) throw new Error('Tauri not available');
 
@@ -2974,12 +3086,37 @@ window.app = {
     msgContainer.scrollTop = msgContainer.scrollHeight;
     this.updateTurnResponse(turn, { state: 'pending', pendingText: '正在等待回复...' });
 
+    this._streamDiagnosticCounter = (this._streamDiagnosticCounter || 0) + 1;
+    const diagnosticSessionId = `frontend:${Date.now()}:${this._streamDiagnosticCounter}`;
+    const streamDiag = {
+      onmessageCount: 0,
+      chunkEvents: 0,
+      chunkChars: 0,
+      doneEvents: 0,
+      errorEvents: 0,
+      scheduledDomUpdates: 0,
+      renderResponseCalls: 0,
+      renderResponseChars: 0,
+      lastState: null,
+      lastResponseLen: 0,
+      lastThinkingLen: 0,
+      lastBufferLen: 0
+    };
+    this.recordStreamDiagnostic('frontend_stream_start', diagnosticSessionId, {
+      provider,
+      model: config?.model || null,
+      baseUrl: config?.baseUrl || config?.base_url || null,
+      messageCount: Array.isArray(messages) ? messages.length : 0
+    });
+
     let visibleResponse = '';
     let pending = true;
     let streamError = null;
 
     const renderResponse = (text) => {
       visibleResponse = text || '';
+      streamDiag.renderResponseCalls += 1;
+      streamDiag.renderResponseChars = visibleResponse.length;
       if (pending) {
         pending = false;
       }
@@ -3009,8 +3146,22 @@ window.app = {
     let buffer = '';
 
     channel.onmessage = (event) => {
+      streamDiag.onmessageCount += 1;
+      const hasChunk = event && Object.prototype.hasOwnProperty.call(event, 'chunk');
+      const chunkLen = hasChunk ? String(event.chunk || '').length : 0;
+      if (hasChunk && chunkLen > 0) {
+        streamDiag.chunkEvents += 1;
+        streamDiag.chunkChars += chunkLen;
+      }
+      if (event?.done || event?.cancelled || event?.cancel) streamDiag.doneEvents += 1;
+      if (event?.error) streamDiag.errorEvents += 1;
+
       const result = this.parseStreamEvent(buffer, event || {});
       buffer = result.buffer;
+      streamDiag.lastState = result.state || null;
+      streamDiag.lastResponseLen = (result.response || '').length;
+      streamDiag.lastThinkingLen = (result.thinking || '').length;
+      streamDiag.lastBufferLen = buffer.length;
 
       if (result.error) {
         streamError = result.error;
@@ -3023,6 +3174,7 @@ window.app = {
       }
 
       if (event.chunk || Object.prototype.hasOwnProperty.call(event, 'thinking_content')) {
+        streamDiag.scheduledDomUpdates += 1;
         this.scheduleDomUpdate(() => {
           if (result.state === 'idle') {
             renderThinking('');
@@ -3062,6 +3214,10 @@ window.app = {
       await invoke('stream_chat', { provider, prompt, messages, config, onEvent: channel });
     } catch (err) {
       buffer = '';
+      this.recordStreamDiagnostic('frontend_stream_exception', diagnosticSessionId, {
+        ...streamDiag,
+        error: err?.message || String(err)
+      });
       if (turn.state.thinking.content) {
         this.updateTurnThinking(turn, { state: 'done' });
       } else {
@@ -3085,7 +3241,19 @@ window.app = {
     }
 
     this._lastAssistantTurn = turn;
-    return visibleResponse || buffer;
+    const returnValue = visibleResponse || buffer;
+    this.recordStreamDiagnostic('frontend_stream_final', diagnosticSessionId, {
+      ...streamDiag,
+      pending,
+      streamError,
+      finalVisibleLen: visibleResponse.length,
+      finalBufferLen: buffer.length,
+      finalThinkingLen: (turn.state.thinking.content || '').length,
+      finalResponseLen: (turn.state.response.content || '').length,
+      finalResponseState: turn.state.response.state,
+      returnLen: returnValue.length
+    });
+    return returnValue;
   },
 
   generateDemoResponse(text) {
@@ -3367,18 +3535,21 @@ window.app = {
       return;
     }
 
-    list.innerHTML = this.providerConfigs.map(cfg => `
+    list.innerHTML = this.providerConfigs.map(cfg => {
+      const hasSavedKey = !!(cfg.hasApiKey || cfg.has_api_key);
+      return `
       <div class="provider-item">
         <div class="provider-item-info">
           <div class="provider-item-name">${this.escapeHtml(cfg.name || cfg.id)}</div>
-          <div class="provider-item-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.baseUrl || '')}</div>
+          <div class="provider-item-meta">${this.escapeHtml(cfg.model || '')} · ${this.escapeHtml(cfg.baseUrl || '')} · ${hasSavedKey ? 'API Key 已保存' : '未保存 API Key'}</div>
         </div>
         <div class="provider-item-actions">
           <button class="provider-item-btn" data-provider-edit="${this.escapeAttr(cfg.id)}">编辑</button>
           <button class="provider-item-btn delete" data-provider-delete="${this.escapeAttr(cfg.id)}">删除</button>
         </div>
       </div>
-    `).join('') + `<div class="provider-source-hint">来源: ${workspaceTag}</div>`;
+      `;
+    }).join('') + `<div class="provider-source-hint">来源: ${workspaceTag}</div>`;
 
     list.querySelectorAll('[data-provider-edit]').forEach(btn => {
       btn.addEventListener('click', () => this.editProviderConfig(btn.dataset.providerEdit));
@@ -3670,11 +3841,13 @@ window.app = {
     document.getElementById('providerBaseUrl').value = config ? config.baseUrl : '';
     document.getElementById('providerModel').value = config ? config.model : '';
     const keyInput = document.getElementById('providerApiKey');
-    keyInput.value = config && config.apiKey ? config.apiKey : '';
-    // For security, if editing and no key shown, prompt for re-entry or show masked
-    if (config && !config.apiKey) {
-      keyInput.placeholder = 'sk-•••••••• (re-enter to update)';
-    }
+    const hasSavedKey = !!(config && (config.hasApiKey || config.has_api_key));
+    keyInput.value = '';
+    keyInput.type = 'password';
+    keyInput.dataset.hasSavedKey = hasSavedKey ? 'true' : 'false';
+    keyInput.placeholder = config
+      ? (hasSavedKey ? 'API Key 已安全保存，留空则保持不变' : 'sk-...')
+      : 'sk-...';
 
     // Map capability fields safely (FUNC-004 & CONST-001/004)
     let maxContext = '';
@@ -3786,6 +3959,8 @@ window.app = {
   closeProviderModal() {
     document.getElementById('providerModal').classList.remove('active');
     this.editingProviderId = null;
+    const keyInput = document.getElementById('providerApiKey');
+    if (keyInput) delete keyInput.dataset.hasSavedKey;
     document.getElementById('providerForm').reset();
   },
 
@@ -3850,9 +4025,11 @@ window.app = {
     const providerType = document.getElementById('providerModalType').value;
     const baseUrl = document.getElementById('providerBaseUrl').value.trim();
     const model = document.getElementById('providerModel').value.trim();
-    const apiKey = document.getElementById('providerApiKey').value.trim();
+    const apiKeyInput = document.getElementById('providerApiKey');
+    const apiKey = apiKeyInput.value.trim();
+    const hasSavedKey = apiKeyInput.dataset.hasSavedKey === 'true';
 
-    if (!name || !baseUrl || !model || !apiKey) {
+    if (!name || !baseUrl || !model || (!apiKey && !(this.editingProviderId && hasSavedKey))) {
       this.showErrorToast('请填写名称、Base URL、模型名和 API Key');
       return;
     }
@@ -5124,8 +5301,11 @@ window.app = {
         const providerType = document.getElementById('providerModalType').value;
         const baseUrl = document.getElementById('providerBaseUrl').value.trim();
         const model = document.getElementById('providerModel').value.trim();
-        const apiKey = document.getElementById('providerApiKey').value.trim();
+        const apiKeyInput = document.getElementById('providerApiKey');
+        const apiKey = apiKeyInput.value.trim();
+        const hasSavedKey = apiKeyInput.dataset.hasSavedKey === 'true';
         if (!name) { if (app.showErrorToast) app.showErrorToast('Provider name required'); return; }
+        if (!apiKey && !hasSavedKey) { if (app.showErrorToast) app.showErrorToast('API Key required'); return; }
 
         const maxContextTokens = document.getElementById('providerMaxContext').value ? parseInt(document.getElementById('providerMaxContext').value) : null;
         const maxOutputTokens = document.getElementById('providerMaxOutput').value ? parseInt(document.getElementById('providerMaxOutput').value) : null;
