@@ -20,6 +20,7 @@ Use this file first:
 | `DEBT-UX-AGENT-001.md` | Startup/filetree/session fixes are code-level complete but need real GUI verification. |
 | `DEBT-UX-B07-001-TAURI-DEV-SMOKE-BLOCKED.md` | Tauri dev smoke blocker remains active. |
 | `DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
+| `DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | `SHELL-FEATURE-DEBT-002.md` | Complex shell features remain intentionally downgraded by design. |
 
 ## Code-Level Guides & Closure Receipts

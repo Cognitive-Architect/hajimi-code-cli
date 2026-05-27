@@ -209,6 +209,30 @@
             const step = app.escapeHtml(ev.step || ev.step_type || 'Other');
             const iteration = app.escapeHtml(String(ev.iteration ?? '-'));
             const details = app.escapeHtml(ev.details || '');
+
+            const isStoreCheckpoint = ev.step_type === 'Store' && (ev.details && ev.details.toLowerCase().includes('checkpoint'));
+            const isEditStep = ev.step_type === 'EditProposed' || ev.step_type === 'EditApplied' || ev.step_type === 'EditRejected';
+            const isCheckpoint = isStoreCheckpoint || isEditStep;
+
+            let checkpointHtml = '';
+            if (isCheckpoint) {
+              const stepTypeLower = (ev.step_type || 'other').toLowerCase();
+              const ts = new Date(ev.timestamp).getTime();
+              const chkId = `chk_trace_${ev.iteration}_${stepTypeLower}_${ts}`;
+              checkpointHtml = `
+                <div class="trace-checkpoint-badge" style="margin-top:6px; padding:6px; background:var(--bg-subtle); border-radius:4px; font-size:10px; display:flex; flex-direction:column; gap:4px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:var(--fg-magenta); font-weight:bold;">🔒 检查点已保存</span>
+                    <span style="color:var(--fg-dim); font-family:var(--font-mono); font-size:9px;">${chkId}</span>
+                  </div>
+                  <div style="display:flex; gap:6px; margin-top:2px;">
+                    <button class="trace-chk-btn restore" data-id="${chkId}">恢复</button>
+                    <button class="trace-chk-btn compare" data-id="${chkId}">对比</button>
+                  </div>
+                </div>
+              `;
+            }
+
             return `
               <div style="border-left:3px solid ${color};padding:6px 8px;margin-bottom:6px;background:var(--bg-hover);border-radius:4px;font-size:11px;line-height:1.4;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
@@ -216,12 +240,27 @@
                   <span style="color:var(--fg-dim);font-size:10px;">#${iteration}</span>
                 </div>
                 <div style="color:var(--fg-default);">${details}</div>
+                ${checkpointHtml}
               </div>
             `;
           }).join('')}
         </div>
       </div>
     `;
+
+    container.querySelectorAll('.trace-chk-btn.restore').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        app.restoreCheckpoint(btn.dataset.id);
+      });
+    });
+
+    container.querySelectorAll('.trace-chk-btn.compare').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        alert(`对比检查点 [${btn.dataset.id}]\n\n架构设计约束：\n本地 Trace 检查点由运行时流式生成，当前底层未包含历史完整快照。请前往编辑器“Git”面板查看实时工作区与 HEAD 的 Git Diff 差异。`);
+      });
+    });
   }
 
   async function loadLatestReceipt(app) {
