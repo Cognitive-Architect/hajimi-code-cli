@@ -121,6 +121,9 @@ pub struct AgentLoop {
     edit_applier: Option<Arc<EditApplier>>,
     pub skill_registry: Option<Arc<crate::skills::SkillRegistry>>,
     pub skill_router: Option<Arc<crate::skills::SkillRouter>>,
+    /// The tool registry holding all active tools.
+    /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety and Option to support backward compatibility.
+    pub tool_registry: Option<Arc<Mutex<ToolRegistry>>>,
 }
 
 impl AgentLoop {
@@ -135,6 +138,15 @@ impl AgentLoop {
             config.sync_gateway.clone(),
             config.memory.clone(),
         );
+        // SAFETY: Currently in Day 2, AgentLoopConfig does not yet have tool_registry.
+        // We initialize it to None and will support injecting it in Day 3 via builder.
+        let tool_registry: Option<Arc<Mutex<ToolRegistry>>> = None;
+        let tool_count = if let Some(ref reg) = tool_registry {
+            reg.blocking_lock().list().len()
+        } else {
+            0
+        };
+        info!("AgentLoop initialized with {} tools", tool_count);
         Self {
             context: config.context,
             planner: config.planner,
@@ -153,6 +165,7 @@ impl AgentLoop {
             edit_applier: None,
             skill_registry: config.skill_registry,
             skill_router: config.skill_router,
+            tool_registry,
         }
     }
 
@@ -426,10 +439,12 @@ impl AgentLoop {
             Ok(call) => call,
             Err(_) => return Ok(None),
         };
-        let act_executor = ActExecutor::new(
-            Arc::new(Mutex::new(ToolRegistry::new())),
-            self.governance.clone(),
-        );
+        // SAFETY: If tool_registry is not injected, we fall back to an empty one.
+        let registry = self.tool_registry.clone().unwrap_or_else(|| {
+            warn!("No ToolRegistry injected, falling back to an empty one");
+            Arc::new(Mutex::new(ToolRegistry::default()))
+        });
+        let act_executor = ActExecutor::new(registry, self.governance.clone());
         let result = act_executor
             .execute_chain(&self.context, &self.blackboard, agent_id, &call)
             .await;
