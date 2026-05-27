@@ -1,10 +1,10 @@
 # HAJIMI V3 源代码索引
 
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)  
-> **最后更新**: 2026-04-30  
+> **最后更新**: 2026-05-27  
 > **代码总行数**: ~182,362行（.rs/.js/.ts/.html/.css，不含 .md 与依赖，实测2026-04-28）; 含文档（.md）总计 ~186,441行  
 > **架构**: 四层分层（Foundation/Engine/Intelligence/Interface）  
-> **当前状态**: ✅ Agent Core 266测试通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成；Hajimi IDE v1 就绪 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
+> **当前状态**: ✅ Agent Core 266测试通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，0新增clippy warning（agent-core范围内），unsafe SAFETY 100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成；Day 1-8 Agent UI Integration (触发、SSE Trace、Operation Summary、oneshot Approval Bridge、Checkpoint/Diff) 完美收官；Hajimi IDE v1 就绪 <!-- D4-AUDIT-2026-04-28: metrics from real commands -->
 
 ---
 

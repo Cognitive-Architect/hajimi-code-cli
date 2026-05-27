@@ -27,6 +27,7 @@ Use this file first:
 
 - `docs/debt/code-level/PRIORITY-GUIDE.md`: Actions and prioritization guide for P0/P1/P1-C security and functional debt.
 - `docs/debt/code-level/DEBTFIX-V5-CLOSURE-RECEIPT.md`: Closure receipt for the DebtFix V5 code-level automation pass, with residual real-provider and WebView manual debts retained.
+- `docs/debt/DEBT-AGENT-UI-REMEDIATION.md`: Closure receipt for the Agent UI Integration (Day 1 - Day 8) code-level E2E pass, documenting triggers, state trace, approval bridge, and residual manual smoke blockers.
 
 ## Archived In Latest Pass
 
