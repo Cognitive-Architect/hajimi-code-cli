@@ -205,6 +205,7 @@ impl TantivyIndexManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use foundation_hash::simhash64;
 
     #[test]
     fn test_simhash_routing() {

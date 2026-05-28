@@ -501,6 +501,63 @@ impl AgentLoop {
         }))
     }
 
+    /// Extract a file path hint from a natural-language description.
+    /// Supports patterns like "named X", "名为 X", "file X", "path X".
+    fn extract_file_path(desc: &str) -> Option<String> {
+        let desc_lower = desc.to_lowercase();
+        // Chinese: 名为 xxx 的文件 / 文件 xxx
+        if let Some(start) = desc_lower.find("名为 ") {
+            let rest = &desc[start + 6..]; // "名为 " is 6 bytes in UTF-8
+            let end = rest.find(' ').unwrap_or(rest.len());
+            let path = rest[..end]
+                .trim()
+                .trim_matches(|c| c == '，' || c == ',' || c == '"' || c == '\'');
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+        // English: named xxx / file xxx
+        if let Some(start) = desc_lower.find("named ") {
+            let rest = &desc[start + 6..];
+            let end = rest.find(' ').unwrap_or(rest.len());
+            let path = rest[..end]
+                .trim()
+                .trim_matches(|c| c == ',' || c == '"' || c == '\'');
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+        None
+    }
+
+    /// Extract (path, content) for write_file from a natural-language description.
+    /// Supports patterns like "content is Y" / "内容是 Y".
+    fn extract_write_file_params(desc: &str) -> (String, String) {
+        let path = Self::extract_file_path(desc).unwrap_or_else(|| "output.txt".to_string());
+        let desc_lower = desc.to_lowercase();
+        // Chinese: 内容是 xxx
+        if let Some(start) = desc_lower.find("内容是 ") {
+            let rest = &desc[start + 9..]; // "内容是 " is 9 bytes in UTF-8
+            let content = rest.trim().trim_matches(|c| c == '"' || c == '\'');
+            return (path, content.to_string());
+        }
+        // English: content is xxx
+        if let Some(start) = desc_lower.find("content is ") {
+            let rest = &desc[start + 11..];
+            let content = rest.trim().trim_matches(|c| c == '"' || c == '\'');
+            return (path, content.to_string());
+        }
+        // Fallback: use the whole description as content
+        (path, desc.to_string())
+    }
+
+    // LLM-NATIVE-TODO (Phase 3+): This is the third (and most destructive) layer of local rule-based intent mapping.
+    // The massive if-else chain at ~628-692 (and the duplicate in bootstrap_first_tool_call at ~848-910)
+    // performs keyword matching on Task.description — which has already been mangled by upstream Planner rules.
+    //
+    // In the LLM-Native path this entire method must be unreachable for normal operation.
+    // It is retained only as an emergency offline fallback.
+    // See LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md Day 10-14 for the systematic demotion plan.
     pub(crate) async fn legacy_act(
         &self,
         agent_id: &AgentId,
@@ -580,19 +637,34 @@ impl AgentLoop {
                 )
             } else {
                 // Task has no tool calls, perform rule-based mapping (fallback)
-                let desc = task.description.to_lowercase();
-                let tool_name = if desc.contains("read") || desc.contains("analyze") {
+                // FIX-B08-005: Support Chinese keywords and parse parameters from description.
+                let desc_lower = task.description.to_lowercase();
+                let tool_name = if desc_lower.contains("read")
+                    || desc_lower.contains("analyze")
+                    || desc_lower.contains("读")
+                    || desc_lower.contains("查看")
+                    || desc_lower.contains("分析")
+                {
                     "read_file".to_string()
-                } else if desc.contains("write")
-                    || desc.contains("edit")
-                    || desc.contains("create")
-                    || desc.contains("implement")
+                } else if desc_lower.contains("write")
+                    || desc_lower.contains("edit")
+                    || desc_lower.contains("create")
+                    || desc_lower.contains("implement")
+                    || desc_lower.contains("写")
+                    || desc_lower.contains("编辑")
+                    || desc_lower.contains("创建")
+                    || desc_lower.contains("生成")
+                    || desc_lower.contains("新建")
                 {
                     "write_file".to_string()
-                } else if desc.contains("test")
-                    || desc.contains("run")
-                    || desc.contains("compile")
-                    || desc.contains("build")
+                } else if desc_lower.contains("test")
+                    || desc_lower.contains("run")
+                    || desc_lower.contains("compile")
+                    || desc_lower.contains("build")
+                    || desc_lower.contains("测试")
+                    || desc_lower.contains("运行")
+                    || desc_lower.contains("编译")
+                    || desc_lower.contains("构建")
                 {
                     "powershell".to_string()
                 } else {
@@ -605,7 +677,7 @@ impl AgentLoop {
                     let guard = registry.lock().await;
                     if guard.get(&resolved_tool_name).is_none() {
                         for alternative in &["analyze", "ls", "read_file"] {
-                            if guard.get(*alternative).is_some() {
+                            if guard.get(alternative).is_some() {
                                 resolved_tool_name = alternative.to_string();
                                 break;
                             }
@@ -616,7 +688,14 @@ impl AgentLoop {
                 let parameters = if resolved_tool_name == "powershell" {
                     serde_json::json!({ "command": "echo 'local check'" })
                 } else if resolved_tool_name == "read_file" {
-                    serde_json::json!({ "path": "Cargo.toml" })
+                    // Try to extract file path from description, fallback to task description as hint
+                    let path = Self::extract_file_path(&task.description)
+                        .unwrap_or_else(|| "Cargo.toml".to_string());
+                    serde_json::json!({ "path": path })
+                } else if resolved_tool_name == "write_file" {
+                    // Try to extract file path and content from description
+                    let (path, content) = Self::extract_write_file_params(&task.description);
+                    serde_json::json!({ "path": path, "content": content })
                 } else {
                     serde_json::json!({})
                 };
@@ -699,6 +778,9 @@ impl AgentLoop {
         }
     }
 
+    // LLM-NATIVE-TODO (Phase 3+): bootstrap_first_tool_call still goes through Planner (decompose/expand)
+    // and contains its own duplicate rule-mapping logic (~848-910) that is almost identical to legacy_act.
+    // In LLM-Native mode this path should be bypassed entirely except for pure offline fallback scenarios.
     /// Bootstrap the first tool call when blackboard has no pending tools.
     ///
     /// This method is part of the LLM Bootstrap mechanism that automatically populates the planner
@@ -806,7 +888,7 @@ impl AgentLoop {
                 if guard.get(&resolved_tool_name).is_none() {
                     // Try some safe alternatives
                     for alternative in &["analyze", "ls", "read_file"] {
-                        if guard.get(*alternative).is_some() {
+                        if guard.get(alternative).is_some() {
                             resolved_tool_name = alternative.to_string();
                             break;
                         }
