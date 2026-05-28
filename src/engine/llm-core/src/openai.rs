@@ -139,12 +139,128 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_openai_chat_request_serialization() {
+        // case 1: no tools (NEG-001: Option is None, tools is not shown in payload)
+        let req = super::ChatRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            stream: true,
+            tools: None,
+            tool_choice: None,
+        };
+        let serialized = serde_json::to_value(&req).unwrap();
+        assert!(!serialized.as_object().unwrap().contains_key("tools"));
+        assert!(!serialized.as_object().unwrap().contains_key("tool_choice"));
+
+        // case 2: auto tools (CONST-003: support auto tool choice)
+        let req_auto = super::ChatRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            stream: true,
+            tools: Some(vec![serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "my_tool",
+                    "description": "desc",
+                    "parameters": {}
+                }
+            })]),
+            tool_choice: Some(serde_json::json!("auto")),
+        };
+        let serialized_auto = serde_json::to_value(&req_auto).unwrap();
+        assert!(serialized_auto.as_object().unwrap().contains_key("tools"));
+        assert_eq!(serialized_auto["tool_choice"], "auto");
+
+        // case 3: required tool (NEG-002: custom/required tool choice mapping)
+        let req_req = super::ChatRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            stream: true,
+            tools: Some(vec![serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "my_tool",
+                    "description": "desc",
+                    "parameters": {}
+                }
+            })]),
+            tool_choice: Some(serde_json::json!({
+                "type": "function",
+                "function": { "name": "my_tool" }
+            })),
+        };
+        let serialized_req = serde_json::to_value(&req_req).unwrap();
+        assert!(serialized_req.as_object().unwrap().contains_key("tools"));
+        assert_eq!(serialized_req["tool_choice"]["function"]["name"], "my_tool");
+    }
+
+    #[tokio::test]
+    async fn test_stream_chat_with_tools_401_error_handling() {
+        use crate::LlmClient;
+        use crate::LlmProvider;
+        use crate::ToolChoiceMode;
+        use crate::ToolDefinition;
+        use secrecy::SecretString;
+
+        let provider = LlmProvider::OpenAi {
+            api_key: SecretString::new("sk-invalid-key-for-test".to_string().into_boxed_str()),
+            model: "gpt-4".to_string(),
+            base_url: "https://api.openai.com".to_string(),
+        };
+        let client = super::OpenAiClient::new(provider);
+
+        // 带工具调用
+        let tools = vec![ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "param": { "type": "string" }
+                }
+            }),
+        }];
+
+        let result = client
+            .stream_chat_with_tools(
+                vec![crate::ChatMessage {
+                    role: "user".into(),
+                    content: "Hello".into(),
+                    timestamp: None,
+                }],
+                None,
+                tools,
+                ToolChoiceMode::Auto,
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let mut stream = result.unwrap();
+        let mut has_auth_error = false;
+        while let Some(chunk) = stream.next().await {
+            if let crate::StreamChunk::Error(err) = chunk {
+                if err.contains("401") || err.contains("API Key 无效") {
+                    has_auth_error = true;
+                }
+            }
+        }
+        assert!(
+            has_auth_error,
+            "Should yield a 401 Auth Error chunk gracefully"
+        );
+    }
 }
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
     messages: Vec<crate::ChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<serde_json::Value>,
 }
 #[derive(Deserialize)]
 struct Delta {
@@ -367,6 +483,17 @@ impl LlmClient for OpenAiClient {
         messages: Vec<crate::ChatMessage>,
         system_prompt: Option<String>,
     ) -> Result<ChannelStream, EngineError> {
+        self.stream_chat_with_tools(messages, system_prompt, vec![], crate::ToolChoiceMode::None)
+            .await
+    }
+
+    async fn stream_chat_with_tools(
+        &self,
+        messages: Vec<crate::ChatMessage>,
+        system_prompt: Option<String>,
+        tools: Vec<crate::ToolDefinition>,
+        tool_choice: crate::ToolChoiceMode,
+    ) -> Result<ChannelStream, EngineError> {
         let (stream, tx) = ChannelStream::new(100);
         let (api_key_secret, model, base_url) = match &self.provider {
             LlmProvider::OpenAi {
@@ -391,13 +518,56 @@ impl LlmClient for OpenAiClient {
                 },
             );
         }
+
+        let (tools_val, tool_choice_val) = if tools.is_empty() {
+            (None, None)
+        } else {
+            let mapped_tools: Vec<serde_json::Value> = tools
+                .into_iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters
+                        }
+                    })
+                })
+                .collect();
+
+            let choice_val = match &tool_choice {
+                crate::ToolChoiceMode::Auto => Some(serde_json::json!("auto")),
+                crate::ToolChoiceMode::None => Some(serde_json::json!("none")),
+                crate::ToolChoiceMode::Required(name) => {
+                    if name.trim().is_empty() {
+                        Some(serde_json::json!("auto"))
+                    } else {
+                        Some(serde_json::json!({
+                            "type": "function",
+                            "function": { "name": name }
+                        }))
+                    }
+                }
+            };
+
+            (Some(mapped_tools), choice_val)
+        };
+
         let client = Client::new();
         let url = crate::openai_chat_completions_url(&base_url);
         let req = ChatRequest {
             model: model.clone(),
             messages: msgs,
             stream: true,
+            tools: tools_val,
+            tool_choice: tool_choice_val,
         };
+
+        if let Ok(req_json) = serde_json::to_string(&req) {
+            log::trace!("OpenAI request payload: {}", req_json);
+        }
+
         let key = api_key_secret.expose_secret().to_string();
         let usage_ref = self.last_usage.clone();
         tokio::spawn(async move {
