@@ -190,6 +190,33 @@ pub struct TokenEvent {
     pub timestamp_ms: u64,
 }
 
+/// Definition of a tool exposed to the LLM model.
+///
+/// Contains the schema information required by the model to perform
+/// structured function calls (tool choice auto).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolDefinition {
+    /// The unique name of the tool.
+    pub name: String,
+    /// A description of what the tool does and when to use it.
+    pub description: String,
+    /// JSON Schema representing the tool's input parameters.
+    pub parameters: serde_json::Value,
+}
+
+/// How the model is instructed/allowed to use tools in a request.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolChoiceMode {
+    /// Model decides freely whether and which tools to call (default).
+    Auto,
+    /// Model must not call any tools.
+    None,
+    /// Model must call a specific tool.
+    #[serde(untagged)]
+    Required(String),
+}
+
 /// Unified LLM client trait
 #[async_trait]
 pub trait LlmClient: Send + Sync {
@@ -205,6 +232,20 @@ pub trait LlmClient: Send + Sync {
         messages: Vec<ChatMessage>,
         system_prompt: Option<String>,
     ) -> Result<ChannelStream, EngineError>;
+
+    /// Stream chat completion with support for tool definitions and choice.
+    ///
+    /// By default, falls back to `stream_chat_with_context` ignoring tools,
+    /// allowing legacy or unadapted providers to compile and work without breaking.
+    async fn stream_chat_with_tools(
+        &self,
+        messages: Vec<ChatMessage>,
+        system_prompt: Option<String>,
+        _tools: Vec<ToolDefinition>,
+        _tool_choice: ToolChoiceMode,
+    ) -> Result<ChannelStream, EngineError> {
+        self.stream_chat_with_context(messages, system_prompt).await
+    }
 
     /// Get provider type
     fn provider(&self) -> &LlmProvider;
@@ -266,6 +307,86 @@ mod tests {
             openai_chat_completions_url("https://api.example.test/v1/chat/completions"),
             "https://api.example.test/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn test_stream_chunk_variants() {
+        // FUNC-001: StreamChunk 能携带 ToolCallStart/ArgumentsDelta/ToolCallEnd 信息
+        let start = crate::StreamChunk::ToolCallStart {
+            id: "call_1".to_string(),
+            name: "read_file".to_string(),
+        };
+        let delta = crate::StreamChunk::ToolCallArgumentsDelta {
+            id: "call_1".to_string(),
+            delta: "{\"path\":".to_string(),
+        };
+        let end = crate::StreamChunk::ToolCallEnd {
+            id: "call_1".to_string(),
+        };
+
+        if let crate::StreamChunk::ToolCallStart { id, name } = start {
+            assert_eq!(id, "call_1");
+            assert_eq!(name, "read_file");
+        } else {
+            panic!("Expected ToolCallStart");
+        }
+
+        if let crate::StreamChunk::ToolCallArgumentsDelta { id, delta } = delta {
+            assert_eq!(id, "call_1");
+            assert_eq!(delta, "{\"path\":");
+        } else {
+            panic!("Expected ToolCallArgumentsDelta");
+        }
+
+        if let crate::StreamChunk::ToolCallEnd { id } = end {
+            assert_eq!(id, "call_1");
+        } else {
+            panic!("Expected ToolCallEnd");
+        }
+    }
+
+    #[test]
+    fn test_tool_definition_serialization() {
+        // FUNC-002: ToolDefinition 包含 name, description, parameters 属性
+        // CONST-004: ToolDefinition 的 parameters 为 serde_json::Value 类型
+        let def = crate::ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "Test description".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "param": { "type": "string" }
+                }
+            }),
+        };
+
+        let serialized = serde_json::to_string(&def).unwrap();
+        assert!(serialized.contains("test_tool"));
+        assert!(serialized.contains("properties"));
+
+        let deserialized: crate::ToolDefinition = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.name, "test_tool");
+        assert_eq!(deserialized.parameters["properties"]["param"]["type"], "string");
+    }
+
+    #[test]
+    fn test_tool_choice_mode_serialization() {
+        // FUNC-003: ToolChoiceMode 适配并能序列化
+        let auto = crate::ToolChoiceMode::Auto;
+        let none = crate::ToolChoiceMode::None;
+        let required = crate::ToolChoiceMode::Required("my_tool".to_string());
+
+        assert_eq!(serde_json::to_string(&auto).unwrap(), "\"auto\"");
+        assert_eq!(serde_json::to_string(&none).unwrap(), "\"none\"");
+        assert_eq!(serde_json::to_string(&required).unwrap(), "\"my_tool\"");
+
+        let des_auto: crate::ToolChoiceMode = serde_json::from_str("\"auto\"").unwrap();
+        let des_none: crate::ToolChoiceMode = serde_json::from_str("\"none\"").unwrap();
+        let des_required: crate::ToolChoiceMode = serde_json::from_str("\"my_tool\"").unwrap();
+
+        assert_eq!(des_auto, auto);
+        assert_eq!(des_none, none);
+        assert_eq!(des_required, required);
     }
 }
 

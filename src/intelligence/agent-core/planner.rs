@@ -179,14 +179,40 @@ impl HierarchicalPlanner {
             Decision::Approved | Decision::Escalated(_)
         ))
     }
+
+    // LLM-NATIVE-TODO (Phase 3+): This entire function is legacy rule-based intent destruction.
+    // In the LLM-Native path (HAJIMI_AGENT_LLM_NATIVE_ENABLED=true) this must never be called
+    // on the primary execution route. It will be kept only as an offline fallback when LLM is unavailable.
+    // See docs/roadmap/Hajimi Search/LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md
     fn decompose_rule_based(&self, goal: &Goal) -> Vec<SubGoal> {
         let desc = goal.description.to_lowercase();
-        let patterns: Vec<&str> = if desc.contains("implement") || desc.contains("create") {
+        // FIX-I18N-001: Add Chinese keyword support for rule-based decomposition.
+        let patterns: Vec<&str> = if desc.contains("implement")
+            || desc.contains("create")
+            || desc.contains("创建")
+            || desc.contains("实现")
+            || desc.contains("生成")
+            || desc.contains("新建")
+            || desc.contains("写")
+        {
             vec!["Analyze requirements", "Design", "Implement", "Test"]
-        } else if desc.contains("fix") {
+        } else if desc.contains("fix")
+            || desc.contains("修复")
+            || desc.contains("修改")
+            || desc.contains("解决")
+            || desc.contains("bug")
+        {
             vec!["Reproduce", "Identify cause", "Apply fix", "Verify"]
+        } else if desc.contains("read")
+            || desc.contains("analyze")
+            || desc.contains("读")
+            || desc.contains("查看")
+            || desc.contains("分析")
+        {
+            vec!["Read content", "Analyze findings", "Summarize"]
         } else {
-            vec!["Research", "Execute", "Validate"]
+            // Preserve original description as first subgoal to retain user intent.
+            vec![&goal.description, "Execute", "Validate"]
         };
         patterns
             .into_iter()
@@ -206,12 +232,36 @@ impl HierarchicalPlanner {
             metadata: HashMap::new(),
         }
     }
+
+    // LLM-NATIVE-TODO (Phase 3+): Legacy rule-based task generation.
+    // This function performs a second round of keyword-based rewriting on already-damaged SubGoal descriptions.
+    // It must be bypassed in the main LLM-Native path.
     fn generate_tasks_for(&self, sg: &SubGoal) -> Vec<Task> {
         let desc = sg.description.to_lowercase();
-        let items: Vec<&str> = if desc.contains("implement") {
+        // FIX-I18N-002: Add Chinese keyword support for task generation.
+        let items: Vec<&str> = if desc.contains("implement")
+            || desc.contains("create")
+            || desc.contains("write")
+            || desc.contains("写")
+            || desc.contains("创建")
+            || desc.contains("实现")
+            || desc.contains("生成")
+        {
             vec!["Write code", "Check compilation"]
-        } else if desc.contains("test") {
+        } else if desc.contains("test")
+            || desc.contains("run")
+            || desc.contains("测试")
+            || desc.contains("运行")
+            || desc.contains("检查")
+        {
             vec!["Run tests", "Review"]
+        } else if desc.contains("read")
+            || desc.contains("analyze")
+            || desc.contains("读")
+            || desc.contains("查看")
+            || desc.contains("分析")
+        {
+            vec!["Read content", "Analyze findings", "Summarize"]
         } else {
             vec![&sg.description]
         };

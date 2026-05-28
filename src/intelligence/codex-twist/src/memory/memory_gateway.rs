@@ -135,6 +135,7 @@ impl MemoryGateway {
                 StreamChunk::Output(text) => summary.push_str(&text),
                 StreamChunk::Error(err) => return Err(format!("LLM错误: {}", err)),
                 StreamChunk::Done => break,
+                _ => {}
             }
         }
 

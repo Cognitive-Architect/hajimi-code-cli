@@ -2422,16 +2422,16 @@ window.app = {
 
   getSlashCommands() {
     return [
-      { id: 'tools', trigger: '/tools', title: 'List tools', description: 'Show available backend tools', category: 'tool', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['list', 'backend'] },
-      { id: 'providers', trigger: '/providers', title: 'List providers', description: 'Show configured model providers', category: 'model', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['models'] },
-      { id: 'tool', trigger: '/tool', title: 'Run tool', description: 'Fill /tool <name> {json_args}', category: 'tool', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/tool ' },
-      { id: 'chat', trigger: '/chat', title: 'Chat with provider', description: 'Fill /chat <provider> <prompt>', category: 'model', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/chat ' },
-      { id: 'mcp', trigger: '/mcp', title: 'MCP command', description: 'Fill /mcp list/init/invoke', category: 'mcp', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/mcp ' },
-      { id: 'search', trigger: '/search', title: 'Search workspace', description: 'Fill /search <pattern>', category: 'search', riskLevel: 'low', enabled: true, executeMode: 'fill', insertText: '/search ' },
-      { id: 'git', trigger: '/git', title: 'Git helper', description: 'Fill /git status/diff/commit', category: 'git', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/git ' },
-      { id: 'extensions', trigger: '/extensions', title: 'List extensions', description: 'Show available extensions', category: 'extension', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['plugins'] },
-      { id: 'compact', trigger: '/compact', title: 'Compact context', description: 'Fill compact command for explicit submit', category: 'context', riskLevel: 'medium', enabled: true, executeMode: 'fill' },
-      { id: 'agent', trigger: '/agent', title: 'Run agent task', description: 'Fill /agent <goal>', category: 'agent', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/agent ' },
+      { id: 'tools', trigger: '/tools', title: 'List tools', description: 'Show available backend tools', category: 'tool', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['list', 'backend', '工具', '列出'] },
+      { id: 'providers', trigger: '/providers', title: 'List providers', description: 'Show configured model providers', category: 'model', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['models', '模型', '提供商'] },
+      { id: 'tool', trigger: '/tool', title: 'Run tool', description: 'Fill /tool <name> {json_args}', category: 'tool', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/tool ', keywords: ['运行', '执行', '工具'] },
+      { id: 'chat', trigger: '/chat', title: 'Chat with provider', description: 'Fill /chat <provider> <prompt>', category: 'model', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/chat ', keywords: ['聊天', '对话'] },
+      { id: 'mcp', trigger: '/mcp', title: 'MCP command', description: 'Fill /mcp list/init/invoke', category: 'mcp', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/mcp ', keywords: ['mcp'] },
+      { id: 'search', trigger: '/search', title: 'Search workspace', description: 'Fill /search <pattern>', category: 'search', riskLevel: 'low', enabled: true, executeMode: 'fill', insertText: '/search ', keywords: ['搜索', '查找'] },
+      { id: 'git', trigger: '/git', title: 'Git helper', description: 'Fill /git status/diff/commit', category: 'git', riskLevel: 'medium', enabled: true, executeMode: 'fill', insertText: '/git ', keywords: ['git', '版本控制'] },
+      { id: 'extensions', trigger: '/extensions', title: 'List extensions', description: 'Show available extensions', category: 'extension', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['plugins', '扩展', '插件'] },
+      { id: 'compact', trigger: '/compact', title: 'Compact context', description: 'Fill compact command for explicit submit', category: 'context', riskLevel: 'medium', enabled: true, executeMode: 'fill', keywords: ['压缩', '精简', '上下文'] },
+      { id: 'agent', trigger: '/agent', title: 'Run agent task', description: 'Fill /agent <goal>', category: 'agent', riskLevel: 'high', enabled: true, executeMode: 'fill', insertText: '/agent ', keywords: ['代理', '智能体', 'agent', '任务'] },
     ];
   },
 
@@ -2565,6 +2565,31 @@ window.app = {
   },
 
   async handleChatCommand(text) {
+    // FIX-I18N-003: Map Chinese slash commands to English equivalents.
+    const commandMap = {
+      '/代理': '/agent', '/智能体': '/agent',
+      '/工具': '/tools', '/列出工具': '/tools',
+      '/模型': '/providers', '/提供商': '/providers',
+      '/运行工具': '/tool', '/执行工具': '/tool',
+      '/聊天': '/chat', '/对话': '/chat',
+      '/搜索': '/search', '/查找': '/search',
+      '/mcp': '/mcp',
+      '/git': '/git', '/版本控制': '/git',
+      '/扩展': '/extensions', '/插件': '/extensions',
+      '/压缩': '/compact', '/精简': '/compact',
+    };
+    // Check for exact match or prefix match for Chinese commands
+    for (const [cn, en] of Object.entries(commandMap)) {
+      if (text === cn) {
+        text = en;
+        break;
+      }
+      if (text.startsWith(cn + ' ')) {
+        text = en + text.slice(cn.length);
+        break;
+      }
+    }
+
     if (text === '/agent') {
       this.addChatMessage('ai', '用法: `/agent <任务目标>`\n\n例如: `/agent 帮我把 App.js 的背景改成暗色模式`');
       return;

@@ -188,13 +188,11 @@ pub struct Task { pub description: String, pub tool_calls: Vec<ToolCall>, ... }
 - legacy_act (agent_loop.rs:615-618) 和 try_act_executor_chain (480-483) 仍保留「无注册表则退化为空」的防御性代码。
 - 在 LLM-Native 路径下，工具列表需要**以模型可见规格（model_visible_specs）形式**暴露给 LLM，而不仅仅是运行时执行句柄。
 
-### 2.8 Engine LlmClient 层工具调用能力缺口（实测 2026-05-28）
+### 2.8 Engine LlmClient 层工具调用能力缺口（已完成）
 
-> **这是原文档遗漏的最关键技术障碍。**
+> **现状更新 (2026-05-28)**: 该能力缺口已于 Day 04 完美补齐。`StreamChunk` 已成功扩充 `ToolCallStart`、`ToolCallArgumentsDelta` 和 `ToolCallEnd` 变体，并增加了 `ToolDefinition` 和 `ToolChoiceMode` 的序列化定义，在 `LlmClient` 实现了 `stream_chat_with_tools` 的默认虚函数实现，所有依赖 match arms 已添加默认 `_` 匹配，通过完整单元测试。
 
-对 `src/engine/llm-core/src/` 全量采样，确认当前 Engine 层**完全不具备**向 LLM 传递工具定义或解析结构化 ToolCall 响应的能力：
-
-**LlmClient trait（mod.rs:194-237）** — 签名中无 tools / tool_choice 参数：
+**LlmClient trait（mod.rs:194-237）** — 签名中已包含 `stream_chat_with_tools`：
 ```rust
 async fn stream_chat_with_context(
     &self,
@@ -413,7 +411,7 @@ pub struct ModelVisibleToolSpec {
 ### 5.3 渐进式迁移顺序（修订后，与路线图对齐）
 
 - **Phase 1** (Day 1-3): 引入 `RawUserIntent`、`ModelVisibleToolSpec`、`AgentTurnDriver` 骨架 + feature gate。**Day 1 骨架已落地（`llm_native/` 四文件已存在），Day 2 Tool Exposure (ToolSpecExporter::from_registry 真实导出与 Schema 动态获取) 已于 2026-05-28 完美实装并通过单元测试！**
-- **Phase 1.5** (Day 4-8, **新增**): **Engine 层 LlmClient 改造** — 扩展 `StreamChunk` 增加 ToolCall 变体，为三个 Provider（Anthropic/OpenAI/Ollama）分别实现 `stream_chat_with_tools`，完成真实导出。这是原文档遗漏的最关键前置工作。
+- **Phase 1.5** (Day 4-8, **新增**): **Engine 层 LlmClient 改造** — 扩展 `StreamChunk` 增加 ToolCall 变体，为三个 Provider（Anthropic/OpenAI/Ollama）分别实现 `stream_chat_with_tools`，完成真实导出。这是原文档遗漏的最关键前置工作。**[Completed/已完成]**
 - **Phase 2** (Day 9-15): 实现 `llm_native_turn` 执行循环 + 流式 ToolCall 处理；通过 feature gate 双轨并行。
 - **Phase 3** (Day 16-18): 把规则层标记为 legacy / offline-only；在入口处增加清晰分支。
 - **Phase 4** (Day 19-22): 大规模删除规则层内部的关键词补丁（FIX-I18N-*、FIX-B08-*）。

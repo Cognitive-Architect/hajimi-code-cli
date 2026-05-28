@@ -15,6 +15,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// BB_NEXT_TOOL: Stores the serialized next ToolCallV1, or a next-step hint.
+///
+/// LLM-NATIVE-TODO (Phase 2+): In the pure LLM-Native path, BB_NEXT_TOOL is no longer the required
+/// bridge between planning and execution. The model streams ToolCalls directly; results are fed
+/// back as conversation messages. This constant may be kept only for legacy/ActExecutorV1 compatibility
+/// or for cross-path governance state sharing.
 pub(crate) const BB_NEXT_TOOL: &str = "__hajimi_act_next_tool";
 /// BB_LAST_TOOL: Stores the last tool name attempted by ActExecutor.
 pub(crate) const BB_LAST_TOOL: &str = "__hajimi_act_last_tool";

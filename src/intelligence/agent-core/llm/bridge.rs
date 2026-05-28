@@ -705,6 +705,7 @@ pub async fn collect_stream(
                 return Err(engine_llm_core::EngineError::InvalidParameters(e))
             }
             engine_llm_core::StreamChunk::Done => break,
+            _ => {}
         }
     }
     Ok(text)
