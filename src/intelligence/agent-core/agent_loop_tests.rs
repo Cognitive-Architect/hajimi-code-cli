@@ -36,6 +36,7 @@ mod tests {
             edit_applier: None,
             skill_registry: None,
             skill_router: None,
+            tool_registry: None,
         })
     }
 

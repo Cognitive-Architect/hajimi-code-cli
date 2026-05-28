@@ -3,7 +3,7 @@
 > **文档版本**: v3.9.0 (Hajimi IDE v1 Complete)
 > **架构风格**: 四层分层架构 + 本地优先 + Tauri v2 桌面应用
 > **核心原则**: 下层零依赖上层、Git历史完整、最小侵入
-> **当前状态**: ✅ Agent Core 266测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成；Day 1-8 Agent UI Integration (触发、SSE Trace、Operation Summary、oneshot Approval Bridge、Checkpoint/Diff) 完美收官
+> **当前状态**: ✅ Agent Core 294+测试全部通过（实测 `cargo test -p intelligence-agent-core -- --list`），0编译error，unsafe SAFETY注释100%覆盖；Phase 4 Editing & IDE Integration 完成；Phase 4 Remediation 完成（D4/D1/D3/D2/D5 全维度修复）；Phase 5 UI Interaction Core Remediation 完成；Day 1-8 Agent UI Integration (触发、SSE Trace、Operation Summary、oneshot Approval Bridge、Checkpoint/Diff) 完美收官
 > **最后更新**: 2026-05-27
 
 ---

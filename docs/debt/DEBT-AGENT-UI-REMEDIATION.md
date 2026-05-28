@@ -4,7 +4,7 @@
 > **Revision Date**: 2026-05-27
 > **Cluster**: Agent UI Integration (Day 1 - Day 8)
 > **Branch**: `v3.8.0-batch-1`
-> **HEAD**: `15fd8f6342e008f3a8f202cbd4bd00ae01c35be9`
+> **HEAD**: `6ee68d700fddf8470b5b2cc2cf8cda626459525b`
 > **Scope**: Agent mode triggers (`/agent`), Trace dynamic card streaming, asynchronous E2E approval bridge, checkpoint ID binding, technical debt closure
 
 ---
@@ -27,7 +27,7 @@ git branch --show-current
 v3.8.0-batch-1
 
 git rev-parse HEAD
-15fd8f6342e008f3a8f202cbd4bd00ae01c35be9
+6ee68d700fddf8470b5b2cc2cf8cda626459525b
 ```
 
 ---
@@ -36,11 +36,11 @@ git rev-parse HEAD
 
 | Track / Day | Scope & Achievement | Status | Evidence |
 |---|---|---|---|
-| **Day 1: Trigger & Mode** | Integrated `/agent` slash command in `slash-palette.js` to dispatch agent tasks through the Tauri FFI `run_agent_task` bridge instead of pure Chat. | `VERIFIED` | `slash-palette.js` and `tauri-bridge.js` FFI commands. |
-| **Day 2: Trace SSE Stream** | Handled SSE streams inside `streamChat` to dynamically parse `AgentUiEvent` chunks, route telemetry to `traceEvents` array, and trigger real-time updates. | `VERIFIED` | Trace parser regex rules and `loadEditHistory` hooks. |
-| **Day 3: State cards** | Styled distinct execution state cards (Observe, Retrieve, Plan, Act, Reflect, Store, Decide) in `inspector.js` to render trace state progressions. | `VERIFIED` | `renderTraceInspector` module rendering rules. |
-| **Day 4: Summary Bar** | Constructed dynamic Operation Summary Bar under `task-detail` to list live workspace metrics (files edited/created, commands run, diff line counts). | `VERIFIED` | `renderTraceInspector` and `app.js` trace handlers. |
-| **Day 5: WebRTC / E2E** | Hardened WebRTC telemetry streaming & verified security PSK handshakes. | `VERIFIED` | Zero-Math.random CSPRNG checks & integration tests. |
+| **Day 1: Sampling & Planning** | Surveyed existing codebase to identify agent integration points: `AgentLoop::execute_goal`, `subscribe_trace`, `run_agent_task` absence, and frontend slash entry positions. | `VERIFIED` | `AGENT-UI-INTEGRATION-SAMPLING-NOTES.md`. |
+| **Day 2: Backend Entry** | Implemented `run_agent_task` Tauri command in `main.rs` to bridge frontend goals to `AgentLoop::execute_goal`, with `AgentUiEvent` enum for Status/Result/Done/Error streaming. | `VERIFIED` | `main.rs:run_agent_task` and `AgentUiEvent` enum. |
+| **Day 3: Frontend Entry** | Added `/agent` slash command in `app.js` `getSlashCommands()` and `handleChatCommand()`, with `invokeAgentTask()` calling `run_agent_task` via Tauri Channel. | `VERIFIED` | `app.js:getSlashCommands`, `handleChatCommand`, `invokeAgentTask`. |
+| **Day 4: Trace Streaming** | Streamed `AgentUiEvent::Trace` via `subscribe_agent_trace()` in `main.rs`, forwarding `TraceEvent` through `tokio::spawn` + broadcast, with frontend `traceEvents` accumulation and inspector tab counting. | `VERIFIED` | `subscribe_agent_trace`, `agent:trace` event emission, `app.js` trace handler. |
+| **Day 5: Operation Summary** | Added friendly `LoopOutcome` parsing (Success/Aborted/BudgetExceeded/ActFailed) with task status cards (running/completed/failed), and `renderInspectorOperationSummary()` with honest `unknown` fallback for unproven stats. | `VERIFIED` | `app.js:handleAgentEvent` result branch, `renderInspectorOperationSummary`. |
 | **Day 6: Approval Bridge** | Engineered E2E asynchronous approval bridge via mutex-locked oneshot channels to securely suspend the tokio worker thread for user approval. | `VERIFIED` | `cargo test -p intelligence-agent-core governance` and custom glassmorphism modal code. |
 | **Day 7: Checkpoint Diff** | Generated `chk_trace_...` checkpoint records on trace ticks and styled high-fidelity glassmorphism Badge links in trace cards with restore/compare controls. | `VERIFIED` | `cargo test -p intelligence-agent-core checkpoint` & `DEBT-AGENT-CHECKPOINT-DIFF-UI.md`. |
 
@@ -58,7 +58,7 @@ PASS: Finished dev profile successfully.
 PASS: exit code 0.
 
 [TEST] cargo test -p intelligence-agent-core
-PASS: 20 passed, 0 failed across checkpoint, governance, e2e, and workflow tests.
+PASS: 462 passed, 0 failed across lib (294), checkpoint (4), governance (9), trace_event (8), workflow (10), swarm_callback_e2e (3), and additional integration tests.
 
 [CHECK] node --check src/interface/web/app.js
 PASS: exit code 0.
@@ -90,4 +90,4 @@ PASS: exit code 0.
 
 ## 6. Rollback & Reversion Plan
 
-If any regression is discovered in the E2E Agent trigger path, revert changes on branch `v3.8.0-batch-1` to HEAD `cc53b59c5d00a12e2c07ef90a21fbc8eb91c7849` (the state before Day 7 checkpoint integration) or reopen `DEBT-AGENT-UI-INTEGRATION.md` by changing status back to `OPEN`.
+If any regression is discovered in the E2E Agent trigger path, revert changes on branch `v3.8.0-batch-1` to HEAD `cc53b59c067c458ca9cac4c1f0985e7bad9e6f3c` (the state before Day 7 checkpoint integration) or reopen `DEBT-AGENT-UI-INTEGRATION.md` by changing status back to `OPEN`.

@@ -54,6 +54,7 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-010 Agent UI integration | `CLOSED (CODE-LEVEL AUTOMATION PASS / PENDING-UI-SMOKE)` | **P0** | `docs/debt/DEBT-AGENT-UI-INTEGRATION.md`; `docs/debt/DEBT-AGENT-UI-REMEDIATION.md` | CLOSED at code and automation level. /agent command bridged to agent_loop, trace parser parses SSE dynamic events, Right Inspector renders Observe->Decide progression, Operation Summary, E2E oneshot approval dialog, checkpoint badges dynamically match. Residual UI smoke remains. |
 | AD-011 Agent Governance UI waiting | `IMPLEMENTED/PENDING-UI-SMOKE` | P1 | `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
 | AD-012 Agent Checkpoint Diff Preview UI | `EXPLORED/PARTIAL-UI` | P1 | `docs/debt/DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
+| AD-013 Agent Loop LLM No-Op | `OPEN` | **P0** | `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md` | Agent Loop `Act` step returns empty fallback (`"No pending tasks"`, `"executed locally (no idle worker)"`) without real LLM tool calls. `BB_NEXT_TOOL` is never written; `planner.next_task()` returns None; `swarm` has no available workers. Agent UI is a placebo — tasks show "Success" in 1-2 seconds with zero side effects. Must implement Goal→Plan→ToolCall→LLM→Execution→Reflect real chain. |
 
 ## 4. Manual Verification Debt
 
@@ -88,6 +89,7 @@ The root `docs/debt` directory intentionally keeps only active debt declarations
 ```text
 DEBT-AGENT-CHECKPOINT-DIFF-UI.md
 DEBT-AGENT-GOVERNANCE-UI-WAITING.md
+DEBT-AGENT-LOOP-LLM-NO-OP.md
 DEBT-AGENT-SKILLS-V0.md
 DEBT-AGENT-UI-INTEGRATION.md
 DEBT-AGENT-UI-REMEDIATION.md

@@ -7,6 +7,7 @@ use crate::planner::Planner;
 use crate::reflector::Reflector;
 use crate::swarm::Supervisor;
 use crate::{AgentContext, AgentError};
+use engine_tool_system::ToolRegistry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -27,6 +28,9 @@ pub struct AgentLoopConfig {
     pub edit_applier: Option<Arc<EditApplier>>,
     pub skill_registry: Option<Arc<crate::skills::SkillRegistry>>,
     pub skill_router: Option<Arc<crate::skills::SkillRouter>>,
+    /// The tool registry holding all active tools.
+    /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety and Option to support backward compatibility.
+    pub tool_registry: Option<Arc<Mutex<ToolRegistry>>>,
 }
 
 pub struct AgentLoopBuilder {
@@ -43,6 +47,7 @@ pub struct AgentLoopBuilder {
     edit_applier: Option<Option<Arc<EditApplier>>>,
     skill_registry: Option<Option<Arc<crate::skills::SkillRegistry>>>,
     skill_router: Option<Option<Arc<crate::skills::SkillRouter>>>,
+    tool_registry: Option<Option<Arc<Mutex<ToolRegistry>>>>,
 }
 
 impl AgentLoopBuilder {
@@ -61,6 +66,7 @@ impl AgentLoopBuilder {
             edit_applier: Some(None),
             skill_registry: Some(None),
             skill_router: Some(None),
+            tool_registry: Some(None),
         }
     }
 
@@ -142,6 +148,12 @@ impl AgentLoopBuilder {
         self.skill_router = Some(r);
         self
     }
+    /// Injects a custom `ToolRegistry` into the `AgentLoop`.
+    /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety across concurrent tokio async execution.
+    pub fn with_tool_registry(mut self, reg: Arc<Mutex<ToolRegistry>>) -> Self {
+        self.tool_registry = Some(Some(reg));
+        self
+    }
 
     pub fn build(self) -> Result<AgentLoop, AgentError> {
         let context = self.context.unwrap_or_default();
@@ -166,6 +178,7 @@ impl AgentLoopBuilder {
         let edit_applier = self.edit_applier.flatten();
         let skill_registry = self.skill_registry.flatten();
         let skill_router = self.skill_router.flatten();
+        let tool_registry = self.tool_registry.flatten();
         let _iteration_count = Arc::new(Mutex::new(0));
         let _current_state = Arc::new(Mutex::new(crate::agent_loop::LoopState::Idle));
         let mut agent_loop = AgentLoop::from_components(AgentLoopConfig {
@@ -182,6 +195,7 @@ impl AgentLoopBuilder {
             edit_applier: edit_applier.clone(),
             skill_registry,
             skill_router,
+            tool_registry,
         });
         if let Some(ea) = edit_applier {
             agent_loop = agent_loop.with_edit_applier(ea);
@@ -193,5 +207,38 @@ impl AgentLoopBuilder {
 impl Default for AgentLoopBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::planner::HierarchicalPlanner;
+    use crate::reflector::AutonomousReflector;
+    use memory::memory_gateway::MemoryGateway;
+
+    #[tokio::test]
+    async fn test_agent_loop_builder_with_tool_registry() {
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        )));
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        )));
+        let registry = Arc::new(Mutex::new(ToolRegistry::default()));
+
+        let builder = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_tool_registry(registry.clone());
+
+        let agent_loop = builder
+            .build()
+            .expect("Should build agent loop successfully");
+        assert!(agent_loop.tool_registry.is_some());
     }
 }

@@ -138,11 +138,13 @@ impl AgentLoop {
             config.sync_gateway.clone(),
             config.memory.clone(),
         );
-        // SAFETY: Currently in Day 2, AgentLoopConfig does not yet have tool_registry.
-        // We initialize it to None and will support injecting it in Day 3 via builder.
-        let tool_registry: Option<Arc<Mutex<ToolRegistry>>> = None;
+        let tool_registry = config.tool_registry.clone();
         let tool_count = if let Some(ref reg) = tool_registry {
-            reg.blocking_lock().list().len()
+            if let Ok(guard) = reg.try_lock() {
+                guard.list().len()
+            } else {
+                0
+            }
         } else {
             0
         };
@@ -1316,6 +1318,7 @@ mod tests {
             edit_applier: None,
             skill_registry: None,
             skill_router: None,
+            tool_registry: None,
         })
     }
 
