@@ -3493,8 +3493,10 @@ fn main() {
             });
 
             let workspace_root = get_workspace_dir(app.handle()).map_err(std::io::Error::other)?;
-            // Build the registry and wrap it in Arc<Mutex<>> for thread safety and loop sharing (ADR-001)
-            let registry = Arc::new(tokio::sync::Mutex::new(build_registry(&workspace_root)));
+            // Build the registry once, count tools, then wrap in Arc<Mutex<>> for thread safety and loop sharing (ADR-001)
+            let built_registry = build_registry(&workspace_root);
+            let tool_count = built_registry.list().len();
+            let registry = Arc::new(tokio::sync::Mutex::new(built_registry));
 
             // Create production-ready AgentLoop with planner, reflector, and real ToolRegistry injected.
             // SAFETY: AgentLoop is Send + Sync; safe to hold in AppState and register with Tauri.
@@ -3520,10 +3522,7 @@ fn main() {
             };
 
             // Log tool injection count at info level to verify integration success (UX-002)
-            log::info!(
-                "AgentLoop initialized with {} tools",
-                build_registry(&workspace_root).list().len()
-            );
+            log::info!("AgentLoop initialized with {} tools", tool_count);
 
             let agent_loop_for_setup = Arc::new(agent_loop);
 
