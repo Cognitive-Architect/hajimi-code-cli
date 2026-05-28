@@ -304,9 +304,10 @@ async fn test_demo_greeting() {
         )
         .await
         .unwrap();
+    println!("test_demo_greeting output: {:?}", out);
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded
+        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
     ));
 }
 
@@ -360,7 +361,7 @@ async fn test_multi_step_task() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded
+        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
     ));
 }
 

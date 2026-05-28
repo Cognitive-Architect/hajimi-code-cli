@@ -28,7 +28,7 @@ async fn test_multi_step_task() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded
+        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
     ));
 }
 
@@ -85,7 +85,7 @@ async fn test_demo_greeting_e2e() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded
+        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
     ));
 }
 

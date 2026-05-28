@@ -713,15 +713,26 @@ mod tests {
 
         let mem = Arc::new(Mutex::new(MemoryGateway::new("bootstrap_test")));
         let mut registry = ToolRegistry::new();
-        
+
         struct MockTool;
         #[async_trait::async_trait]
         impl engine_tool_system::Tool for MockTool {
-            fn name(&self) -> &str { "read_file" }
-            fn description(&self) -> &str { "mock read file" }
-            fn permissions(&self) -> engine_tool_system::ToolPermissions { Default::default() }
-            async fn execute(&self, _args: engine_tool_system::ToolArgs) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
-                Ok(engine_tool_system::ToolOutput::success("mocked file content"))
+            fn name(&self) -> &str {
+                "read_file"
+            }
+            fn description(&self) -> &str {
+                "mock read file"
+            }
+            fn permissions(&self) -> engine_tool_system::ToolPermissions {
+                Default::default()
+            }
+            async fn execute(
+                &self,
+                _args: engine_tool_system::ToolArgs,
+            ) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
+                Ok(engine_tool_system::ToolOutput::success(
+                    "mocked file content",
+                ))
             }
         }
         registry.register(Arc::new(MockTool));
@@ -747,22 +758,127 @@ mod tests {
             .unwrap();
 
         // Initially BB_NEXT_TOOL must be empty
-        assert!(loop_bb.read(crate::act_executor::BB_NEXT_TOOL).await.is_none());
+        assert!(loop_bb
+            .read(crate::act_executor::BB_NEXT_TOOL)
+            .await
+            .is_none());
 
         // Perform bootstrap on a goal
         let goal_id = "test_goal_1".to_string();
         let agent_id = "agent_test".to_string();
-        
-        let gid = agent_loop.plan_initial_goal("Fix compile bug").await.unwrap();
 
-        let bootstrapped = agent_loop.bootstrap_first_tool_call(&gid, &agent_id).await.unwrap();
+        let gid = agent_loop
+            .plan_initial_goal("Fix compile bug")
+            .await
+            .unwrap();
+
+        let bootstrapped = agent_loop
+            .bootstrap_first_tool_call(&gid, &agent_id)
+            .await
+            .unwrap();
         assert!(bootstrapped.is_some(), "Expected bootstrapped tool call");
 
         let tc = bootstrapped.unwrap();
         assert_eq!(tc.tool_name, "read_file");
 
         // The BB_NEXT_TOOL should be written
-        let entry = loop_bb.read(crate::act_executor::BB_NEXT_TOOL).await.unwrap();
+        let entry = loop_bb
+            .read(crate::act_executor::BB_NEXT_TOOL)
+            .await
+            .unwrap();
         assert!(entry.value.contains("read_file"));
+    }
+
+    #[tokio::test]
+    async fn test_agent_local_execution_and_planner_activation() {
+        let _guard = ENV_MUTEX.lock().await;
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("planner_activation_test")));
+        let mut registry = ToolRegistry::new();
+
+        struct MockTool;
+        #[async_trait::async_trait]
+        impl engine_tool_system::Tool for MockTool {
+            fn name(&self) -> &str {
+                "read_file"
+            }
+            fn description(&self) -> &str {
+                "mock read file"
+            }
+            fn permissions(&self) -> engine_tool_system::ToolPermissions {
+                Default::default()
+            }
+            async fn execute(
+                &self,
+                _args: engine_tool_system::ToolArgs,
+            ) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
+                Ok(engine_tool_system::ToolOutput::success(
+                    "mocked file content for local execution",
+                ))
+            }
+        }
+        registry.register(Arc::new(MockTool));
+
+        let loop_bb = Arc::new(Blackboard::new());
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner.clone())
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(loop_bb.clone())
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_tool_registry(Arc::new(Mutex::new(registry)))
+            .build()
+            .unwrap();
+
+        // 1. Plan and initialize goal
+        let gid = agent_loop
+            .plan_initial_goal("Fix compilation bug")
+            .await
+            .unwrap();
+
+        // 2. Call decompose and expand through the planner directly
+        {
+            let mut planner_guard = planner.lock().await;
+            let sg_ids = planner_guard.decompose(&gid).await.unwrap();
+            assert!(!sg_ids.is_empty());
+            let task_ids = planner_guard.expand(&sg_ids[0]).await.unwrap();
+            assert!(!task_ids.is_empty());
+
+            // Check that next_task() is Some
+            let next_task = planner_guard.next_task().await.unwrap();
+            assert!(next_task.is_some());
+            let task = next_task.unwrap();
+            assert!(!task.description.is_empty());
+        }
+
+        // 3. Test local execution by calling legacy_act
+        let act_res = agent_loop
+            .legacy_act(&"agent_test".to_string(), &gid)
+            .await
+            .unwrap();
+        assert!(act_res.success);
+        assert!(act_res
+            .output
+            .contains("Local execution of read_file succeeded"));
+
+        // Verify the blackboard was written with the result
+        let result_entry = loop_bb
+            .read(crate::act_executor::BB_LAST_TOOL_RESULT)
+            .await
+            .unwrap();
+        assert!(result_entry
+            .value
+            .contains("Local execution of read_file succeeded"));
     }
 }

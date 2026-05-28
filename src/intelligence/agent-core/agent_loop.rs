@@ -210,6 +210,36 @@ impl AgentLoop {
         }
         let goal_id = self.plan_initial_goal(initial_goal).await?;
         info!("Initial goal created: {}", goal_id);
+
+        // Planner decompose 激活 (Day 6)
+        {
+            let mut planner = self.planner.lock().await;
+            info!("Hajimi RealAgent Plan: decomposing goal {}", goal_id);
+            match planner.decompose(&goal_id).await {
+                Ok(sg_ids) => {
+                    if !sg_ids.is_empty() {
+                        let first_sg_id = &sg_ids[0];
+                        info!(
+                            "Decomposed goal into {} subgoals. Expanding first subgoal: {}",
+                            sg_ids.len(),
+                            first_sg_id
+                        );
+                        if let Err(e) = planner.expand(first_sg_id).await {
+                            warn!("Planner expand failed for subgoal {}: {}", first_sg_id, e);
+                        }
+                    } else {
+                        warn!("Decompose returned empty subgoals for goal {}", goal_id);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Planner decompose failed during run(): {}. Rule-based fallback active.",
+                        e
+                    );
+                }
+            }
+        }
+
         let mut outcome = LoopOutcome::InProgress;
         for i in 0..MAX_ITERATIONS {
             while self.paused.load(Ordering::Relaxed) {
@@ -471,7 +501,11 @@ impl AgentLoop {
         }))
     }
 
-    async fn legacy_act(&self, agent_id: &AgentId, goal_id: &str) -> ReplResult<TaskResult> {
+    pub(crate) async fn legacy_act(
+        &self,
+        agent_id: &AgentId,
+        goal_id: &str,
+    ) -> ReplResult<TaskResult> {
         // legacy act path: preserve the pre-ActExecutor swarm/local fallback behavior.
         let iter = *self.iteration_count.lock().await;
         self.emit_trace(
@@ -481,31 +515,31 @@ impl AgentLoop {
         );
         let task_opt = { self.planner.lock().await.next_task().await? };
         if let Some(task) = task_opt {
+            let mut delegate_success = false;
+            let mut swarm_result = None;
+
             if let Some(ref swarm) = self.swarm {
                 match SwarmDelegate::try_delegate(swarm, &self.blackboard, agent_id, &task).await {
                     Some(Ok(result)) => {
                         self.emit_trace(
                             LoopState::Acting,
-                            format!("Task {} completed: success={}", task.id, result.success),
+                            format!(
+                                "Task {} completed via Swarm execution: success={}",
+                                task.id, result.success
+                            ),
                             iter,
                         );
-                        Ok(result)
+                        delegate_success = true;
+                        swarm_result = Some(Ok(result));
                     }
                     Some(Err(e)) => {
-                        warn!("Swarm delegation failed (falling back): {}", e);
+                        warn!("Swarm delegation failed (falling back to local): {}", e);
                         self.emit_trace(
                             LoopState::Acting,
                             format!("Delegation failed for task {}: {}", task.id, e),
                             iter,
                         );
-                        Ok(TaskResult {
-                            success: true,
-                            output: format!(
-                                "Task {} executed locally (delegation failed)",
-                                task.id
-                            ),
-                            timestamp: chrono::Utc::now(),
-                        })
+                        // Fall through to local execution
                     }
                     None => {
                         self.emit_trace(
@@ -513,22 +547,146 @@ impl AgentLoop {
                             "No idle worker available, falling back to local execution".to_string(),
                             iter,
                         );
+                        // Fall through to local execution
+                    }
+                }
+            }
+
+            if delegate_success {
+                if let Some(res) = swarm_result {
+                    return res;
+                }
+            }
+
+            // Local execution path (Day 6)
+            self.emit_trace(
+                LoopState::Acting,
+                format!("Local execution path activated for task {}", task.id),
+                iter,
+            );
+
+            // Perform local execution using registry
+            let registry = self.tool_registry.clone().unwrap_or_else(|| {
+                warn!("No ToolRegistry injected, falling back to an empty one");
+                Arc::new(Mutex::new(ToolRegistry::default()))
+            });
+
+            // Determine the tool call
+            let (tool_name, parameters) = if !task.tool_calls.is_empty() {
+                let tc = &task.tool_calls[0];
+                (
+                    tc.tool_name.clone(),
+                    serde_json::Value::Object(tc.parameters.clone().into_iter().collect()),
+                )
+            } else {
+                // Task has no tool calls, perform rule-based mapping (fallback)
+                let desc = task.description.to_lowercase();
+                let tool_name = if desc.contains("read") || desc.contains("analyze") {
+                    "read_file".to_string()
+                } else if desc.contains("write")
+                    || desc.contains("edit")
+                    || desc.contains("create")
+                    || desc.contains("implement")
+                {
+                    "write_file".to_string()
+                } else if desc.contains("test")
+                    || desc.contains("run")
+                    || desc.contains("compile")
+                    || desc.contains("build")
+                {
+                    "powershell".to_string()
+                } else {
+                    "read_file".to_string() // default safe fallback
+                };
+
+                // Verify if the mapped tool exists in registry, else fallback to any available safe tool or default
+                let mut resolved_tool_name = tool_name;
+                {
+                    let guard = registry.lock().await;
+                    if guard.get(&resolved_tool_name).is_none() {
+                        for alternative in &["analyze", "ls", "read_file"] {
+                            if guard.get(*alternative).is_some() {
+                                resolved_tool_name = alternative.to_string();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let parameters = if resolved_tool_name == "powershell" {
+                    serde_json::json!({ "command": "echo 'local check'" })
+                } else if resolved_tool_name == "read_file" {
+                    serde_json::json!({ "path": "Cargo.toml" })
+                } else {
+                    serde_json::json!({})
+                };
+
+                (resolved_tool_name, parameters)
+            };
+
+            info!(
+                "Executing tool '{}' via Local execution for task: {}",
+                tool_name, task.description
+            );
+            let guard = registry.lock().await;
+            if let Some(tool) = guard.get(&tool_name) {
+                // Execute tool
+                match tool.execute(parameters).await {
+                    Ok(output) => {
+                        let is_success = output.exit_code == Some(0);
+                        let content = if is_success {
+                            &output.stdout
+                        } else {
+                            &output.stderr
+                        };
+                        let summary = if is_success {
+                            format!("Local execution of {} succeeded: {}", tool_name, content)
+                        } else {
+                            format!("Local execution of {} failed: {}", tool_name, content)
+                        };
+                        self.blackboard
+                            .write(crate::act_executor::BB_LAST_TOOL_RESULT, &summary, agent_id)
+                            .await;
+                        self.emit_trace(
+                            LoopState::Acting,
+                            format!(
+                                "Local execution of {} completed. Success: {}",
+                                tool_name, is_success
+                            ),
+                            iter,
+                        );
                         Ok(TaskResult {
-                            success: true,
-                            output: format!("Task {} executed locally (no idle worker)", task.id),
+                            success: is_success,
+                            output: summary,
+                            timestamp: chrono::Utc::now(),
+                        })
+                    }
+                    Err(e) => {
+                        let summary =
+                            format!("Local execution of {} returned error: {}", tool_name, e);
+                        self.blackboard
+                            .write(crate::act_executor::BB_LAST_TOOL_RESULT, &summary, agent_id)
+                            .await;
+                        warn!("{}", summary);
+                        Ok(TaskResult {
+                            success: false,
+                            output: summary,
                             timestamp: chrono::Utc::now(),
                         })
                     }
                 }
             } else {
-                self.emit_trace(
-                    LoopState::Acting,
-                    "No swarm available, falling back to local execution".to_string(),
-                    iter,
+                let err_msg = format!(
+                    "Local execution failed: Tool '{}' not found in registry",
+                    tool_name
                 );
+                self.blackboard
+                    .write(crate::act_executor::BB_LAST_TOOL_RESULT, &err_msg, agent_id)
+                    .await;
+                warn!("{}", err_msg);
                 Ok(TaskResult {
-                    success: true,
-                    output: format!("Task {} executed locally (no swarm)", task.id),
+                    success: false,
+                    output: err_msg,
                     timestamp: chrono::Utc::now(),
                 })
             }
@@ -563,7 +721,10 @@ impl AgentLoop {
             return Ok(None);
         }
 
-        info!("AgentLoop bootstrapping first tool call for goal: {}", goal_id);
+        info!(
+            "AgentLoop bootstrapping first tool call for goal: {}",
+            goal_id
+        );
 
         // 1. Decompose the goal into subgoals
         let sg_ids = match planner.decompose(&goal_id.to_string()).await {
@@ -575,7 +736,10 @@ impl AgentLoop {
         };
 
         if sg_ids.is_empty() {
-            warn!("No subgoals generated during bootstrap for goal {}", goal_id);
+            warn!(
+                "No subgoals generated during bootstrap for goal {}",
+                goal_id
+            );
             return Ok(None);
         }
 
@@ -583,7 +747,10 @@ impl AgentLoop {
         let first_sg_id = &sg_ids[0];
         let task_ids = planner.expand(first_sg_id).await?;
         if task_ids.is_empty() {
-            warn!("No tasks expanded for subgoal {} during bootstrap", first_sg_id);
+            warn!(
+                "No tasks expanded for subgoal {} during bootstrap",
+                first_sg_id
+            );
             return Ok(None);
         }
 
@@ -601,12 +768,7 @@ impl AgentLoop {
                 schema_version: "1".to_string(),
                 action_type: crate::act_dto::ActionType::CallTool,
                 tool_name: tc.tool_name.clone(),
-                parameters: serde_json::Value::Object(
-                    tc.parameters
-                        .clone()
-                        .into_iter()
-                        .collect(),
-                ),
+                parameters: serde_json::Value::Object(tc.parameters.clone().into_iter().collect()),
                 reason: format!("Executing task: {}", task.description),
                 expected_output: "Success".to_string(),
                 expected_evidence: "Success".to_string(),
@@ -621,9 +783,17 @@ impl AgentLoop {
             let desc = task.description.to_lowercase();
             let tool_name = if desc.contains("read") || desc.contains("analyze") {
                 "read_file".to_string()
-            } else if desc.contains("write") || desc.contains("edit") || desc.contains("create") || desc.contains("implement") {
+            } else if desc.contains("write")
+                || desc.contains("edit")
+                || desc.contains("create")
+                || desc.contains("implement")
+            {
                 "write_file".to_string()
-            } else if desc.contains("test") || desc.contains("run") || desc.contains("compile") || desc.contains("build") {
+            } else if desc.contains("test")
+                || desc.contains("run")
+                || desc.contains("compile")
+                || desc.contains("build")
+            {
                 "powershell".to_string()
             } else {
                 "read_file".to_string() // default safe fallback
@@ -658,7 +828,10 @@ impl AgentLoop {
                 action_type: crate::act_dto::ActionType::CallTool,
                 tool_name: resolved_tool_name,
                 parameters,
-                reason: format!("Bootstrap rule-based fallback for task: {}", task.description),
+                reason: format!(
+                    "Bootstrap rule-based fallback for task: {}",
+                    task.description
+                ),
                 expected_output: "Success".to_string(),
                 expected_evidence: "Success".to_string(),
                 fallback_tool: None,
@@ -678,7 +851,10 @@ impl AgentLoop {
         };
 
         if !valid_tool {
-            warn!("Bootstrapped tool '{}' not found in registry", tool_call.tool_name);
+            warn!(
+                "Bootstrapped tool '{}' not found in registry",
+                tool_call.tool_name
+            );
             return Ok(None);
         }
 
@@ -690,7 +866,10 @@ impl AgentLoop {
         let iter = *self.iteration_count.lock().await;
         self.emit_trace(
             LoopState::Acting,
-            format!("LLM bootstrap generated ToolCallV1: {}", tool_call.tool_name),
+            format!(
+                "LLM bootstrap generated ToolCallV1: {}",
+                tool_call.tool_name
+            ),
             iter,
         );
 
