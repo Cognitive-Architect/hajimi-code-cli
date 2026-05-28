@@ -2818,6 +2818,7 @@ dependencies = [
  "engine-tool-system",
  "intelligence-agent-core",
  "keyring",
+ "log",
  "memory",
  "pbkdf2",
  "rand 0.8.5",

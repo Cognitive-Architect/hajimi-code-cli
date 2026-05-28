@@ -149,7 +149,7 @@ struct RestoreResult {
 }
 
 struct AppState {
-    registry: ToolRegistry,
+    registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     active_profile: std::sync::Mutex<Option<String>>,
     agent_providers: std::sync::Mutex<HashMap<String, String>>,
     trace_tx: std::sync::Mutex<Option<tokio::sync::broadcast::Sender<TraceEvent>>>,
@@ -1041,18 +1041,18 @@ fn confirm_tool_native(
 }
 
 #[tauri::command]
-fn list_tools(state: tauri::State<'_, AppState>) -> Vec<ToolInfo> {
-    state
-        .registry
+async fn list_tools(state: tauri::State<'_, AppState>) -> Result<Vec<ToolInfo>, String> {
+    let registry = state.registry.lock().await;
+    Ok(registry
         .list()
         .into_iter()
         .filter_map(|name| {
-            state.registry.get(name).map(|t| ToolInfo {
+            registry.get(name).map(|t| ToolInfo {
                 name: name.to_string(),
                 description: t.description().to_string(),
             })
         })
-        .collect()
+        .collect())
 }
 
 #[tauri::command]
@@ -1062,10 +1062,12 @@ async fn execute_tool(
     name: String,
     args: Value,
 ) -> Result<ToolResult, String> {
-    let tool = state
-        .registry
-        .get(&name)
-        .ok_or_else(|| format!("tool '{}' not found", name))?;
+    let tool = {
+        let registry = state.registry.lock().await;
+        registry
+            .get(&name)
+            .ok_or_else(|| format!("tool '{}' not found", name))?
+    };
     let permissions = tool.permissions();
     if enforce_tool_permissions(&permissions, &name, &args)?
         == ToolAuthorization::RequireNativeConfirmation
@@ -3115,7 +3117,8 @@ async fn apply_edits(
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<ToolResult>, String> {
     let base_dir = get_workspace_dir(&app_handle)?;
-    apply_edits_with_base_dir(edits, &state.registry, &base_dir).await
+    let registry = state.registry.lock().await;
+    apply_edits_with_base_dir(edits, &registry, &base_dir).await
 }
 
 async fn apply_edits_with_base_dir(
@@ -3489,7 +3492,11 @@ fn main() {
                 app_handle: app_handle.clone(),
             });
 
-            // Create production-ready AgentLoop with planner and reflector.
+            let workspace_root = get_workspace_dir(app.handle()).map_err(std::io::Error::other)?;
+            // Build the registry and wrap it in Arc<Mutex<>> for thread safety and loop sharing (ADR-001)
+            let registry = Arc::new(tokio::sync::Mutex::new(build_registry(&workspace_root)));
+
+            // Create production-ready AgentLoop with planner, reflector, and real ToolRegistry injected.
             // SAFETY: AgentLoop is Send + Sync; safe to hold in AppState and register with Tauri.
             let agent_loop = {
                 let mem = Arc::new(tokio::sync::Mutex::new(AgentMemoryGateway::new(
@@ -3507,15 +3514,21 @@ fn main() {
                     .with_planner(planner)
                     .with_reflector(reflector)
                     .with_governance(custom_gov)
+                    .with_tool_registry(registry.clone()) // Inject real ToolRegistry
                     .build()
                     .expect("AgentLoop build failed")
             };
 
+            // Log tool injection count at info level to verify integration success (UX-002)
+            log::info!(
+                "AgentLoop initialized with {} tools",
+                build_registry(&workspace_root).list().len()
+            );
+
             let agent_loop_for_setup = Arc::new(agent_loop);
 
-            let workspace_root = get_workspace_dir(app.handle()).map_err(std::io::Error::other)?;
             let state = AppState {
-                registry: build_registry(&workspace_root),
+                registry: registry.clone(),
                 active_profile: std::sync::Mutex::new(None),
                 agent_providers: std::sync::Mutex::new(HashMap::new()),
                 trace_tx: std::sync::Mutex::new(None),
