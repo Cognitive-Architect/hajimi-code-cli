@@ -366,7 +366,10 @@ mod tests {
 
         let deserialized: crate::ToolDefinition = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized.name, "test_tool");
-        assert_eq!(deserialized.parameters["properties"]["param"]["type"], "string");
+        assert_eq!(
+            deserialized.parameters["properties"]["param"]["type"],
+            "string"
+        );
     }
 
     #[test]
