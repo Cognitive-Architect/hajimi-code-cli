@@ -90,3 +90,13 @@ pub fn is_agent_llm_bootstrap_enabled() -> bool {
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false)
 }
+
+/// Feature-gate for LLM-Native Agent execution path.
+/// Reads from environment variable `HAJIMI_AGENT_LLM_NATIVE_ENABLED`.
+/// Defaults to `false` if unset. When enabled, AgentLoop bypasses
+/// the three-layer rule-based planning + legacy_act path.
+pub fn is_agent_llm_native_enabled() -> bool {
+    std::env::var("HAJIMI_AGENT_LLM_NATIVE_ENABLED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false)
+}

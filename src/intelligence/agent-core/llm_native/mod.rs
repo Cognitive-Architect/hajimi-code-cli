@@ -12,6 +12,8 @@ pub mod driver;
 pub mod intent;
 pub mod tool_spec;
 
-pub use driver::{AgentTurnDriver, LlmNativeDriver, ToolChoiceMode, TurnMessage, TurnOutcome};
+pub use driver::{
+    AgentTurnDriver, CancellationToken, LlmNativeDriver, ToolChoiceMode, TurnMessage, TurnOutcome,
+};
 pub use intent::{IntentAttachment, RawUserIntent};
 pub use tool_spec::{ModelVisibleToolSpec, RiskLevel, ToolSpecExporter};
