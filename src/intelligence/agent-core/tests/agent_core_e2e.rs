@@ -519,3 +519,103 @@ async fn bench_agent_loop() {
         .await;
     assert!(start.elapsed().as_millis() < 500, "Single round too slow");
 }
+
+// FUNC-004 + E2E-001: 端到端真实工具执行验收 - 真实创建文件并确认其内容
+#[tokio::test]
+async fn test_real_agent_file_creation_e2e() {
+    struct EnvVarGuard {
+        key: String,
+        old_value: Option<String>,
+    }
+    impl EnvVarGuard {
+        fn new(key: &str) -> Self {
+            Self {
+                key: key.to_string(),
+                old_value: std::env::var(key).ok(),
+            }
+        }
+        fn set(&self, val: &str) {
+            std::env::set_var(&self.key, val);
+        }
+    }
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(ref val) = self.old_value {
+                std::env::set_var(&self.key, val);
+            } else {
+                std::env::remove_var(&self.key);
+            }
+        }
+    }
+
+    let bootstrap_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED");
+    bootstrap_env.set("true");
+
+    let temp_file_path = "real-agent-e2e-test.txt";
+    if std::path::Path::new(temp_file_path).exists() {
+        let _ = std::fs::remove_file(temp_file_path);
+    }
+
+    let m = test_memory();
+    let bb = Arc::new(Blackboard::new());
+    let orchestrator = AgentOrchestrator::new(m).with_blackboard(bb.clone());
+
+    // Register a real WriteFileTool into the orchestrator's tool registry
+    {
+        let mut registry = orchestrator.tool_registry().lock().await;
+        registry.register(Arc::new(engine_tool_system::WriteFileTool::new()));
+    }
+
+    // Populate BB_NEXT_TOOL
+    let tool_call = agent_core::act_dto::ToolCallV1 {
+        schema_version: "1".to_string(),
+        action_type: agent_core::act_dto::ActionType::CallTool,
+        tool_name: "write_file".to_string(),
+        parameters: serde_json::json!({
+            "path": temp_file_path,
+            "content": "hello-from-real-agent-loop"
+        }),
+        reason: "E2E write file verification".to_string(),
+        expected_output: "Success".to_string(),
+        expected_evidence: "Success".to_string(),
+        fallback_tool: None,
+        governance_required: false,
+        risk_level: agent_core::tool_manifest::RiskLevel::Low,
+        idempotency_key: format!("real_agent-bootstrap-{}", uuid::Uuid::new_v4()),
+        next_step_hint: None,
+    };
+    let json_str = serde_json::to_string(&tool_call).unwrap();
+    const BB_NEXT_TOOL: &str = "__hajimi_act_next_tool";
+    bb.write(BB_NEXT_TOOL, &json_str, "real_agent").await;
+
+    // Execute the goal
+    let outcome = orchestrator
+        .execute_natural_language_goal(
+            "real_agent",
+            "在当前目录创建 real-agent-e2e-test.txt，内容为 hello-from-real-agent-loop",
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        outcome,
+        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+    ));
+
+    // Verify the file was created and contains the correct contents
+    let path = std::path::Path::new(temp_file_path);
+    assert!(
+        path.exists(),
+        "E2E: real-agent-e2e-test.txt was not created by the Agent"
+    );
+
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(
+        content.trim(),
+        "hello-from-real-agent-loop",
+        "E2E: File content is incorrect"
+    );
+
+    // Clean up
+    let _ = std::fs::remove_file(temp_file_path);
+}

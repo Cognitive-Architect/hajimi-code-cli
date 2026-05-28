@@ -898,11 +898,27 @@ impl AgentLoop {
             format!("Reflecting on goal {}", goal_id),
             iter,
         );
-        if !self
-            .gov_check("reflect", &format!("Reflect on goal {}", goal_id), 0.1)
-            .await?
-        {
-            warn!("Reflection rejected by governance (skipping)");
+        let req = GovernanceRequest {
+            requester: "agent_loop".to_string(),
+            action_type: "reflect".to_string(),
+            risk_score: 0.1,
+            description: format!("Reflect on goal {}", goal_id),
+            level: ApprovalLevel::Auto,
+        };
+        let gov_approved = match self.governance.approve(&self.context, &req).await? {
+            Decision::Approved => true,
+            Decision::Rejected(reason) => {
+                warn!("Reflection rejected by governance. Reason: {}", reason);
+                false
+            }
+            other => {
+                warn!("Reflection not approved by governance. Status: {:?}", other);
+                false
+            }
+        };
+
+        if !gov_approved {
+            warn!("gov_check reflect rejected");
             // Return a synthetic reflection so the caller can continue routing.
             return Ok(crate::reflector::Reflection {
                 reflection_id: uuid::Uuid::new_v4().to_string(),

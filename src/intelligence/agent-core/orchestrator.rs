@@ -213,6 +213,7 @@ impl AgentOrchestrator {
             .with_checkpoint_mgr(self.checkpoint_mgr.clone())
             .with_memory(Some(memory))
             .with_provider_id(provider_id)
+            .with_tool_registry(self.tool_registry.clone())
             .build()
             .expect("AgentLoopBuilder should succeed with all required fields")
     }
