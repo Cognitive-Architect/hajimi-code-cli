@@ -704,4 +704,65 @@ mod tests {
         assert!(execution_receipts.value.contains("success"));
         assert!(execution_receipts.value.contains("timestamp"));
     }
+
+    #[tokio::test]
+    async fn test_agent_llm_bootstrap_mechanism() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED");
+        env_guard.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("bootstrap_test")));
+        let mut registry = ToolRegistry::new();
+        
+        struct MockTool;
+        #[async_trait::async_trait]
+        impl engine_tool_system::Tool for MockTool {
+            fn name(&self) -> &str { "read_file" }
+            fn description(&self) -> &str { "mock read file" }
+            fn permissions(&self) -> engine_tool_system::ToolPermissions { Default::default() }
+            async fn execute(&self, _args: engine_tool_system::ToolArgs) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
+                Ok(engine_tool_system::ToolOutput::success("mocked file content"))
+            }
+        }
+        registry.register(Arc::new(MockTool));
+
+        let loop_bb = Arc::new(Blackboard::new());
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Planner>>)
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(loop_bb.clone())
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_tool_registry(Arc::new(Mutex::new(registry)))
+            .build()
+            .unwrap();
+
+        // Initially BB_NEXT_TOOL must be empty
+        assert!(loop_bb.read(crate::act_executor::BB_NEXT_TOOL).await.is_none());
+
+        // Perform bootstrap on a goal
+        let goal_id = "test_goal_1".to_string();
+        let agent_id = "agent_test".to_string();
+        
+        let gid = agent_loop.plan_initial_goal("Fix compile bug").await.unwrap();
+
+        let bootstrapped = agent_loop.bootstrap_first_tool_call(&gid, &agent_id).await.unwrap();
+        assert!(bootstrapped.is_some(), "Expected bootstrapped tool call");
+
+        let tc = bootstrapped.unwrap();
+        assert_eq!(tc.tool_name, "read_file");
+
+        // The BB_NEXT_TOOL should be written
+        let entry = loop_bb.read(crate::act_executor::BB_NEXT_TOOL).await.unwrap();
+        assert!(entry.value.contains("read_file"));
+    }
 }

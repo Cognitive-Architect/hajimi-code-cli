@@ -81,3 +81,12 @@ pub fn is_security_workflow_enabled() -> bool {
         .map(|v| v == "true")
         .unwrap_or(false)
 }
+
+/// Feature-gate for LLM Bootstrap mechanism.
+/// Reads from environment variable `HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED`.
+/// Defaults to `false` if unset.
+pub fn is_agent_llm_bootstrap_enabled() -> bool {
+    std::env::var("HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false)
+}

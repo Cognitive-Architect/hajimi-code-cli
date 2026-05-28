@@ -350,7 +350,7 @@ impl AgentLoop {
         self.run(agent_id, &parsed_goal).await
     }
 
-    async fn plan_initial_goal(&self, description: &str) -> ReplResult<String> {
+    pub(crate) async fn plan_initial_goal(&self, description: &str) -> ReplResult<String> {
         if !self.gov_check("create_goal", description, 0.1).await? {
             return Err(ReplError::Session(
                 "Goal creation rejected by governance".to_string(),
@@ -417,6 +417,11 @@ impl AgentLoop {
                 output: "Act rejected by governance".to_string(),
                 timestamp: chrono::Utc::now(),
             });
+        }
+        if crate::prompts::is_agent_llm_bootstrap_enabled() {
+            if let Err(e) = self.bootstrap_first_tool_call(goal_id, agent_id).await {
+                warn!("LLM bootstrap failed during act: {}", e);
+            }
         }
         if crate::prompts::is_act_toolcall_v1_enabled() {
             if let Some(result) = self.try_act_executor_chain(agent_id).await? {
@@ -534,6 +539,162 @@ impl AgentLoop {
                 timestamp: chrono::Utc::now(),
             })
         }
+    }
+
+    /// Bootstrap the first tool call when blackboard has no pending tools.
+    ///
+    /// This method is part of the LLM Bootstrap mechanism that automatically populates the planner
+    /// tasks and generates the first tool call if the planner is empty.
+    pub async fn bootstrap_first_tool_call(
+        &self,
+        goal_id: &str,
+        agent_id: &str,
+    ) -> ReplResult<Option<ToolCallV1>> {
+        // Trigger condition: BB_NEXT_TOOL is empty and next_task() is None.
+        let next_tool_entry = self.blackboard.read(BB_NEXT_TOOL).await;
+        if next_tool_entry.is_some() {
+            return Ok(None);
+        }
+
+        // Lock the planner to check next_task and call decompose/expand
+        let mut planner = self.planner.lock().await;
+        let next_task = planner.next_task().await?;
+        if next_task.is_some() {
+            return Ok(None);
+        }
+
+        info!("AgentLoop bootstrapping first tool call for goal: {}", goal_id);
+
+        // 1. Decompose the goal into subgoals
+        let sg_ids = match planner.decompose(&goal_id.to_string()).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                warn!("Planner decompose failed during bootstrap, fallback rule-based already active: {}", e);
+                return Err(e);
+            }
+        };
+
+        if sg_ids.is_empty() {
+            warn!("No subgoals generated during bootstrap for goal {}", goal_id);
+            return Ok(None);
+        }
+
+        // 2. Expand the first subgoal to generate tasks
+        let first_sg_id = &sg_ids[0];
+        let task_ids = planner.expand(first_sg_id).await?;
+        if task_ids.is_empty() {
+            warn!("No tasks expanded for subgoal {} during bootstrap", first_sg_id);
+            return Ok(None);
+        }
+
+        // 3. Resolve the next task
+        let task_opt = planner.next_task().await?;
+        let Some(task) = task_opt else {
+            warn!("No next task resolved after expand in bootstrap");
+            return Ok(None);
+        };
+
+        // 4. Convert Task to ToolCallV1
+        let tool_call = if !task.tool_calls.is_empty() {
+            let tc = &task.tool_calls[0];
+            ToolCallV1 {
+                schema_version: "1".to_string(),
+                action_type: crate::act_dto::ActionType::CallTool,
+                tool_name: tc.tool_name.clone(),
+                parameters: serde_json::Value::Object(
+                    tc.parameters
+                        .clone()
+                        .into_iter()
+                        .collect(),
+                ),
+                reason: format!("Executing task: {}", task.description),
+                expected_output: "Success".to_string(),
+                expected_evidence: "Success".to_string(),
+                fallback_tool: None,
+                governance_required: false,
+                risk_level: crate::tool_manifest::RiskLevel::Low,
+                idempotency_key: format!("{}-bootstrap-{}", agent_id, uuid::Uuid::new_v4()),
+                next_step_hint: None,
+            }
+        } else {
+            // Task has no tool calls, perform rule-based mapping (fallback)
+            let desc = task.description.to_lowercase();
+            let tool_name = if desc.contains("read") || desc.contains("analyze") {
+                "read_file".to_string()
+            } else if desc.contains("write") || desc.contains("edit") || desc.contains("create") || desc.contains("implement") {
+                "write_file".to_string()
+            } else if desc.contains("test") || desc.contains("run") || desc.contains("compile") || desc.contains("build") {
+                "powershell".to_string()
+            } else {
+                "read_file".to_string() // default safe fallback
+            };
+
+            // Verify if the mapped tool exists in self.tool_registry, else fallback to any available safe tool or default
+            let mut resolved_tool_name = tool_name;
+            if let Some(ref reg) = self.tool_registry {
+                let guard = reg.lock().await;
+                if guard.get(&resolved_tool_name).is_none() {
+                    // Try some safe alternatives
+                    for alternative in &["analyze", "ls", "read_file"] {
+                        if guard.get(*alternative).is_some() {
+                            resolved_tool_name = alternative.to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Create default parameters matching the chosen tool
+            let parameters = if resolved_tool_name == "powershell" {
+                serde_json::json!({ "command": "echo 'bootstrap check'" })
+            } else if resolved_tool_name == "read_file" {
+                serde_json::json!({ "path": "Cargo.toml" })
+            } else {
+                serde_json::json!({})
+            };
+
+            ToolCallV1 {
+                schema_version: "1".to_string(),
+                action_type: crate::act_dto::ActionType::CallTool,
+                tool_name: resolved_tool_name,
+                parameters,
+                reason: format!("Bootstrap rule-based fallback for task: {}", task.description),
+                expected_output: "Success".to_string(),
+                expected_evidence: "Success".to_string(),
+                fallback_tool: None,
+                governance_required: false,
+                risk_level: crate::tool_manifest::RiskLevel::Low,
+                idempotency_key: format!("{}-bootstrap-{}", agent_id, uuid::Uuid::new_v4()),
+                next_step_hint: None,
+            }
+        };
+
+        // Validate tool_name using registry before writing
+        let valid_tool = if let Some(ref reg) = self.tool_registry {
+            let guard = reg.lock().await;
+            guard.get(&tool_call.tool_name).is_some()
+        } else {
+            false
+        };
+
+        if !valid_tool {
+            warn!("Bootstrapped tool '{}' not found in registry", tool_call.tool_name);
+            return Ok(None);
+        }
+
+        // Write ToolCallV1 to BB_NEXT_TOOL as a serialized JSON string
+        let json = serde_json::to_string(&tool_call).map_err(ReplError::Protocol)?;
+        self.blackboard.write(BB_NEXT_TOOL, &json, agent_id).await;
+
+        // Trace event with tool name
+        let iter = *self.iteration_count.lock().await;
+        self.emit_trace(
+            LoopState::Acting,
+            format!("LLM bootstrap generated ToolCallV1: {}", tool_call.tool_name),
+            iter,
+        );
+
+        Ok(Some(tool_call))
     }
 
     pub(crate) async fn reflect(
