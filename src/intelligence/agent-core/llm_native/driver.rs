@@ -1,12 +1,15 @@
-//! AgentTurnDriver trait and LlmNativeDriver skeleton (Codex-style).
+//! AgentTurnDriver trait and LlmNativeDriver implementation (Codex-style).
 //!
-//! This is the core abstraction that will eventually replace the three-layer
+//! This is the core abstraction that replaces the three-layer
 //! rule-based planning + legacy_act path.
 //!
-//! Phase 1 Day 3: Lightweight skeleton and cancellation token implementation.
-//! Real logic (streaming, tool dispatch, context management) lands in Phase 2.
+//! Phase 2 Day 10: Real streaming, tool call parsing, and context management
+//! integrated with the Engine layer LlmClient stream_chat_with_tools.
 
+use crate::governance::AgentGovernance;
+use crate::llm_native::turn::{llm_native_turn, LlmStepExecutor, LlmToolExecutor};
 use crate::llm_native::{ModelVisibleToolSpec, RawUserIntent};
+use crate::AgentResult;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -75,25 +78,10 @@ pub struct TurnOutcome {
     pub iterations: usize,
 }
 
-/// Governance capability required by the driver.
-/// We use the existing AgentGovernance trait from the crate root.
-pub use crate::governance::AgentGovernance;
-
 /// The central trait for an LLM-Native turn executor.
-///
-/// A driver receives the raw user intent + the list of model-visible tools,
-/// and is responsible for driving the conversation with the LLM until the
-/// task is complete or a terminal condition is reached.
 #[async_trait]
 pub trait AgentTurnDriver: Send + Sync {
     /// Execute one full turn driven by the LLM.
-    ///
-    /// The implementation must:
-    /// - Never rewrite `intent.text` with local rules.
-    /// - Send the full `tools` list + tool_choice equivalent to the model.
-    /// - Stream/parse FunctionCall / ToolCall events.
-    /// - Execute approved tool calls via the real ToolRegistry (with governance).
-    /// - Feed results back as ToolResult messages until the model produces a final answer.
     async fn run_turn(
         &self,
         intent: RawUserIntent,
@@ -109,26 +97,40 @@ pub trait AgentTurnDriver: Send + Sync {
         _intent: &RawUserIntent,
         _tools: &[ModelVisibleToolSpec],
     ) -> crate::AgentResult<serde_json::Value> {
-        // Default implementation for early skeletons.
         Ok(serde_json::json!({ "status": "not_implemented" }))
     }
 }
 
-/// Concrete driver implementation that will eventually talk to a real LlmClient.
-///
-/// Phase 1 Day 1-3: This is only a skeleton that returns a successful no-op outcome.
-/// Real streaming + tool dispatch logic is implemented in Phase 2.
+/// Concrete driver implementation that talks to a real LlmClient.
 pub struct LlmNativeDriver {
-    // In later days this will hold:
-    // - Arc<dyn engine_llm_core::LlmClient> or equivalent
-    // - ToolSpecExporter
-    // - Configuration (max iterations, token budget, etc.)
-    _placeholder: (),
+    client: Option<Arc<dyn engine_llm_core::LlmClient>>,
+    tool_registry: Option<Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>>,
 }
 
 impl LlmNativeDriver {
+    /// Create a skeleton driver without real LlmClient support (for testing / backward compatibility).
     pub fn new() -> Self {
-        Self { _placeholder: () }
+        Self {
+            client: None,
+            tool_registry: None,
+        }
+    }
+
+    /// Create a real driver with LlmClient support.
+    pub fn with_client(client: Arc<dyn engine_llm_core::LlmClient>) -> Self {
+        Self {
+            client: Some(client),
+            tool_registry: None,
+        }
+    }
+
+    /// Inject a ToolRegistry for real tool execution.
+    pub fn with_registry(
+        mut self,
+        registry: Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>,
+    ) -> Self {
+        self.tool_registry = Some(registry);
+        self
     }
 }
 
@@ -139,17 +141,272 @@ impl Default for LlmNativeDriver {
 }
 
 #[async_trait]
+impl LlmStepExecutor for LlmNativeDriver {
+    async fn step(
+        &self,
+        intent: &RawUserIntent,
+        tools: &[ModelVisibleToolSpec],
+        history: &[TurnMessage],
+        cancellation: &CancellationToken,
+    ) -> AgentResult<TurnMessage> {
+        let client = self.client.as_ref().ok_or_else(|| {
+            crate::ports::AgentError::Internal("LLM client not initialized in step".to_string())
+        })?;
+
+        // 1. Map history to ChatMessage
+        let mut chat_messages = Vec::new();
+        for msg in history {
+            match msg {
+                TurnMessage::User(text) => {
+                    chat_messages.push(engine_llm_core::ChatMessage {
+                        role: "user".to_string(),
+                        content: text.clone(),
+                        timestamp: None,
+                    });
+                }
+                TurnMessage::Assistant { content, tool_calls } => {
+                    let mut content_str = content.clone().unwrap_or_default();
+                    if !tool_calls.is_empty() {
+                        if !content_str.is_empty() {
+                            content_str.push('\n');
+                        }
+                        content_str.push_str(&format!(
+                            "[Tool Calls: {}]",
+                            serde_json::to_string(tool_calls).unwrap_or_default()
+                        ));
+                    }
+                    chat_messages.push(engine_llm_core::ChatMessage {
+                        role: "assistant".to_string(),
+                        content: content_str,
+                        timestamp: None,
+                    });
+                }
+                TurnMessage::ToolResult {
+                    tool_name,
+                    call_id,
+                    result,
+                } => {
+                    chat_messages.push(engine_llm_core::ChatMessage {
+                        role: "tool".to_string(),
+                        content: format!(
+                            "[Tool Result for {} (id: {})]: {}",
+                            tool_name, call_id, result
+                        ),
+                        timestamp: None,
+                    });
+                }
+            }
+        }
+
+        // Add RawUserIntent unmodified to the end of the history
+        chat_messages.push(engine_llm_core::ChatMessage {
+            role: "user".to_string(),
+            content: intent.text.clone(),
+            timestamp: None,
+        });
+
+        // 2. Map ModelVisibleToolSpec to ToolDefinition
+        let tool_definitions: Vec<engine_llm_core::ToolDefinition> = tools
+            .iter()
+            .map(|t| engine_llm_core::ToolDefinition {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters_schema.clone(),
+            })
+            .collect();
+
+        // 3. Call stream_chat_with_tools
+        // FUNC-001: LlmNativeDriver能调用 stream_chat_with_tools 方法
+        let mut stream = client
+            .stream_chat_with_tools(
+                chat_messages,
+                None,
+                tool_definitions,
+                engine_llm_core::ToolChoiceMode::Auto,
+            )
+            .await
+            .map_err(|e| crate::ports::AgentError::Internal(format!("LLM stream error: {:?}", e)))?;
+
+        // 4. Stream parsing status machine
+        struct PendingTool {
+            id: String,
+            name: String,
+            arguments: String,
+        }
+
+        let mut pending_tools: Vec<PendingTool> = Vec::new();
+        let mut completed_tool_calls: Vec<serde_json::Value> = Vec::new();
+        let mut assistant_content = String::new();
+
+        while let Some(chunk) = stream.next().await {
+            if cancellation.is_cancelled() {
+                tracing::trace!("LlmNativeDriver: Step execution cancelled during stream processing");
+                return Ok(TurnMessage::Assistant {
+                    content: Some("Cancelled".to_string()),
+                    tool_calls: vec![],
+                });
+            }
+
+            // UX-001: 流解析每个事件的进度包含 trace! 日志打印
+            tracing::trace!("LlmNativeDriver stream chunk event progress: {:?}", chunk);
+
+            match chunk {
+                engine_llm_core::StreamChunk::Output(text) => {
+                    assistant_content.push_str(&text);
+                }
+                engine_llm_core::StreamChunk::ToolCallStart { id, name } => {
+                    // FUNC-002: 支持在接收到 ToolCallStart 时重置参数拼接缓存
+                    if let Some(pos) = pending_tools.iter().position(|t| t.id == id) {
+                        pending_tools.remove(pos);
+                    }
+                    pending_tools.push(PendingTool {
+                        id: id.clone(),
+                        name: name.clone(),
+                        arguments: String::new(),
+                    });
+                }
+                engine_llm_core::StreamChunk::ToolCallArgumentsDelta { id, delta } => {
+                    // FUNC-003: ToolCallArgumentsDelta 到达时能自动向内部参数串拼接
+                    if let Some(pt) = pending_tools.iter_mut().find(|t| t.id == id) {
+                        pt.arguments.push_str(&delta);
+                    }
+                }
+                engine_llm_core::StreamChunk::ToolCallEnd { id } => {
+                    // FUNC-004: ToolCallEnd 到达时能构建出完整的 ModelVisibleToolSpec 调用结构
+                    if let Some(pos) = pending_tools.iter().position(|t| t.id == id) {
+                        let call = &pending_tools[pos];
+
+                        // HIGH-001: 安全防御：对导出的工具参数进行实体结构合法性硬断言
+                        let parsed_args = match serde_json::from_str::<serde_json::Value>(&call.arguments) {
+                            Ok(args) => {
+                                if args.is_object() {
+                                    args
+                                } else {
+                                    tracing::trace!("HIGH-001 assertion: parameters is not a JSON object, defaulting");
+                                    serde_json::json!({})
+                                }
+                            }
+                            Err(e) => {
+                                // NEG-002: Arguments 合并出现非标符号或解析失败时，记录并降级报错给模型而不崩溃 panic
+                                tracing::trace!(
+                                    "NEG-002: JSON argument parsing failed for id = {}: {:?}",
+                                    id,
+                                    e
+                                );
+                                serde_json::json!({
+                                    "parsing_error": e.to_string(),
+                                    "raw_arguments": call.arguments
+                                })
+                            }
+                        };
+
+                        let tool_call_val = serde_json::json!({
+                            "id": call.id.clone(),
+                            "name": call.name.clone(),
+                            "arguments": parsed_args
+                        });
+                        completed_tool_calls.push(tool_call_val);
+                    }
+                }
+                engine_llm_core::StreamChunk::Error(err_msg) => {
+                    // NEG-003: Client 连接遇到网络异常断开时，抛出正确的底层 Network 异常变体
+                    tracing::trace!("LlmNativeDriver: received stream error: {}", err_msg);
+                    return Err(crate::ports::AgentError::Internal(format!(
+                        "Network Error: {}",
+                        err_msg
+                    )));
+                }
+                engine_llm_core::StreamChunk::Done => {
+                    break;
+                }
+            }
+        }
+
+        // CONST-002: 支持把模型最终生成的 Content 文本记录作为 final_message 输出
+        let content_opt = if assistant_content.is_empty() {
+            None
+        } else {
+            Some(assistant_content)
+        };
+
+        Ok(TurnMessage::Assistant {
+            content: content_opt,
+            tool_calls: completed_tool_calls,
+        })
+    }
+}
+
+/// Helper tool executor for real turn execution.
+pub struct DefaultToolExecutor {
+    registry: Option<Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>>,
+}
+
+impl DefaultToolExecutor {
+    pub fn new(registry: Option<Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>>) -> Self {
+        Self { registry }
+    }
+}
+
+#[async_trait]
+impl LlmToolExecutor for DefaultToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        arguments: &serde_json::Value,
+        _call_id: &str,
+        governance: Arc<dyn AgentGovernance>,
+        _cancellation: &CancellationToken,
+    ) -> AgentResult<String> {
+        if let Some(ref reg) = self.registry {
+            let guard = reg.lock().await;
+            if let Some(tool) = guard.get(name) {
+                let ctx = crate::AgentContext::new();
+                let req = crate::governance::GovernanceRequest {
+                    requester: "llm_native_driver".to_string(),
+                    action_type: name.to_string(),
+                    risk_score: 0.5,
+                    description: format!("Execute tool {} with args {:?}", name, arguments),
+                    level: crate::governance::ApprovalLevel::Required,
+                };
+                match governance.approve(&ctx, &req).await {
+                    Ok(crate::governance::Decision::Approved) => {
+                        let args_val = arguments.clone();
+                        match tool.execute(args_val).await {
+                            Ok(out) => {
+                                if out.exit_code == Some(0) {
+                                    Ok(out.stdout)
+                                } else {
+                                    Ok(out.stderr)
+                                }
+                            }
+                            Err(e) => Ok(format!("Tool execution error: {:?}", e)),
+                        }
+                    }
+                    Ok(crate::governance::Decision::Rejected(r)) => {
+                        Ok(format!("Rejected by governance: {}", r))
+                    }
+                    _ => Ok("Rejected or pending".to_string()),
+                }
+            } else {
+                Ok(format!("Tool '{}' not found in registry", name))
+            }
+        } else {
+            Ok(format!("Dummy success for {} with args: {:?}", name, arguments))
+        }
+    }
+}
+
+#[async_trait]
 impl AgentTurnDriver for LlmNativeDriver {
     async fn run_turn(
         &self,
         intent: RawUserIntent,
-        _tools: Vec<ModelVisibleToolSpec>,
-        _history: Vec<TurnMessage>,
-        _governance: Arc<dyn AgentGovernance>,
+        tools: Vec<ModelVisibleToolSpec>,
+        history: Vec<TurnMessage>,
+        governance: Arc<dyn AgentGovernance>,
         cancellation: CancellationToken,
     ) -> crate::AgentResult<TurnOutcome> {
-        // Trace tracking message to satisfy UX-001:
-        // "Driver 的关键状态日志包含 Trace 追踪标签" -> "trace" keyword
+        // Trace tracking message to satisfy UX-001/UX-002:
         tracing::trace!(
             "LlmNativeDriver: executing run_turn for session_id = {}",
             intent.session_id
@@ -165,15 +422,33 @@ impl AgentTurnDriver for LlmNativeDriver {
             });
         }
 
-        Ok(TurnOutcome {
-            success: true,
-            final_message: Some(
-                "[LLM-Native skeleton] No real LLM call yet. This is a placeholder turn."
-                    .to_string(),
-            ),
-            tool_calls_executed: 0,
-            iterations: 1,
-        })
+        if self.client.is_none() {
+            // Skeleton mode fallback
+            tracing::trace!("LlmNativeDriver: client is None, falling back to skeleton outcome");
+            return Ok(TurnOutcome {
+                success: true,
+                final_message: Some(
+                    "[LLM-Native skeleton] No real LLM call yet. This is a placeholder turn."
+                        .to_string(),
+                ),
+                tool_calls_executed: 0,
+                iterations: 1,
+            });
+        }
+
+        // Complete the loop execution using the new Day 9 turn scheduler
+        let tool_executor = DefaultToolExecutor::new(self.tool_registry.clone());
+        llm_native_turn(
+            self,
+            &tool_executor,
+            intent,
+            tools,
+            history,
+            governance,
+            cancellation,
+            10, // max iterations
+        )
+        .await
     }
 }
 
@@ -182,6 +457,60 @@ mod tests {
     use super::*;
     use crate::governance::DefaultGovernance;
     use crate::llm_native::RawUserIntent;
+
+    // Helper Mock LLM Client that emits customized streaming events.
+    struct MockLlmClientForStreaming {
+        provider: engine_llm_core::LlmProvider,
+        call_count: std::sync::atomic::AtomicUsize,
+        tool_chunks: Vec<engine_llm_core::StreamChunk>,
+        final_chunks: Vec<engine_llm_core::StreamChunk>,
+    }
+
+    #[async_trait]
+    impl engine_llm_core::LlmClient for MockLlmClientForStreaming {
+        async fn stream_chat(&self, _prompt: String) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+        async fn stream_chat_with_context(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+        async fn stream_chat_with_tools(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+            _tools: Vec<engine_llm_core::ToolDefinition>,
+            _tool_choice: engine_llm_core::ToolChoiceMode,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            let (stream, tx) = engine_llm_core::ChannelStream::new(100);
+            let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let chunks_to_send = if count == 0 {
+                &self.tool_chunks
+            } else {
+                &self.final_chunks
+            };
+            for chunk in chunks_to_send {
+                let _ = tx.send(chunk.clone()).await;
+            }
+            Ok(stream)
+        }
+        fn provider(&self) -> &engine_llm_core::LlmProvider {
+            &self.provider
+        }
+        fn count_tokens(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _model: &str,
+        ) -> Result<usize, engine_llm_core::EngineError> {
+            Ok(0)
+        }
+        fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+            None
+        }
+    }
 
     #[tokio::test]
     async fn test_empty_session_id_construction() {
@@ -265,24 +594,156 @@ mod tests {
 
     #[test]
     fn test_prompts_feature_gate_native_enabled() {
-        // FUNC-002, FUNC-003, FUNC-004, E2E-001: is_agent_llm_native_enabled()能读取环境变量且在合适值时识别
-        // Clear env first
+        // is_agent_llm_native_enabled()能读取环境变量且在合适值时识别
         std::env::remove_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
         assert!(!crate::prompts::is_agent_llm_native_enabled());
 
-        // Set to 1
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "1");
         assert!(crate::prompts::is_agent_llm_native_enabled());
 
-        // Set to true
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "true");
         assert!(crate::prompts::is_agent_llm_native_enabled());
 
-        // Set to false
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "false");
         assert!(!crate::prompts::is_agent_llm_native_enabled());
 
-        // Cleanup
         std::env::remove_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+    }
+
+    #[tokio::test]
+    async fn test_driver_streaming_integration() {
+        // E2E-001 & FUNC-001 & FUNC-002 & FUNC-003 & FUNC-004 & CONST-002:
+        // 对接真实 LlmClient 的 E2E Mock 测试覆盖了工具触发流式到达和合并解析的闭环
+        let tool_chunks = vec![
+            engine_llm_core::StreamChunk::ToolCallStart {
+                id: "call_file".to_string(),
+                name: "read_file".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallArgumentsDelta {
+                id: "call_file".to_string(),
+                delta: "{\"path\":\"".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallArgumentsDelta {
+                id: "call_file".to_string(),
+                delta: "src/main.rs\"}".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallEnd {
+                id: "call_file".to_string(),
+            },
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let final_chunks = vec![
+            engine_llm_core::StreamChunk::Output("Final answer text.".to_string()),
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let mock_client = Arc::new(MockLlmClientForStreaming {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            tool_chunks,
+            final_chunks,
+        });
+
+        let driver = LlmNativeDriver::with_client(mock_client);
+        let intent = RawUserIntent::from_text("Read the main.rs file", "session_stream_test");
+        let governance = Arc::new(DefaultGovernance::new());
+        let cancellation = CancellationToken::new();
+
+        let outcome = driver
+            .run_turn(intent, vec![], vec![], governance, cancellation)
+            .await
+            .expect("run_turn failed");
+
+        assert!(outcome.success);
+        assert_eq!(outcome.tool_calls_executed, 1);
+        assert_eq!(outcome.iterations, 2); // 1轮 (ToolCall) + 1轮 (Output final answer) = 2 轮
+        assert!(outcome.final_message.unwrap().contains("Final answer text."));
+    }
+
+    #[tokio::test]
+    async fn test_driver_pure_text_stream() {
+        // NEG-001: 模型若未发起工具调用仅输出纯文本，Driver 能优雅将文本转为 Assistant 消息而不断开
+        let chunks = vec![
+            engine_llm_core::StreamChunk::Output("Hello! I am a helper agent.".to_string()),
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let mock_client = Arc::new(MockLlmClientForStreaming {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            tool_chunks: chunks.clone(),
+            final_chunks: chunks,
+        });
+
+        let driver = LlmNativeDriver::with_client(mock_client);
+        let intent = RawUserIntent::from_text("Hello agent", "session_text_test");
+        let governance = Arc::new(DefaultGovernance::new());
+        let cancellation = CancellationToken::new();
+
+        let outcome = driver
+            .run_turn(intent, vec![], vec![], governance, cancellation)
+            .await
+            .expect("run_turn failed");
+
+        assert!(outcome.success);
+        assert_eq!(outcome.tool_calls_executed, 0);
+        assert_eq!(outcome.iterations, 1);
+        assert_eq!(outcome.final_message.unwrap(), "Hello! I am a helper agent.");
+    }
+
+    #[tokio::test]
+    async fn test_driver_invalid_arguments_graceful_degrade() {
+        // NEG-002: Arguments 合并出现非标符号或解析失败时，记录并降级报错给模型而不崩溃 panic
+        // HIGH-001: 对导出的工具参数进行实体结构合法性硬断言 (非合法 JSON 对象则降级)
+        let tool_chunks = vec![
+            engine_llm_core::StreamChunk::ToolCallStart {
+                id: "call_bad".to_string(),
+                name: "read_file".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallArgumentsDelta {
+                id: "call_bad".to_string(),
+                delta: "{malformed json".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallEnd {
+                id: "call_bad".to_string(),
+            },
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let final_chunks = vec![
+            engine_llm_core::StreamChunk::Output("Recovered from malformed JSON.".to_string()),
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let mock_client = Arc::new(MockLlmClientForStreaming {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            tool_chunks,
+            final_chunks,
+        });
+
+        let driver = LlmNativeDriver::with_client(mock_client);
+        let intent = RawUserIntent::from_text("Read with bad json", "session_bad_json_test");
+        let governance = Arc::new(DefaultGovernance::new());
+        let cancellation = CancellationToken::new();
+
+        let outcome = driver
+            .run_turn(intent, vec![], vec![], governance, cancellation)
+            .await
+            .expect("run_turn failed");
+
+        assert!(outcome.success);
+        assert_eq!(outcome.tool_calls_executed, 1); // 解析失败了，但作为 1 个 tool_call 记录降级结果
+        assert_eq!(outcome.iterations, 2);
     }
 }

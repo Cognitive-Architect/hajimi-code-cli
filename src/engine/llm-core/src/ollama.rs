@@ -179,17 +179,22 @@ mod tests {
             parameters: serde_json::json!({}),
         }];
 
-        let res = client.stream_chat_with_tools(
-            vec![crate::ChatMessage {
-                role: "user".to_string(),
-                content: "hello".to_string(),
-                timestamp: None,
-            }],
-            None,
-            tools,
-            crate::ToolChoiceMode::Auto,
-        ).await;
+        let res = client
+            .stream_chat_with_tools(
+                vec![crate::ChatMessage {
+                    role: "user".to_string(),
+                    content: "hello".to_string(),
+                    timestamp: None,
+                }],
+                None,
+                tools,
+                crate::ToolChoiceMode::Auto,
+            )
+            .await;
 
-        assert!(res.is_ok(), "Should gracefully return stream even with tools fallback");
+        assert!(
+            res.is_ok(),
+            "Should gracefully return stream even with tools fallback"
+        );
     }
 }

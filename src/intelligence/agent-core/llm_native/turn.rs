@@ -6,7 +6,9 @@
 //! message is received, cancellation is triggered, or maximum iterations budget is exceeded.
 
 use crate::governance::AgentGovernance;
-use crate::llm_native::{CancellationToken, ModelVisibleToolSpec, RawUserIntent, TurnMessage, TurnOutcome};
+use crate::llm_native::{
+    CancellationToken, ModelVisibleToolSpec, RawUserIntent, TurnMessage, TurnOutcome,
+};
 use crate::AgentResult;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -93,9 +95,14 @@ pub async fn llm_native_turn(
         history.push(next_msg.clone());
 
         match next_msg {
-            TurnMessage::Assistant { content, tool_calls } => {
+            TurnMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
                 if tool_calls.is_empty() {
-                    tracing::trace!("llm_native_turn: Assistant provided final content. Ending loop.");
+                    tracing::trace!(
+                        "llm_native_turn: Assistant provided final content. Ending loop."
+                    );
                     final_message = content;
                     break;
                 } else {
@@ -106,7 +113,9 @@ pub async fn llm_native_turn(
 
                     for tool_call in tool_calls {
                         if cancellation.is_cancelled() {
-                            tracing::trace!("llm_native_turn: Cancellation detected during tool calls.");
+                            tracing::trace!(
+                                "llm_native_turn: Cancellation detected during tool calls."
+                            );
                             return Ok(TurnOutcome {
                                 success: false,
                                 final_message: Some("Cancelled".to_string()),
@@ -172,7 +181,9 @@ pub async fn llm_native_turn(
                 }
             }
             _ => {
-                tracing::trace!("llm_native_turn: Error. Expected Assistant message but got other.");
+                tracing::trace!(
+                    "llm_native_turn: Error. Expected Assistant message but got other."
+                );
                 return Err(crate::ports::AgentError::Internal(
                     "LLM step returned non-Assistant message".to_string(),
                 ));
@@ -336,7 +347,8 @@ mod tests {
         };
 
         // Generate an infinite stream of step calls
-        let llm = MockLlmStepExecutor::new(vec![step.clone(), step.clone(), step.clone(), step.clone()]);
+        let llm =
+            MockLlmStepExecutor::new(vec![step.clone(), step.clone(), step.clone(), step.clone()]);
         let tools = MockLlmToolExecutor::new(vec![]);
 
         let intent = RawUserIntent::from_text("Loop forever", "session_loop");
