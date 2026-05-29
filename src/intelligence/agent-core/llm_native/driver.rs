@@ -469,8 +469,63 @@ impl AgentTurnDriver for LlmNativeDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::governance::DefaultGovernance;
+    use crate::governance::AgentGovernance;
     use crate::llm_native::RawUserIntent;
+    use chimera_repl::traits::ReplResult;
+    use std::sync::Arc;
+
+    /// Mock governance that always approves — used so driver tests are not blocked
+    /// by the security-critical `DefaultGovernance` whitelist logic added in Day 12.
+    struct MockApprovedGovernance;
+
+    #[async_trait]
+    impl AgentGovernance for MockApprovedGovernance {
+        async fn policy(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> crate::governance::ApprovalLevel {
+            crate::governance::ApprovalLevel::Auto
+        }
+        async fn approve(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> ReplResult<crate::governance::Decision> {
+            Ok(crate::governance::Decision::Approved)
+        }
+        async fn vote(
+            &self,
+            _voter_id: &str,
+            _proposal_id: &str,
+            _vote: crate::governance::Vote,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn escalate(
+            &self,
+            req: &crate::governance::GovernanceRequest,
+            _to_level: crate::governance::ApprovalLevel,
+        ) -> ReplResult<crate::governance::GovernanceRequest> {
+            Ok(req.clone())
+        }
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn crate::governance::GovernancePolicy>,
+            _caller: &str,
+            _required_level: crate::governance::PermissionLevel,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn record_feedback(
+            &self,
+            _ctx: &crate::AgentContext,
+            _feedback: &crate::governance::UserFeedback,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+    }
 
     // Helper Mock LLM Client that emits customized streaming events.
     struct MockLlmClientForStreaming {
@@ -544,7 +599,7 @@ mod tests {
         // FUNC-001: Driver run_turn 方法可调用并返回 Outcome 骨架
         let driver = LlmNativeDriver::new();
         let intent = RawUserIntent::from_text("Hello", "test_session");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = driver
@@ -563,7 +618,7 @@ mod tests {
         // NEG-003: Cancellation token 被取消时 run_turn 退出
         let driver = LlmNativeDriver::new();
         let intent = RawUserIntent::from_text("Hello", "test_session");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         // Cancel it immediately
@@ -669,7 +724,7 @@ mod tests {
 
         let driver = LlmNativeDriver::with_client(mock_client);
         let intent = RawUserIntent::from_text("Read the main.rs file", "session_stream_test");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = driver
@@ -706,7 +761,7 @@ mod tests {
 
         let driver = LlmNativeDriver::with_client(mock_client);
         let intent = RawUserIntent::from_text("Hello agent", "session_text_test");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = driver
@@ -759,7 +814,7 @@ mod tests {
 
         let driver = LlmNativeDriver::with_client(mock_client);
         let intent = RawUserIntent::from_text("Read with bad json", "session_bad_json_test");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = driver
