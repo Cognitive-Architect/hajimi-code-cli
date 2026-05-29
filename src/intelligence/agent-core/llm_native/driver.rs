@@ -678,9 +678,9 @@ mod tests {
 
     #[test]
     fn test_prompts_feature_gate_native_enabled() {
-        // is_agent_llm_native_enabled()能读取环境变量且在合适值时识别
+        // is_agent_llm_native_enabled() defaults to true (native path is the default since Day 16)
         std::env::remove_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
-        assert!(!crate::prompts::is_agent_llm_native_enabled());
+        assert!(crate::prompts::is_agent_llm_native_enabled());
 
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "1");
         assert!(crate::prompts::is_agent_llm_native_enabled());
@@ -688,7 +688,11 @@ mod tests {
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "true");
         assert!(crate::prompts::is_agent_llm_native_enabled());
 
+        // NEG-002: Only explicit "false" or "0" disables the native path
         std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "false");
+        assert!(!crate::prompts::is_agent_llm_native_enabled());
+
+        std::env::set_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED", "0");
         assert!(!crate::prompts::is_agent_llm_native_enabled());
 
         std::env::remove_var("HAJIMI_AGENT_LLM_NATIVE_ENABLED");

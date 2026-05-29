@@ -578,20 +578,9 @@ impl AgentLoop {
     }
 
     /// Extract a file path hint from a natural-language description.
-    /// Supports patterns like "named X", "名为 X", "file X", "path X".
+    /// Supports patterns like "named X".
     fn extract_file_path(desc: &str) -> Option<String> {
         let desc_lower = desc.to_lowercase();
-        // Chinese: 名为 xxx 的文件 / 文件 xxx
-        if let Some(start) = desc_lower.find("名为 ") {
-            let rest = &desc[start + 6..]; // "名为 " is 6 bytes in UTF-8
-            let end = rest.find(' ').unwrap_or(rest.len());
-            let path = rest[..end]
-                .trim()
-                .trim_matches(|c| c == '，' || c == ',' || c == '"' || c == '\'');
-            if !path.is_empty() {
-                return Some(path.to_string());
-            }
-        }
         // English: named xxx / file xxx
         if let Some(start) = desc_lower.find("named ") {
             let rest = &desc[start + 6..];
@@ -607,16 +596,10 @@ impl AgentLoop {
     }
 
     /// Extract (path, content) for write_file from a natural-language description.
-    /// Supports patterns like "content is Y" / "内容是 Y".
+    /// Supports patterns like "content is Y".
     fn extract_write_file_params(desc: &str) -> (String, String) {
         let path = Self::extract_file_path(desc).unwrap_or_else(|| "output.txt".to_string());
         let desc_lower = desc.to_lowercase();
-        // Chinese: 内容是 xxx
-        if let Some(start) = desc_lower.find("内容是 ") {
-            let rest = &desc[start + 9..]; // "内容是 " is 9 bytes in UTF-8
-            let content = rest.trim().trim_matches(|c| c == '"' || c == '\'');
-            return (path, content.to_string());
-        }
         // English: content is xxx
         if let Some(start) = desc_lower.find("content is ") {
             let rest = &desc[start + 11..];

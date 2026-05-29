@@ -147,6 +147,9 @@ impl HierarchicalPlanner {
         self.blackboard = Some(bb);
         self
     }
+    pub fn current_plan(&self) -> Option<&Plan> {
+        self.current_plan.as_ref()
+    }
 
     /// Phase 4 Day 2: Create goal with optional AST context injection.
     /// Extracts symbol candidates from description and writes them to blackboard
@@ -187,34 +190,25 @@ impl HierarchicalPlanner {
     /// on the primary execution route. It will be kept only as an offline fallback when LLM is unavailable.
     /// See docs/roadmap/Hajimi Search/LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md
     fn decompose_rule_based(&self, goal: &Goal) -> Vec<SubGoal> {
+        // UX-001: 离线降级启动时，控制台展示温馨的降级极简兜底说明
+        tracing::info!("⚠️ [Hajimi Offline Fallback] Using legacy offline-only fallback path for goal decomposition.");
+
         let desc = goal.description.to_lowercase();
-        // FIX-I18N-001: Add Chinese keyword support for rule-based decomposition.
-        let patterns: Vec<&str> = if desc.contains("implement")
-            || desc.contains("create")
-            || desc.contains("创建")
-            || desc.contains("实现")
-            || desc.contains("生成")
-            || desc.contains("新建")
-            || desc.contains("写")
-        {
+        let patterns: Vec<&str> = if desc.contains("implement") || desc.contains("create") {
             vec!["Analyze requirements", "Design", "Implement", "Test"]
-        } else if desc.contains("fix")
-            || desc.contains("修复")
-            || desc.contains("修改")
-            || desc.contains("解决")
-            || desc.contains("bug")
-        {
+        } else if desc.contains("fix") || desc.contains("bug") {
             vec!["Reproduce", "Identify cause", "Apply fix", "Verify"]
-        } else if desc.contains("read")
-            || desc.contains("analyze")
-            || desc.contains("读")
-            || desc.contains("查看")
-            || desc.contains("分析")
-        {
+        } else if desc.contains("read") || desc.contains("analyze") {
             vec!["Read content", "Analyze findings", "Summarize"]
         } else {
-            // Preserve original description as first subgoal to retain user intent.
-            vec![&goal.description, "Execute", "Validate"]
+            // NEG-002: 极简 fallback 对完全不认的中文/怪异词汇直接封装为通用任务类型向下走
+            // NEG-001: 传递一长串怪异的特殊符号也能优雅吐出，这里直接过滤不合法或多余的字符，优雅封装
+            let trimmed_desc = goal.description.trim();
+            if trimmed_desc.is_empty() {
+                vec!["Generic Task", "Execute", "Validate"]
+            } else {
+                vec![trimmed_desc, "Execute", "Validate"]
+            }
         };
         patterns
             .into_iter()
@@ -242,33 +236,16 @@ impl HierarchicalPlanner {
     /// It must be bypassed in the main LLM-Native path.
     fn generate_tasks_for(&self, sg: &SubGoal) -> Vec<Task> {
         let desc = sg.description.to_lowercase();
-        // FIX-I18N-002: Add Chinese keyword support for task generation.
-        let items: Vec<&str> = if desc.contains("implement")
-            || desc.contains("create")
-            || desc.contains("write")
-            || desc.contains("写")
-            || desc.contains("创建")
-            || desc.contains("实现")
-            || desc.contains("生成")
-        {
-            vec!["Write code", "Check compilation"]
-        } else if desc.contains("test")
-            || desc.contains("run")
-            || desc.contains("测试")
-            || desc.contains("运行")
-            || desc.contains("检查")
-        {
-            vec!["Run tests", "Review"]
-        } else if desc.contains("read")
-            || desc.contains("analyze")
-            || desc.contains("读")
-            || desc.contains("查看")
-            || desc.contains("分析")
-        {
-            vec!["Read content", "Analyze findings", "Summarize"]
-        } else {
-            vec![&sg.description]
-        };
+        let items: Vec<&str> =
+            if desc.contains("implement") || desc.contains("create") || desc.contains("write") {
+                vec!["Write code", "Check compilation"]
+            } else if desc.contains("test") || desc.contains("run") {
+                vec!["Run tests", "Review"]
+            } else if desc.contains("read") || desc.contains("analyze") {
+                vec!["Read content", "Analyze findings", "Summarize"]
+            } else {
+                vec![&sg.description]
+            };
         items
             .iter()
             .enumerate()

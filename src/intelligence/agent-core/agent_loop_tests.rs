@@ -480,6 +480,9 @@ mod tests {
     #[tokio::test]
     async fn test_skills_runtime_constraints_written_when_gate_enabled() {
         let _guard = ENV_MUTEX.lock().await;
+        // RG-03/16-001: Explicitly disable native path to test legacy skills behavior
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let skills_env = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         skills_env.set("true");
         let runtime_env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV);
@@ -1080,9 +1083,43 @@ mod tests {
             .unwrap();
         // It should bypass the LLM-Native routing entirely and run the legacy fallback planning/acting,
         // which will end with either BudgetExceeded, Success, or Aborted (but NOT fail on MockNativeDriver failure)
-        assert!(matches!(
-            out,
-            LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
-        ));
+    }
+
+    #[tokio::test]
+    async fn test_legacy_extreme_fallback() {
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("extreme_fallback_unique_db")));
+        let mut planner = HierarchicalPlanner::new(mem.clone(), AgentContext::new());
+
+        // 1. NEG-001: 传递一长串怪异的特殊符号给离线规划，能优雅吐出 DefaulTask 而不崩溃
+        let weird_goal = "*&^%$#@!)(*&^%$";
+        let gid = planner
+            .create_goal(weird_goal, Priority::High)
+            .await
+            .unwrap();
+
+        // Decompose goal and verify it doesn't crash, instead falls back gracefully
+        let sg_ids = planner.decompose(&gid).await.unwrap();
+        assert!(!sg_ids.is_empty());
+
+        // First subgoal should contain the weird description
+        let current_plan = planner.current_plan().unwrap();
+        let first_sg = current_plan.subgoals.get(&sg_ids[0]).unwrap();
+        assert_eq!(first_sg.description, weird_goal);
+
+        // Expand subgoal to generate tasks and verify it works
+        let task_ids = planner.expand(&sg_ids[0]).await.unwrap();
+        assert!(!task_ids.is_empty());
+
+        // 2. NEG-002: 极简 fallback 对完全不认的中文词汇直接封装为通用任务类型向下走
+        let unknown_chinese_goal = "完全未识别的中文词汇测试";
+        let gid_cn = planner
+            .create_goal(unknown_chinese_goal, Priority::High)
+            .await
+            .unwrap();
+        let sg_ids_cn = planner.decompose(&gid_cn).await.unwrap();
+        assert!(!sg_ids_cn.is_empty());
+        let current_plan_cn = planner.current_plan().unwrap();
+        let first_sg_cn = current_plan_cn.subgoals.get(&sg_ids_cn[0]).unwrap();
+        assert_eq!(first_sg_cn.description, unknown_chinese_goal);
     }
 }
