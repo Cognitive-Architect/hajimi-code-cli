@@ -356,10 +356,10 @@ pub struct ModelVisibleToolSpec {
 }
 ```
 
-**实现方向**:
-- 初期可基于现有 `PlannerLlmBridge` + `engine_llm_core::LlmClient` 扩展。
-- 需要扩展 LlmClient trait 以支持 `tool_choice: "auto"` 等价的请求构造参数。
-- 流式解析 FunctionCall 事件（参考 Codex `ToolRouter::build_tool_call`）。
+**实现方向与落地成果 (Day 12 修订)**:
+- **前置安全与审批拦截**：在 `llm_native_turn` 循环内部，工具投递前前置串联调用 `AgentGovernance::approve` 网关进行审查，判定是否允许执行该工具动作。
+- **双轨安全一致性**：对非白名单敏感工具调用，赋予 `0.95` 的高风险分数并强制设为 `Critical` 审批等级；当 Governance 拒绝执行时，流程安全阻断退避并返回带有告警码及详细原因的 outcome 结构，保护底层系统不发生安全泄漏。
+- **可观测审计 TraceEvent 发射**：定义了非阻塞的 `emit_trace` 功能，于 `ToolCallInitiated`, `GovernanceApproved`, `GovernanceRejected`, `ToolExecutionSuccess`, `ToolExecutionFailed` 等工具生命周期的关键节点发射带有 `[TraceEvent][Native]` 前缀的审计日志，兼顾安全监控和高并发吞吐性能。
 
 ### 4.3 IntentPreservingContext
 

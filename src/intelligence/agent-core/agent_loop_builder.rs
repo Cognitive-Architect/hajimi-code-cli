@@ -159,7 +159,10 @@ impl AgentLoopBuilder {
         self
     }
     /// Injects a custom `AgentTurnDriver` for LLM-native double-track support.
-    pub fn with_native_driver(mut self, driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>) -> Self {
+    pub fn with_native_driver(
+        mut self,
+        driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>,
+    ) -> Self {
         self.native_driver = Some(driver);
         self
     }

@@ -251,6 +251,10 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `workflow_orchestrator.rs` | Test→Fix→Commit closed loop, SmartCommit, PR description, auto-checkpoint (Phase 4 Day 4) | ~220 |
 | `lsp_integration.rs` | `LspContextProvider` / `ASTContextProvider`, `enhance_retrieve_with_ast()` (Phase 4 Day 2) | ~120 |
 | `prompts/mod.rs` | Prompt resources and feature gates; `is_agent_skills_v0_enabled()` reads `HAJIMI_AGENT_SKILLS_V0` and defaults to false | ~70 |
+| `llm_native/mod.rs` | LLM-Native 模块导出 | ~15 |
+| `llm_native/specs.rs` | 模型可见工具规格 `ModelVisibleToolSpec` 导出 | ~85 |
+| `llm_native/driver.rs` | `LlmNativeDriver` 调度核心实现 | ~145 |
+| `llm_native/turn.rs` | `llm_native_turn` 多轮工具流式迭代调度环 (含 Governance 前置安全鉴权网关与非阻塞 Trace 审计 TraceEvent 发射) | ~712 |
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 **Agent Skills V0 status**: `DEBT-AGENT-SKILLS-V0` is initiated. Day 1 adds only `docs/agent-skills/SKILL-PACK-SPEC.md`, debt/index documentation, and the default-off `HAJIMI_AGENT_SKILLS_V0` gate. V0a / V0b / V0c remain planned follow-up work; no `src/intelligence/agent-core/skills/` Registry, Router, Runtime, AgentLoop wiring, or `.hajimi/skills` scan exists in this Day 1 baseline.

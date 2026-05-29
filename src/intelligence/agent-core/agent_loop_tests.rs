@@ -922,7 +922,9 @@ mod tests {
             AgentContext::new(),
         ))) as Arc<Mutex<dyn Reflector>>;
 
-        let mock_driver = Arc::new(MockNativeDriver { should_success: true });
+        let mock_driver = Arc::new(MockNativeDriver {
+            should_success: true,
+        });
 
         let agent_loop = AgentLoopBuilder::new()
             .with_context(AgentContext::new())
@@ -938,7 +940,10 @@ mod tests {
             .unwrap();
 
         // 验证 is_agent_llm_native_enabled 为 true 且提供了 native_driver 时成功通过新路径
-        let res = agent_loop.run("agent1".to_string(), "Test native goal").await.unwrap();
+        let res = agent_loop
+            .run("agent1".to_string(), "Test native goal")
+            .await
+            .unwrap();
         assert_eq!(res, LoopOutcome::Success);
     }
 
@@ -985,7 +990,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let out = agent_loop.run("agent1".to_string(), "Test goal fallback").await.unwrap();
+        let out = agent_loop
+            .run("agent1".to_string(), "Test goal fallback")
+            .await
+            .unwrap();
         assert!(matches!(
             out,
             LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted

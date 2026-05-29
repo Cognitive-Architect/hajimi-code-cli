@@ -40,6 +40,18 @@ pub trait LlmToolExecutor: Send + Sync {
     ) -> AgentResult<String>;
 }
 
+/// Emit a structured trace event for auditing to the logging system.
+///
+/// **NEG-003**: Uses standard non-blocking tracing logs to ensure it never blocks the main execution flow.
+fn emit_trace(step: &str, details: &str) {
+    // UX-001: Includes "TraceEvent" and "Native" to ensure audit recognizability
+    tracing::info!(
+        "[TraceEvent][Native] Step: '{}', Details: '{}'",
+        step,
+        details
+    );
+}
+
 /// Coordinates a multi-step conversation with the LLM and tool executions.
 ///
 /// **Invariant**: The original user intent (`intent.text`) is never modified or rewritten locally.
@@ -141,31 +153,146 @@ pub async fn llm_native_turn(
                             .cloned()
                             .unwrap_or(serde_json::Value::Null);
 
-                        tracing::trace!(
-                            "llm_native_turn: Invoking tool '{}' with id '{}'",
-                            tool_name,
-                            call_id
+                        // 构造前置审查请求
+                        let is_whitelisted = matches!(
+                            tool_name.as_str(),
+                            "git"
+                                | "cargo"
+                                | "npm"
+                                | "node"
+                                | "python3"
+                                | "ls"
+                                | "cat"
+                                | "echo"
+                                | "pwd"
+                                | "rustc"
+                                | "bash"
+                                | "sh"
+                                | "pwsh"
+                                | "powershell"
+                                | "curl"
+                                | "wget"
+                                | "tar"
+                                | "unzip"
+                                | "make"
                         );
 
-                        let tool_result_str = match tool_executor
-                            .execute_tool(
-                                &tool_name,
-                                &arguments,
-                                &call_id,
-                                governance.clone(),
-                                &cancellation,
-                            )
-                            .await
-                        {
-                            Ok(res) => res,
-                            Err(e) => {
-                                tracing::trace!(
-                                    "llm_native_turn: Tool '{}' (id: '{}') failed: {:?}",
-                                    tool_name,
-                                    call_id,
-                                    e
+                        let risk_score = if is_whitelisted { 0.1 } else { 0.95 };
+                        let approval_level = if is_whitelisted {
+                            crate::governance::ApprovalLevel::Auto
+                        } else {
+                            crate::governance::ApprovalLevel::Critical
+                        };
+
+                        let req = crate::governance::GovernanceRequest {
+                            requester: intent.session_id.clone(),
+                            action_type: tool_name.clone(),
+                            risk_score,
+                            description: format!(
+                                "LLM-Native turn execution of tool '{}' with arguments: {:?}",
+                                tool_name, arguments
+                            ),
+                            level: approval_level,
+                        };
+
+                        // FUNC-001: 在工具执行动作前，显式触发 governance.approve 审查拦截
+                        let ctx = crate::AgentContext::new();
+                        emit_trace(
+                            "ToolCallInitiated",
+                            &format!(
+                                "Tool '{}' requested. Initiating governance approval gate.",
+                                tool_name
+                            ),
+                        );
+
+                        let tool_result_str = match governance.approve(&ctx, &req).await {
+                            Ok(crate::governance::Decision::Approved) => {
+                                emit_trace(
+                                    "GovernanceApproved",
+                                    &format!("Tool '{}' approval granted.", tool_name),
                                 );
-                                format!("Error: {:?}", e)
+
+                                // 执行工具
+                                match tool_executor
+                                    .execute_tool(
+                                        &tool_name,
+                                        &arguments,
+                                        &call_id,
+                                        governance.clone(),
+                                        &cancellation,
+                                    )
+                                    .await
+                                {
+                                    Ok(res) => {
+                                        emit_trace(
+                                            "ToolExecutionSuccess",
+                                            &format!("Tool '{}' executed successfully.", tool_name),
+                                        );
+                                        res
+                                    }
+                                    Err(e) => {
+                                        emit_trace(
+                                            "ToolExecutionFailed",
+                                            &format!("Tool '{}' failed: {:?}", tool_name, e),
+                                        );
+                                        format!("Error: {:?}", e)
+                                    }
+                                }
+                            }
+                            Ok(crate::governance::Decision::Rejected(reason)) => {
+                                // FUNC-002: 当 governance 拒绝通过时，流程立刻安全退避阻断
+                                // FUNC-004: 支持新 native_turn 鉴权被阻断时的专用告警码上报
+                                // UX-002: 权限被拒时的报错文案高度人性化
+                                let err_msg = format!(
+                                    "Security Gate Alert: Permission Denied! Action [execute_tool: {}] was rejected by the Governance policy. Reason: {}. Risk score evaluated: {}",
+                                    tool_name, reason, risk_score
+                                );
+                                emit_trace(
+                                    "GovernanceRejected",
+                                    &format!(
+                                        "Tool '{}' execution blocked. Details: {}",
+                                        tool_name, err_msg
+                                    ),
+                                );
+
+                                // NEG-001: 循环能接住并转化为安全 outcome 返回
+                                return Ok(TurnOutcome {
+                                    success: false,
+                                    final_message: Some(err_msg),
+                                    tool_calls_executed,
+                                    iterations,
+                                });
+                            }
+                            Ok(other_decision) => {
+                                let err_msg = format!(
+                                    "Security Blocked: Action [execute_tool: {}] did not receive Auto or Admin approval. Current decision status: {:?}",
+                                    tool_name, other_decision
+                                );
+                                emit_trace(
+                                    "GovernanceBlocked",
+                                    &format!(
+                                        "Tool '{}' execution was blocked: {:?}",
+                                        tool_name, other_decision
+                                    ),
+                                );
+
+                                return Ok(TurnOutcome {
+                                    success: false,
+                                    final_message: Some(err_msg),
+                                    tool_calls_executed,
+                                    iterations,
+                                });
+                            }
+                            Err(e) => {
+                                let err_msg =
+                                    format!("Governance Internal Error during approval: {:?}", e);
+                                emit_trace("GovernanceError", &err_msg);
+                                return Ok(TurnOutcome {
+                                    success: false,
+                                    final_message: Some(err_msg),
+                                    tool_calls_executed,
+                                    iterations,
+                                });
                             }
                         };
 
@@ -211,9 +338,60 @@ pub async fn llm_native_turn(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::governance::DefaultGovernance;
     use crate::llm_native::RawUserIntent;
+    use chimera_repl::traits::ReplResult;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct MockApprovedGovernance;
+
+    #[async_trait]
+    impl crate::governance::AgentGovernance for MockApprovedGovernance {
+        async fn policy(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> crate::governance::ApprovalLevel {
+            crate::governance::ApprovalLevel::Auto
+        }
+        async fn approve(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> ReplResult<crate::governance::Decision> {
+            Ok(crate::governance::Decision::Approved)
+        }
+        async fn vote(
+            &self,
+            _voter_id: &str,
+            _proposal_id: &str,
+            _vote: crate::governance::Vote,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn escalate(
+            &self,
+            req: &crate::governance::GovernanceRequest,
+            _to_level: crate::governance::ApprovalLevel,
+        ) -> ReplResult<crate::governance::GovernanceRequest> {
+            Ok(req.clone())
+        }
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn crate::governance::GovernancePolicy>,
+            _caller: &str,
+            _required_level: crate::governance::PermissionLevel,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn record_feedback(
+            &self,
+            _ctx: &crate::AgentContext,
+            _feedback: &crate::governance::UserFeedback,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+    }
 
     // A mock LlmStepExecutor that returns simulated assistant responses.
     pub struct MockLlmStepExecutor {
@@ -309,7 +487,7 @@ mod tests {
         let tools = MockLlmToolExecutor::new(vec![("write_file", "File written successfully")]);
 
         let intent = RawUserIntent::from_text("创建一个文件并写入内容", "session_123");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = llm_native_turn(
@@ -352,7 +530,7 @@ mod tests {
         let tools = MockLlmToolExecutor::new(vec![]);
 
         let intent = RawUserIntent::from_text("Loop forever", "session_loop");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = llm_native_turn(
@@ -390,7 +568,7 @@ mod tests {
         let tools = MockLlmToolExecutor::new(vec![]);
 
         let intent = RawUserIntent::from_text("Long task", "session_cancel");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         // Cancel it beforehand
@@ -427,7 +605,7 @@ mod tests {
         let tools = MockLlmToolExecutor::new(vec![]);
 
         let intent = RawUserIntent::from_text("你好，测试一下中文！", "session_zh");
-        let governance = Arc::new(DefaultGovernance::new());
+        let governance = Arc::new(MockApprovedGovernance);
         let cancellation = CancellationToken::new();
 
         let outcome = llm_native_turn(
@@ -450,5 +628,100 @@ mod tests {
             outcome.final_message.unwrap(),
             "你好，有什么我可以帮您的吗？"
         );
+    }
+
+    struct MockRejectedGovernance;
+
+    #[async_trait]
+    impl crate::governance::AgentGovernance for MockRejectedGovernance {
+        async fn policy(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> crate::governance::ApprovalLevel {
+            crate::governance::ApprovalLevel::Critical
+        }
+        async fn approve(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> ReplResult<crate::governance::Decision> {
+            Ok(crate::governance::Decision::Rejected(
+                "highly restricted command".to_string(),
+            ))
+        }
+        async fn vote(
+            &self,
+            _voter_id: &str,
+            _proposal_id: &str,
+            _vote: crate::governance::Vote,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn escalate(
+            &self,
+            req: &crate::governance::GovernanceRequest,
+            _to_level: crate::governance::ApprovalLevel,
+        ) -> ReplResult<crate::governance::GovernanceRequest> {
+            Ok(req.clone())
+        }
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn crate::governance::GovernancePolicy>,
+            _caller: &str,
+            _required_level: crate::governance::PermissionLevel,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn record_feedback(
+            &self,
+            _ctx: &crate::AgentContext,
+            _feedback: &crate::governance::UserFeedback,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_native_governance_block() {
+        // E2E-001 & FUNC-002 & NEG-001: 验证治理审批拦截拒绝通过时，流程立刻退避并返回拒绝结果
+        let step = TurnMessage::Assistant {
+            content: Some("I need to write a file.".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "write_file",
+                "id": "call_1",
+                "arguments": {
+                    "path": "test.txt",
+                    "content": "hello"
+                }
+            })],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step]);
+        let tools = MockLlmToolExecutor::new(vec![]);
+
+        let intent = RawUserIntent::from_text("Write file", "session_governance_test");
+        let governance = Arc::new(MockRejectedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(!outcome.success);
+        assert_eq!(outcome.tool_calls_executed, 0); // 应该前置拦截，没有投递工具执行
+        let err_msg = outcome.final_message.unwrap();
+        assert!(err_msg.contains("Security Gate Alert: Permission Denied!"));
+        assert!(err_msg.contains("highly restricted command"));
     }
 }

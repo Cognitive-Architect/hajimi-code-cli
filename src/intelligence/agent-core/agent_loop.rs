@@ -183,7 +183,9 @@ impl AgentLoop {
         // NEG-002: 传递空 goal 时，优雅报错返回 EmptyGoal 错误实体
         if initial_goal.trim().is_empty() {
             info!("UX-002: goal is empty, returning EmptyGoal error");
-            return Err(chimera_repl::traits::ReplError::Session("EmptyGoal".to_string()));
+            return Err(chimera_repl::traits::ReplError::Session(
+                "EmptyGoal".to_string(),
+            ));
         }
 
         // FUNC-001: is_agent_llm_native_enabled() 为 true 时能成功跳转 native_turn 路径
