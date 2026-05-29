@@ -78,11 +78,19 @@ impl ToolSpecExporter {
                     engine_tool_system::PermissionLevel::Deny => RiskLevel::Critical,
                 };
 
-                let schema = Self::get_tool_schema(tool.name());
+                let tool_name = tool.name();
+                let (namespace, display_name) = if tool_name.contains("__") {
+                    let parts: Vec<&str> = tool_name.splitn(2, "__").collect();
+                    (Some(parts[0].to_string()), parts[1].to_string())
+                } else {
+                    (None, tool_name.to_string())
+                };
+
+                let schema = Self::get_tool_schema(&display_name);
 
                 specs.push(ModelVisibleToolSpec {
-                    name: tool.name().to_string(),
-                    namespace: None,
+                    name: display_name,
+                    namespace,
                     description: tool.description().to_string(),
                     parameters_schema: schema,
                     supports_parallel: true,
@@ -289,5 +297,35 @@ mod tests {
             let specs = ToolSpecExporter::from_registry(&registry);
             assert_eq!(specs[0].risk_level, expected);
         }
+    }
+
+    #[test]
+    fn test_exporter_namespace_isolation() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(DummyTool {
+            name: "mcp__github__create_issue".to_string(),
+            description: "Create github issue".to_string(),
+            permissions: ToolPermissions::default(),
+        }));
+
+        let specs = ToolSpecExporter::from_registry(&registry);
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].name, "github__create_issue");
+        assert_eq!(specs[0].namespace, Some("mcp".to_string()));
+    }
+
+    #[test]
+    fn test_exporter_non_empty_schema_assertion() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(DummyTool {
+            name: "read_file".to_string(),
+            description: "read file content".to_string(),
+            permissions: ToolPermissions::default(),
+        }));
+
+        let specs = ToolSpecExporter::from_registry(&registry);
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].name, "read_file");
+        assert!(specs[0].parameters_schema.get("properties").is_some());
     }
 }

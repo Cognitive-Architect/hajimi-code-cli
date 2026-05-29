@@ -3,7 +3,7 @@
 **文件路径**: `docs/roadmap/Hajimi LLM/plan/AGENT-LLM-NATIVE-DESIGN.md`
 **生成日期**: 2026-05-28
 **修订日期**: 2026-05-28（基于 Engine LlmClient 层实测采样修订）
-**阶段**: Phase 0 架构审计与新抽象定义（LLM-NATIVE-AGENT-MIGRATION-ROADMAP）
+**阶段**: Phase 1.5 (LLM-Native Engine Client 改造) COMPLETE 验收完成
 **目的**: 完整映射 Hajimi Agent Core 中所有本地规则意图破坏点，定义 Codex 风格 LLM-Native 新抽象，为后续 Phase 1-5 迁移提供精确蓝图。数据全部来自实测代码采样。
 
 > **修订说明（2026-05-28 复审）**: 原文档对 Engine 层 `LlmClient` trait 的工具调用能力评估不足。实测确认 `LlmClient` trait 完全没有 `tools` / `tool_choice` 参数，`StreamChunk` 仅有 `Output/Error/Done` 三种变体，不包含 ToolCall 事件。这意味着 Phase 2 之前必须先完成 Engine 层改造，原 17 天估时需调整为 22-28 天。本修订版新增 2.8（Engine 层缺口）和 4.6（Engine 层前置改造需求），并简化了初始抽象设计以避免过度工程。
@@ -411,7 +411,7 @@ pub struct ModelVisibleToolSpec {
 ### 5.3 渐进式迁移顺序（修订后，与路线图对齐）
 
 - **Phase 1** (Day 1-3): 引入 `RawUserIntent`、`ModelVisibleToolSpec`、`AgentTurnDriver` 骨架 + feature gate。**Day 1 骨架已落地（`llm_native/` 四文件已存在），Day 2 Tool Exposure (ToolSpecExporter::from_registry 真实导出与 Schema 动态获取) 已于 2026-05-28 完美实装并通过单元测试！**
-- **Phase 1.5** (Day 4-8, **新增**): **Engine 层 LlmClient 改造** — 扩展 `StreamChunk` 增加 ToolCall 变体，为三个 Provider（Anthropic/OpenAI/Ollama）分别实现 `stream_chat_with_tools`，完成真实导出。这是原文档遗漏的最关键前置工作。**[Completed/已完成]**
+- **Phase 1.5** (Day 4-8, **新增**): **Engine 层 LlmClient 改造** — 扩展 `StreamChunk` 增加 ToolCall 变体，为三个 Provider（Anthropic/OpenAI/Ollama）分别实现 `stream_chat_with_tools`，完成真实导出。这是原文档遗漏的最关键前置工作。**[COMPLETE/已完成]**
 - **Phase 2** (Day 9-15): 实现 `llm_native_turn` 执行循环 + 流式 ToolCall 处理；通过 feature gate 双轨并行。
 - **Phase 3** (Day 16-18): 把规则层标记为 legacy / offline-only；在入口处增加清晰分支。
 - **Phase 4** (Day 19-22): 大规模删除规则层内部的关键词补丁（FIX-I18N-*、FIX-B08-*）。

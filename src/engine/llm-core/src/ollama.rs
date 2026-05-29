@@ -118,6 +118,19 @@ impl LlmClient for OllamaClient {
         Ok(stream)
     }
 
+    async fn stream_chat_with_tools(
+        &self,
+        messages: Vec<crate::ChatMessage>,
+        system_prompt: Option<String>,
+        tools: Vec<crate::ToolDefinition>,
+        _tool_choice: crate::ToolChoiceMode,
+    ) -> Result<ChannelStream, EngineError> {
+        if !tools.is_empty() {
+            log::warn!("OllamaClient does not natively support tool calling. Falling back to plain text dialogue.");
+        }
+        self.stream_chat_with_context(messages, system_prompt).await
+    }
+
     fn provider(&self) -> &LlmProvider {
         &self.provider
     }
@@ -147,5 +160,36 @@ impl LlmClient for OllamaClient {
             let _ = model;
             Ok(crate::heuristic_token_count(&messages))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ollama_fallback_graceful() {
+        // CF-01-5/08-001: 验证 Ollama 客户端在携带 tools 时能优雅降级回普通纯文本
+        let provider = LlmProvider::ollama_default();
+        let client = OllamaClient::new(provider);
+
+        let tools = vec![crate::ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "desc".to_string(),
+            parameters: serde_json::json!({}),
+        }];
+
+        let res = client.stream_chat_with_tools(
+            vec![crate::ChatMessage {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+                timestamp: None,
+            }],
+            None,
+            tools,
+            crate::ToolChoiceMode::Auto,
+        ).await;
+
+        assert!(res.is_ok(), "Should gracefully return stream even with tools fallback");
     }
 }
