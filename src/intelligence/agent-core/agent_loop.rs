@@ -698,34 +698,20 @@ impl AgentLoop {
                 )
             } else {
                 // Task has no tool calls, perform rule-based mapping (fallback)
-                // FIX-B08-005: Support Chinese keywords and parse parameters from description.
+                // FIX-B08-005: Minimal English-only fallback for offline use.
                 let desc_lower = task.description.to_lowercase();
-                let tool_name = if desc_lower.contains("read")
-                    || desc_lower.contains("analyze")
-                    || desc_lower.contains("读")
-                    || desc_lower.contains("查看")
-                    || desc_lower.contains("分析")
-                {
+                let tool_name = if desc_lower.contains("read") || desc_lower.contains("analyze") {
                     "read_file".to_string()
                 } else if desc_lower.contains("write")
                     || desc_lower.contains("edit")
                     || desc_lower.contains("create")
                     || desc_lower.contains("implement")
-                    || desc_lower.contains("写")
-                    || desc_lower.contains("编辑")
-                    || desc_lower.contains("创建")
-                    || desc_lower.contains("生成")
-                    || desc_lower.contains("新建")
                 {
                     "write_file".to_string()
                 } else if desc_lower.contains("test")
                     || desc_lower.contains("run")
                     || desc_lower.contains("compile")
                     || desc_lower.contains("build")
-                    || desc_lower.contains("测试")
-                    || desc_lower.contains("运行")
-                    || desc_lower.contains("编译")
-                    || desc_lower.contains("构建")
                 {
                     "powershell".to_string()
                 } else {

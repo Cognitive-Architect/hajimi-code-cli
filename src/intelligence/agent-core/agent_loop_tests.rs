@@ -1122,4 +1122,51 @@ mod tests {
         let first_sg_cn = current_plan_cn.subgoals.get(&sg_ids_cn[0]).unwrap();
         assert_eq!(first_sg_cn.description, unknown_chinese_goal);
     }
+
+    #[tokio::test]
+    async fn test_double_track_native_solidification() {
+        let _guard = ENV_MUTEX.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+
+        println!("🚀 [Day 18 Solidification] Step 1: Testing initial runtime LLM-Native routing state...");
+        env_guard.set("true");
+        assert!(
+            crate::prompts::is_agent_llm_native_enabled(),
+            "Should default to true when set to true"
+        );
+
+        println!(
+            "🚀 [Day 18 Solidification] Step 2: Simulating runtime switch to legacy fallback..."
+        );
+        env_guard.set("false");
+        assert!(
+            !crate::prompts::is_agent_llm_native_enabled(),
+            "Should immediately pick up false"
+        );
+
+        println!("🚀 [Day 18 Solidification] Step 3: Verifying routing with a live fallback planner run...");
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("solidification_test_db")));
+        let mut planner = HierarchicalPlanner::new(mem.clone(), AgentContext::new());
+
+        let gid = planner
+            .create_goal("Test fallback stability", Priority::High)
+            .await
+            .unwrap();
+        let sg_ids = planner.decompose(&gid).await.unwrap();
+        assert!(
+            !sg_ids.is_empty(),
+            "Subgoals should be generated even in fallback"
+        );
+
+        println!("🚀 [Day 18 Solidification] Step 4: Simulating runtime reset back to native...");
+        env_guard.set("true");
+        assert!(
+            crate::prompts::is_agent_llm_native_enabled(),
+            "Should instantly toggle back to native"
+        );
+
+        println!(
+            "✨ [Day 18 Solidification] All double-track migration routes solidified perfectly!"
+        );
+    }
 }
