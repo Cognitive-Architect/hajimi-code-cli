@@ -190,31 +190,20 @@ impl HierarchicalPlanner {
     /// on the primary execution route. It will be kept only as an offline fallback when LLM is unavailable.
     /// See docs/roadmap/Hajimi Search/LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md
     fn decompose_rule_based(&self, goal: &Goal) -> Vec<SubGoal> {
+        // Heuristic fallback to generic text if empty
         // UX-001: 离线降级启动时，控制台展示温馨的降级极简兜底说明
         tracing::info!("⚠️ [Hajimi Offline Fallback] Using legacy offline-only fallback path for goal decomposition.");
 
-        let desc = goal.description.to_lowercase();
-        let patterns: Vec<&str> = if desc.contains("implement") || desc.contains("create") {
-            vec!["Analyze requirements", "Design", "Implement", "Test"]
-        } else if desc.contains("fix") || desc.contains("bug") {
-            vec!["Reproduce", "Identify cause", "Apply fix", "Verify"]
-        } else if desc.contains("read") || desc.contains("analyze") {
-            vec!["Read content", "Analyze findings", "Summarize"]
+        let trimmed_desc = goal.description.trim();
+        // Heuristic fallback: wrap directly into default subgoal to completely avoid keyword intent destruction.
+        // NEG-002: 极简 fallback 对完全不认的中文/怪异词汇直接封装为通用任务类型向下走
+        // NEG-001: 传递一长串怪异的特殊符号也能优雅吐出，这里直接过滤不合法或多余的字符，优雅封装
+        let subgoal_desc = if trimmed_desc.is_empty() {
+            "Generic Task"
         } else {
-            // NEG-002: 极简 fallback 对完全不认的中文/怪异词汇直接封装为通用任务类型向下走
-            // NEG-001: 传递一长串怪异的特殊符号也能优雅吐出，这里直接过滤不合法或多余的字符，优雅封装
-            let trimmed_desc = goal.description.trim();
-            if trimmed_desc.is_empty() {
-                vec!["Generic Task", "Execute", "Validate"]
-            } else {
-                vec![trimmed_desc, "Execute", "Validate"]
-            }
+            trimmed_desc
         };
-        patterns
-            .into_iter()
-            .enumerate()
-            .map(|(i, p)| self.mk_subgoal(&goal.id, p, Priority::High, i))
-            .collect()
+        vec![self.mk_subgoal(&goal.id, subgoal_desc, Priority::High, 0)]
     }
     fn mk_subgoal(&self, parent: &GoalId, desc: &str, priority: Priority, idx: usize) -> SubGoal {
         SubGoal {
@@ -235,29 +224,15 @@ impl HierarchicalPlanner {
     /// This function performs a second round of keyword-based rewriting on already-damaged SubGoal descriptions.
     /// It must be bypassed in the main LLM-Native path.
     fn generate_tasks_for(&self, sg: &SubGoal) -> Vec<Task> {
-        let desc = sg.description.to_lowercase();
-        let items: Vec<&str> =
-            if desc.contains("implement") || desc.contains("create") || desc.contains("write") {
-                vec!["Write code", "Check compilation"]
-            } else if desc.contains("test") || desc.contains("run") {
-                vec!["Run tests", "Review"]
-            } else if desc.contains("read") || desc.contains("analyze") {
-                vec!["Read content", "Analyze findings", "Summarize"]
-            } else {
-                vec![&sg.description]
-            };
-        items
-            .iter()
-            .enumerate()
-            .map(|(i, d)| Task {
-                id: format!("{}-t{}", sg.id, i),
-                parent_subgoal: sg.id.clone(),
-                description: d.to_string(),
-                tool_calls: Vec::new(),
-                status: PlanStatus::Pending,
-                result: None,
-            })
-            .collect()
+        // Direct single-wrapper fallback to avoid any keyword-based rewriting.
+        vec![Task {
+            id: format!("{}-t0", sg.id),
+            parent_subgoal: sg.id.clone(),
+            description: sg.description.clone(),
+            tool_calls: Vec::new(),
+            status: PlanStatus::Pending,
+            result: None,
+        }]
     }
     fn deps_met(&self, sg: &SubGoal, plan: &Plan) -> bool {
         sg.dependencies.iter().all(|d| {
@@ -660,5 +635,35 @@ mod tests {
             Some(&"DEGRADED".to_string()),
             "Goal should be marked DEGRADED when fallback occurs"
         );
+    }
+
+    #[tokio::test]
+    async fn test_planner_cleanup_verification() {
+        let mut p = planner();
+        // Use a multilingual complex input that would have triggered multiple keyword rewrites before.
+        let complex_goal = "创建/create/修复/fix a bug and implement a new feature. 传递一长串怪异的特殊符号: !@#$%^&*()_+";
+        let id = p
+            .create_goal(complex_goal, Priority::High)
+            .await
+            .expect("create_goal failed");
+        
+        let sg_ids = p.decompose(&id).await.expect("decompose should succeed");
+        assert_eq!(sg_ids.len(), 1, "Should have exactly 1 subgoal (direct fallback)");
+        
+        let sg_id = sg_ids[0].clone();
+        
+        {
+            let plan = p.current_plan.as_ref().expect("plan should exist");
+            let sg = plan.subgoals.get(&sg_id).expect("subgoal should exist");
+            // Original character sequence should be preserved completely and not stripped or rewritten
+            assert_eq!(sg.description, complex_goal, "Original description must be 100% preserved");
+        }
+        
+        let task_ids = p.expand(&sg_id).await.expect("expand should succeed");
+        assert_eq!(task_ids.len(), 1, "Should have exactly 1 task");
+        
+        let plan = p.current_plan.as_ref().expect("plan should exist");
+        let task = plan.tasks.get(&task_ids[0]).expect("task should exist");
+        assert_eq!(task.description, complex_goal, "Original description in task must be 100% preserved");
     }
 }

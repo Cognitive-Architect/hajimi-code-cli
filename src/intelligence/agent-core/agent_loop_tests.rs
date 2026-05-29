@@ -308,7 +308,7 @@ mod tests {
         ));
     }
 
-    static ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 
     struct EnvVarGuard {
         key: &'static str,
@@ -345,7 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_disabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("false");
 
@@ -404,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_enabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -479,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_runtime_constraints_written_when_gate_enabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         // RG-03/16-001: Explicitly disable native path to test legacy skills behavior
         let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
         native_env.set("false");
@@ -543,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_unset_gate_disabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.unset();
 
@@ -602,7 +602,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_enabled_missing_components_degrades() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -653,7 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_execution_receipt_written() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -711,7 +711,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_llm_bootstrap_mechanism() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED");
         env_guard.set("true");
 
@@ -795,7 +795,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_local_execution_and_planner_activation() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
 
         let mem = Arc::new(Mutex::new(MemoryGateway::new("planner_activation_test")));
         let mut registry = ToolRegistry::new();
@@ -912,7 +912,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_double_track_isolation() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
         native_env.set("true");
 
@@ -953,7 +953,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_loop_empty_goal() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let l = test_loop();
         let res = l.run("agent1".to_string(), "   ").await;
         assert!(res.is_err());
@@ -966,7 +966,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_loop_driver_none_fallback() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
         native_env.set("true");
 
@@ -1006,7 +1006,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_branch_default_routing() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
 
         // 1. FUNC-001: 默认不配置任何环境变量时，系统自主路由进入新 native_turn 执行
         let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
@@ -1125,7 +1125,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_double_track_native_solidification() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
 
         println!("🚀 [Day 18 Solidification] Step 1: Testing initial runtime LLM-Native routing state...");
