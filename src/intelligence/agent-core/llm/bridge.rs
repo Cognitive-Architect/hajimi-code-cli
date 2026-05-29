@@ -772,8 +772,6 @@ mod tests {
     use crate::reflector::ReflectionLlmClient;
     use std::sync::Mutex;
 
-
-
     /// Mock LlmClient that returns a pre-configured response for testing decompose paths.
     struct MockLlmClient {
         response: String,

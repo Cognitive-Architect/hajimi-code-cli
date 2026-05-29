@@ -577,39 +577,6 @@ impl AgentLoop {
         }))
     }
 
-    /// Extract a file path hint from a natural-language description.
-    /// Supports patterns like "named X".
-    fn extract_file_path(desc: &str) -> Option<String> {
-        let desc_lower = desc.to_lowercase();
-        // English: named xxx / file xxx
-        if let Some(start) = desc_lower.find("named ") {
-            let rest = &desc[start + 6..];
-            let end = rest.find(' ').unwrap_or(rest.len());
-            let path = rest[..end]
-                .trim()
-                .trim_matches(|c| c == ',' || c == '"' || c == '\'');
-            if !path.is_empty() {
-                return Some(path.to_string());
-            }
-        }
-        None
-    }
-
-    /// Extract (path, content) for write_file from a natural-language description.
-    /// Supports patterns like "content is Y".
-    fn extract_write_file_params(desc: &str) -> (String, String) {
-        let path = Self::extract_file_path(desc).unwrap_or_else(|| "output.txt".to_string());
-        let desc_lower = desc.to_lowercase();
-        // English: content is xxx
-        if let Some(start) = desc_lower.find("content is ") {
-            let rest = &desc[start + 11..];
-            let content = rest.trim().trim_matches(|c| c == '"' || c == '\'');
-            return (path, content.to_string());
-        }
-        // Fallback: use the whole description as content
-        (path, desc.to_string())
-    }
-
     /// LEGACY / OFFLINE FALLBACK
     ///
     /// LLM-NATIVE-TODO (Phase 3+): This is the third (and most destructive) layer of local rule-based intent mapping.
@@ -697,57 +664,11 @@ impl AgentLoop {
                     serde_json::Value::Object(tc.parameters.clone().into_iter().collect()),
                 )
             } else {
-                // Task has no tool calls, perform rule-based mapping (fallback)
-                // FIX-B08-005: Minimal English-only fallback for offline use.
-                let desc_lower = task.description.to_lowercase();
-                let tool_name = if desc_lower.contains("read") || desc_lower.contains("analyze") {
-                    "read_file".to_string()
-                } else if desc_lower.contains("write")
-                    || desc_lower.contains("edit")
-                    || desc_lower.contains("create")
-                    || desc_lower.contains("implement")
-                {
-                    "write_file".to_string()
-                } else if desc_lower.contains("test")
-                    || desc_lower.contains("run")
-                    || desc_lower.contains("compile")
-                    || desc_lower.contains("build")
-                {
-                    "powershell".to_string()
-                } else {
-                    "read_file".to_string() // default safe fallback
-                };
-
-                // Verify if the mapped tool exists in registry, else fallback to any available safe tool or default
-                let mut resolved_tool_name = tool_name;
-                {
-                    let guard = registry.lock().await;
-                    if guard.get(&resolved_tool_name).is_none() {
-                        for alternative in &["analyze", "ls", "read_file"] {
-                            if guard.get(alternative).is_some() {
-                                resolved_tool_name = alternative.to_string();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                let parameters = if resolved_tool_name == "powershell" {
-                    serde_json::json!({ "command": "echo 'local check'" })
-                } else if resolved_tool_name == "read_file" {
-                    // Try to extract file path from description, fallback to task description as hint
-                    let path = Self::extract_file_path(&task.description)
-                        .unwrap_or_else(|| "Cargo.toml".to_string());
-                    serde_json::json!({ "path": path })
-                } else if resolved_tool_name == "write_file" {
-                    // Try to extract file path and content from description
-                    let (path, content) = Self::extract_write_file_params(&task.description);
-                    serde_json::json!({ "path": path, "content": content })
-                } else {
-                    serde_json::json!({})
-                };
-
-                (resolved_tool_name, parameters)
+                // Direct simple default fallback without keyword matching
+                (
+                    "read_file".to_string(),
+                    serde_json::json!({ "path": "Cargo.toml" }),
+                )
             };
 
             info!(
@@ -908,59 +829,13 @@ impl AgentLoop {
                 next_step_hint: None,
             }
         } else {
-            // Task has no tool calls, perform rule-based mapping (fallback)
-            let desc = task.description.to_lowercase();
-            let tool_name = if desc.contains("read") || desc.contains("analyze") {
-                "read_file".to_string()
-            } else if desc.contains("write")
-                || desc.contains("edit")
-                || desc.contains("create")
-                || desc.contains("implement")
-            {
-                "write_file".to_string()
-            } else if desc.contains("test")
-                || desc.contains("run")
-                || desc.contains("compile")
-                || desc.contains("build")
-            {
-                "powershell".to_string()
-            } else {
-                "read_file".to_string() // default safe fallback
-            };
-
-            // Verify if the mapped tool exists in self.tool_registry, else fallback to any available safe tool or default
-            let mut resolved_tool_name = tool_name;
-            if let Some(ref reg) = self.tool_registry {
-                let guard = reg.lock().await;
-                if guard.get(&resolved_tool_name).is_none() {
-                    // Try some safe alternatives
-                    for alternative in &["analyze", "ls", "read_file"] {
-                        if guard.get(alternative).is_some() {
-                            resolved_tool_name = alternative.to_string();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Create default parameters matching the chosen tool
-            let parameters = if resolved_tool_name == "powershell" {
-                serde_json::json!({ "command": "echo 'bootstrap check'" })
-            } else if resolved_tool_name == "read_file" {
-                serde_json::json!({ "path": "Cargo.toml" })
-            } else {
-                serde_json::json!({})
-            };
-
+            // Direct simple default fallback without keyword matching
             ToolCallV1 {
                 schema_version: "1".to_string(),
                 action_type: crate::act_dto::ActionType::CallTool,
-                tool_name: resolved_tool_name,
-                parameters,
-                reason: format!(
-                    "Bootstrap rule-based fallback for task: {}",
-                    task.description
-                ),
+                tool_name: "read_file".to_string(),
+                parameters: serde_json::json!({ "path": "Cargo.toml" }),
+                reason: format!("Bootstrap default fallback for task: {}", task.description),
                 expected_output: "Success".to_string(),
                 expected_evidence: "Success".to_string(),
                 fallback_tool: None,

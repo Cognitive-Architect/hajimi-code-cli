@@ -308,8 +308,6 @@ mod tests {
         ));
     }
 
-
-
     struct EnvVarGuard {
         key: &'static str,
         original_value: Option<String>,
@@ -1167,6 +1165,125 @@ mod tests {
 
         println!(
             "✨ [Day 18 Solidification] All double-track migration routes solidified perfectly!"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_cleanup_verification() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("agent_loop_cleanup_test")));
+        let mut registry = ToolRegistry::new();
+
+        struct MockReadFileTool;
+        #[async_trait::async_trait]
+        impl engine_tool_system::Tool for MockReadFileTool {
+            fn name(&self) -> &str {
+                "read_file"
+            }
+            fn description(&self) -> &str {
+                "mock read file tool"
+            }
+            fn permissions(&self) -> engine_tool_system::ToolPermissions {
+                Default::default()
+            }
+            async fn execute(
+                &self,
+                args: engine_tool_system::ToolArgs,
+            ) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                Ok(engine_tool_system::ToolOutput::success(&format!(
+                    "successfully read path {}",
+                    path
+                )))
+            }
+        }
+        registry.register(Arc::new(MockReadFileTool));
+
+        let loop_bb = Arc::new(Blackboard::new());
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner.clone())
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(loop_bb.clone())
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem.clone()))
+            .with_tool_registry(Arc::new(Mutex::new(registry)))
+            .build()
+            .unwrap();
+
+        // 1. Verify legacy_act simple default fallback executes mock tool and yields correct parameters
+        let gid = agent_loop
+            .plan_initial_goal("read some file content")
+            .await
+            .unwrap();
+
+        let mut planner_guard = planner.lock().await;
+        let sg_ids = planner_guard.decompose(&gid).await.unwrap();
+        let _task_ids = planner_guard.expand(&sg_ids[0]).await.unwrap();
+        drop(planner_guard);
+
+        let act_res = agent_loop
+            .legacy_act(&"agent_test".to_string(), &gid)
+            .await
+            .unwrap();
+        assert!(act_res.success);
+        assert!(act_res.output.contains("successfully read path Cargo.toml"));
+
+        // 2. Verify bootstrap_first_tool_call resolves and creates default tool call on a clean loop/planner
+        let loop_bb2 = Arc::new(Blackboard::new());
+        let planner2 = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+
+        let mut registry2 = ToolRegistry::new();
+        registry2.register(Arc::new(MockReadFileTool));
+
+        let agent_loop2 = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner2.clone())
+            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
+                mem.clone(),
+                AgentContext::new(),
+            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(loop_bb2.clone())
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem.clone()))
+            .with_tool_registry(Arc::new(Mutex::new(registry2)))
+            .build()
+            .unwrap();
+
+        let gid2 = agent_loop2
+            .plan_initial_goal("bootstrap goal check")
+            .await
+            .unwrap();
+
+        let bootstrapped = agent_loop2
+            .bootstrap_first_tool_call(&gid2, "agent_test")
+            .await
+            .unwrap();
+        assert!(bootstrapped.is_some());
+        let call = bootstrapped.unwrap();
+        assert_eq!(call.tool_name, "read_file");
+        assert_eq!(
+            call.parameters.get("path").and_then(|v| v.as_str()),
+            Some("Cargo.toml")
         );
     }
 }

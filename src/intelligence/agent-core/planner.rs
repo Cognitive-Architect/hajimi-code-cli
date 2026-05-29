@@ -646,24 +646,34 @@ mod tests {
             .create_goal(complex_goal, Priority::High)
             .await
             .expect("create_goal failed");
-        
+
         let sg_ids = p.decompose(&id).await.expect("decompose should succeed");
-        assert_eq!(sg_ids.len(), 1, "Should have exactly 1 subgoal (direct fallback)");
-        
+        assert_eq!(
+            sg_ids.len(),
+            1,
+            "Should have exactly 1 subgoal (direct fallback)"
+        );
+
         let sg_id = sg_ids[0].clone();
-        
+
         {
             let plan = p.current_plan.as_ref().expect("plan should exist");
             let sg = plan.subgoals.get(&sg_id).expect("subgoal should exist");
             // Original character sequence should be preserved completely and not stripped or rewritten
-            assert_eq!(sg.description, complex_goal, "Original description must be 100% preserved");
+            assert_eq!(
+                sg.description, complex_goal,
+                "Original description must be 100% preserved"
+            );
         }
-        
+
         let task_ids = p.expand(&sg_id).await.expect("expand should succeed");
         assert_eq!(task_ids.len(), 1, "Should have exactly 1 task");
-        
+
         let plan = p.current_plan.as_ref().expect("plan should exist");
         let task = plan.tasks.get(&task_ids[0]).expect("task should exist");
-        assert_eq!(task.description, complex_goal, "Original description in task must be 100% preserved");
+        assert_eq!(
+            task.description, complex_goal,
+            "Original description in task must be 100% preserved"
+        );
     }
 }
