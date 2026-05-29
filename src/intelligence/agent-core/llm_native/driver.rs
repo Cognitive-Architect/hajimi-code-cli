@@ -76,6 +76,7 @@ pub struct TurnOutcome {
     pub final_message: Option<String>,
     pub tool_calls_executed: usize,
     pub iterations: usize,
+    pub execution_history: Option<Vec<TurnMessage>>,
 }
 
 /// The central trait for an LLM-Native turn executor.
@@ -142,6 +143,10 @@ impl Default for LlmNativeDriver {
 
 #[async_trait]
 impl LlmStepExecutor for LlmNativeDriver {
+    fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+        self.client.as_ref().and_then(|c| c.last_usage())
+    }
+
     async fn step(
         &self,
         intent: &RawUserIntent,
@@ -433,6 +438,7 @@ impl AgentTurnDriver for LlmNativeDriver {
                 final_message: Some("Cancelled".to_string()),
                 tool_calls_executed: 0,
                 iterations: 0,
+                execution_history: None,
             });
         }
 
@@ -447,6 +453,7 @@ impl AgentTurnDriver for LlmNativeDriver {
                 ),
                 tool_calls_executed: 0,
                 iterations: 1,
+                execution_history: None,
             });
         }
 

@@ -13,7 +13,6 @@ use crate::AgentResult;
 use async_trait::async_trait;
 use std::sync::Arc;
 
-/// Trait representing a single step conversation with the LLM.
 #[async_trait]
 pub trait LlmStepExecutor: Send + Sync {
     /// Request the next message from the LLM based on conversation history.
@@ -24,6 +23,11 @@ pub trait LlmStepExecutor: Send + Sync {
         history: &[TurnMessage],
         cancellation: &CancellationToken,
     ) -> AgentResult<TurnMessage>;
+
+    /// Get token usage of the last LLM step.
+    fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+        None
+    }
 }
 
 /// Trait representing the execution environment for tools.
@@ -52,6 +56,47 @@ fn emit_trace(step: &str, details: &str) {
     );
 }
 
+/// Thread-safe, non-blocking O(1) Token usage accumulator.
+#[derive(Debug, Default)]
+pub struct TokenTracker {
+    accumulated_prompt_tokens: std::sync::atomic::AtomicU64,
+    accumulated_completion_tokens: std::sync::atomic::AtomicU64,
+}
+
+impl TokenTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_usage(&self, prompt: u64, completion: u64) {
+        // We use relaxed ordering for O(1) lock-free thread safety without performance degradation.
+        self.accumulated_prompt_tokens
+            .fetch_add(prompt, std::sync::atomic::Ordering::Relaxed);
+        self.accumulated_completion_tokens
+            .fetch_add(completion, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn total_tokens(&self) -> u64 {
+        let p = self
+            .accumulated_prompt_tokens
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let c = self
+            .accumulated_completion_tokens
+            .load(std::sync::atomic::Ordering::Relaxed);
+        p.saturating_add(c)
+    }
+
+    pub fn prompt_tokens(&self) -> u64 {
+        self.accumulated_prompt_tokens
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn completion_tokens(&self) -> u64 {
+        self.accumulated_completion_tokens
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 /// Coordinates a multi-step conversation with the LLM and tool executions.
 ///
 /// **Invariant**: The original user intent (`intent.text`) is never modified or rewritten locally.
@@ -73,6 +118,9 @@ pub async fn llm_native_turn(
         intent.text
     );
 
+    let token_tracker = TokenTracker::new();
+    let mut file_modifications: Vec<String> = Vec::new();
+
     let mut iterations = 0;
     let mut tool_calls_executed = 0;
     let mut final_message = None;
@@ -89,6 +137,7 @@ pub async fn llm_native_turn(
                 final_message: Some("Cancelled".to_string()),
                 tool_calls_executed,
                 iterations,
+                execution_history: Some(history.clone()),
             });
         }
 
@@ -105,6 +154,43 @@ pub async fn llm_native_turn(
             .await?;
 
         history.push(next_msg.clone());
+
+        if let Some(usage) = llm_executor.last_usage() {
+            let prompt = usage.prompt_tokens;
+            let completion = usage.completion_tokens;
+            token_tracker.add_usage(prompt, completion);
+
+            tracing::trace!(
+                "llm_native_turn: Token budget usage rate: {:.2}%. prompt_tokens = {}, completion_tokens = {}, total = {}",
+                (token_tracker.total_tokens() as f64 / 8192.0) * 100.0,
+                token_tracker.prompt_tokens(),
+                token_tracker.completion_tokens(),
+                token_tracker.total_tokens()
+            );
+
+            if token_tracker.total_tokens() >= 8192 {
+                eprintln!("=============================================================");
+                eprintln!(
+                    "⚠️⚠️⚠️ [MELTDOWN WARNING] BUDGET EXCEEDED: TOKEN MELTDOWN THRESHOLD REACHED!"
+                );
+                eprintln!(
+                    "⚠️⚠️⚠️ Total Tokens: {} >= 8192",
+                    token_tracker.total_tokens()
+                );
+                eprintln!("⚠️⚠️⚠️ Preserving intermediate execution state and handing off...");
+                eprintln!("=============================================================");
+                return Ok(TurnOutcome {
+                    success: false,
+                    final_message: Some(format!(
+                        "Handoff: Budget Exceeded. Token/Iteration meltdown threshold reached. Preserving execution state. Total tokens: {}",
+                        token_tracker.total_tokens()
+                    )),
+                    tool_calls_executed,
+                    iterations,
+                    execution_history: Some(history.clone()),
+                });
+            }
+        }
 
         match next_msg {
             TurnMessage::Assistant {
@@ -133,6 +219,7 @@ pub async fn llm_native_turn(
                                 final_message: Some("Cancelled".to_string()),
                                 tool_calls_executed,
                                 iterations,
+                                execution_history: Some(history.clone()),
                             });
                         }
 
@@ -152,6 +239,35 @@ pub async fn llm_native_turn(
                             .get("arguments")
                             .cloned()
                             .unwrap_or(serde_json::Value::Null);
+
+                        // HIGH-001: Safety check to prevent infinite self-lock/disk space exhaustion by repeated writes
+                        if tool_name == "write_file" || tool_name == "append_file" {
+                            if let Some(path_val) = arguments.get("path").and_then(|p| p.as_str()) {
+                                file_modifications.push(path_val.to_string());
+                                let count =
+                                    file_modifications.iter().filter(|&p| p == path_val).count();
+                                if count > 2 {
+                                    let err_msg = format!(
+                                        "Security Gate Alert: Potential infinite file modification self-lock detected for path '{}'. Blocking execution to prevent disk space exhaustion.",
+                                        path_val
+                                    );
+                                    eprintln!("=============================================================");
+                                    eprintln!("⚠️⚠️⚠️ [SECURITY MELTDOWN] POTENTIAL INFINITE WRITE LOCK INJECTED!");
+                                    eprintln!(
+                                        "⚠️⚠️⚠️ File '{}' was modified {} times in a single turn.",
+                                        path_val, count
+                                    );
+                                    eprintln!("=============================================================");
+                                    return Ok(TurnOutcome {
+                                        success: false,
+                                        final_message: Some(err_msg),
+                                        tool_calls_executed,
+                                        iterations,
+                                        execution_history: Some(history.clone()),
+                                    });
+                                }
+                            }
+                        }
 
                         // 构造前置审查请求
                         let is_whitelisted = matches!(
@@ -261,6 +377,7 @@ pub async fn llm_native_turn(
                                     final_message: Some(err_msg),
                                     tool_calls_executed,
                                     iterations,
+                                    execution_history: Some(history.clone()),
                                 });
                             }
                             Ok(other_decision) => {
@@ -281,6 +398,7 @@ pub async fn llm_native_turn(
                                     final_message: Some(err_msg),
                                     tool_calls_executed,
                                     iterations,
+                                    execution_history: Some(history.clone()),
                                 });
                             }
                             Err(e) => {
@@ -292,6 +410,7 @@ pub async fn llm_native_turn(
                                     final_message: Some(err_msg),
                                     tool_calls_executed,
                                     iterations,
+                                    execution_history: Some(history.clone()),
                                 });
                             }
                         };
@@ -323,8 +442,18 @@ pub async fn llm_native_turn(
             "llm_native_turn: Maximum iteration budget of {} exceeded.",
             max_iterations
         );
+        eprintln!("=============================================================");
+        eprintln!(
+            "⚠️⚠️⚠️ [MELTDOWN WARNING] BUDGET EXCEEDED: ITERATION MELTDOWN THRESHOLD REACHED!"
+        );
+        eprintln!("⚠️⚠️⚠️ Max iterations: {}", max_iterations);
+        eprintln!("⚠️⚠️⚠️ Preserving intermediate execution state and handing off...");
+        eprintln!("=============================================================");
         success = false;
-        final_message = Some("Max iterations exceeded".to_string());
+        final_message = Some(format!(
+            "Handoff: Budget Exceeded. Token/Iteration meltdown threshold reached. Preserving execution state. Max iterations exceeded: {}",
+            max_iterations
+        ));
     }
 
     Ok(TurnOutcome {
@@ -332,6 +461,7 @@ pub async fn llm_native_turn(
         final_message,
         tool_calls_executed,
         iterations,
+        execution_history: Some(history),
     })
 }
 
@@ -397,6 +527,7 @@ mod tests {
     pub struct MockLlmStepExecutor {
         steps: Vec<TurnMessage>,
         current_step: AtomicUsize,
+        simulated_usage: Option<engine_llm_core::Usage>,
     }
 
     impl MockLlmStepExecutor {
@@ -404,6 +535,18 @@ mod tests {
             Self {
                 steps,
                 current_step: AtomicUsize::new(0),
+                simulated_usage: None,
+            }
+        }
+
+        pub fn with_simulated_usage(
+            steps: Vec<TurnMessage>,
+            usage: engine_llm_core::Usage,
+        ) -> Self {
+            Self {
+                steps,
+                current_step: AtomicUsize::new(0),
+                simulated_usage: Some(usage),
             }
         }
     }
@@ -425,6 +568,10 @@ mod tests {
                     "Mock LLM ran out of steps".to_string(),
                 ))
             }
+        }
+
+        fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+            self.simulated_usage
         }
     }
 
@@ -549,7 +696,10 @@ mod tests {
         assert!(!outcome.success);
         assert_eq!(outcome.iterations, 3);
         assert_eq!(outcome.tool_calls_executed, 3);
-        assert_eq!(outcome.final_message.unwrap(), "Max iterations exceeded");
+        assert!(outcome
+            .final_message
+            .unwrap()
+            .contains("Max iterations exceeded"));
     }
 
     #[tokio::test]
@@ -723,5 +873,126 @@ mod tests {
         let err_msg = outcome.final_message.unwrap();
         assert!(err_msg.contains("Security Gate Alert: Permission Denied!"));
         assert!(err_msg.contains("highly restricted command"));
+    }
+
+    #[tokio::test]
+    async fn test_llm_native_turn_token_limit_meltdown() {
+        // E2E-001 & FUNC-002: 集成用例模拟多轮超支，证明系统在指定上限帧处强行退避成功，且中间态执行历史被安全保留
+        let step1 = TurnMessage::Assistant {
+            content: Some("Thinking...".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "ls",
+                "id": "call_1",
+                "arguments": {}
+            })],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Done".to_string()),
+            tool_calls: vec![],
+        };
+
+        // Simulated usage is 8500 prompt tokens (over 8192)
+        let simulated_usage = engine_llm_core::Usage {
+            prompt_tokens: 8500,
+            completion_tokens: 100,
+        };
+        let llm = MockLlmStepExecutor::with_simulated_usage(vec![step1, step2], simulated_usage);
+        let tools = MockLlmToolExecutor::new(vec![("ls", "file1.txt\nfile2.txt")]);
+
+        let intent = RawUserIntent::from_text("List files", "session_token_meltdown");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(
+            final_msg.contains("Budget Meltdown Alert") || final_msg.contains("Budget Exceeded")
+        );
+
+        // Assert that intermediate execution history was preserved
+        let history = outcome
+            .execution_history
+            .expect("Expected intermediate execution history");
+        assert!(!history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_llm_native_turn_preventative_file_modification_lock() {
+        // HIGH-001: 校验防范由于多轮循环中反复修改文件引发的无限自锁与磁盘占满长尾问题
+        let step1 = TurnMessage::Assistant {
+            content: Some("First write".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "write_file",
+                "id": "call_1",
+                "arguments": {
+                    "path": "inf.txt",
+                    "content": "a"
+                }
+            })],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Second write".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "write_file",
+                "id": "call_2",
+                "arguments": {
+                    "path": "inf.txt",
+                    "content": "b"
+                }
+            })],
+        };
+        let step3 = TurnMessage::Assistant {
+            content: Some("Third write".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "write_file",
+                "id": "call_3",
+                "arguments": {
+                    "path": "inf.txt",
+                    "content": "c"
+                }
+            })],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2, step3]);
+        let tools = MockLlmToolExecutor::new(vec![
+            ("write_file", "success"),
+            ("write_file", "success"),
+            ("write_file", "success"),
+        ]);
+
+        let intent = RawUserIntent::from_text("Write repeatedly", "session_write_lock");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(final_msg.contains("Potential infinite file modification self-lock detected"));
+        assert_eq!(outcome.tool_calls_executed, 2); // Third one is blocked before execution!
     }
 }

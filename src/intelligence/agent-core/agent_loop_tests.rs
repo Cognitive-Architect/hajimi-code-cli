@@ -902,6 +902,7 @@ mod tests {
                 tool_calls_executed: 0,
                 iterations: 1,
                 final_message: Some("Mock native output message".to_string()),
+                execution_history: None,
             })
         }
     }
