@@ -926,3 +926,10 @@ interface/mcp-server/
 **Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
 
 *本索引文档与代码同步维护，最后更新于 2026-04-30*
+
+---
+
+## 🎯 债务清偿记录 (Remediation Logs)
+
+- **DEBT-AGENT-CHINESE-I18N** (中英文关键词过滤与语义改写层): ✅ **已完全割除与清偿** (2026-05-29)
+  - 割除范围: `planner.rs` (decompose_rule_based, generate_tasks_for) 彻底清除多语言关键词硬编码逻辑，实现输入意图的纯净直达。
