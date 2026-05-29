@@ -191,7 +191,7 @@ impl AgentLoop {
         // FUNC-001: is_agent_llm_native_enabled() 为 true 时能成功跳转 native_turn 路径
         if crate::prompts::is_agent_llm_native_enabled() {
             // FUNC-003: 新路径启动时系统正常打印 'LLM-Native path enabled'
-            info!("LLM-Native path enabled");
+            info!("✨✨ [Hajimi IDE] LLM-Native Agent Loop Core Activated. Routing execution to autonomous LLM-Native path! ✨✨");
             if let Some(ref driver) = self.native_driver {
                 info!("LLM-Native path enabled for goal: {}", initial_goal);
 
@@ -627,13 +627,15 @@ impl AgentLoop {
         (path, desc.to_string())
     }
 
-    // LLM-NATIVE-TODO (Phase 3+): This is the third (and most destructive) layer of local rule-based intent mapping.
-    // The massive if-else chain at ~628-692 (and the duplicate in bootstrap_first_tool_call at ~848-910)
-    // performs keyword matching on Task.description — which has already been mangled by upstream Planner rules.
-    //
-    // In the LLM-Native path this entire method must be unreachable for normal operation.
-    // It is retained only as an emergency offline fallback.
-    // See LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md Day 10-14 for the systematic demotion plan.
+    /// LEGACY / OFFLINE FALLBACK
+    ///
+    /// LLM-NATIVE-TODO (Phase 3+): This is the third (and most destructive) layer of local rule-based intent mapping.
+    /// The massive if-else chain at ~628-692 (and the duplicate in bootstrap_first_tool_call at ~848-910)
+    /// performs keyword matching on Task.description — which has already been mangled by upstream Planner rules.
+    ///
+    /// In the LLM-Native path this entire method must be unreachable for normal operation.
+    /// It is retained only as an emergency offline fallback.
+    /// See LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md Day 10-14 for the systematic demotion plan.
     pub(crate) async fn legacy_act(
         &self,
         agent_id: &AgentId,

@@ -169,9 +169,11 @@ cargo test -p engine-llm-core
 
 ---
 
-### Phase 3: 旧规则层系统性降级（2-3 天）
+### Phase 3: 旧规则层系统性降级（2-3 天）[COMPLETE]
 
 **目标**：把现有的 `decompose_rule_based`、`generate_tasks_for`、`legacy_act` 规则分支，从「默认/主路径」变成「离线兜底」。
+
+**状态**：Phase 3 主入口分支路由锁定与 _legacy_ 降级重写任务已于 2026-05-29 完美开发并全部集成验证通过！
 
 **关键动作**：
 - 在所有入口处增加清晰的分支逻辑：

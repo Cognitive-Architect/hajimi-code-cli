@@ -1000,4 +1000,89 @@ mod tests {
             LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
         ));
     }
+
+    #[tokio::test]
+    async fn test_branch_default_routing() {
+        let _guard = ENV_MUTEX.lock().await;
+
+        // 1. FUNC-001: 默认不配置任何环境变量时，系统自主路由进入新 native_turn 执行
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.unset(); // Ensure it is not set
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("default_routing_test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver = Arc::new(MockNativeDriver {
+            should_success: true,
+        });
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(mock_driver))
+            .build()
+            .unwrap();
+
+        let res = agent_loop
+            .run("agent1".to_string(), "Test default routing")
+            .await
+            .unwrap();
+        // Since HAJIMI_AGENT_LLM_NATIVE_ENABLED is unset, it should default to true,
+        // and because mock_driver is Some, it should execute the native turn and return Success!
+        assert_eq!(res, LoopOutcome::Success);
+
+        // 2. FUNC-002: 当显式配置 HAJIMI_AGENT_LLM_NATIVE_ENABLED="false" 时安全退回老路径
+        native_env.set("false");
+
+        let mem_fallback = Arc::new(Mutex::new(MemoryGateway::new("fallback_explicit_test")));
+        let planner_fallback = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem_fallback.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector_fallback = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem_fallback.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver_fallback = Arc::new(MockNativeDriver {
+            should_success: false, // If it were called, it would return ActFailed, but it should not be called at all
+        });
+
+        let agent_loop_fallback = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner_fallback)
+            .with_reflector(reflector_fallback)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem_fallback))
+            .with_native_driver(Some(mock_driver_fallback))
+            .build()
+            .unwrap();
+
+        let out = agent_loop_fallback
+            .run("agent1".to_string(), "Test goal fallback explicit false")
+            .await
+            .unwrap();
+        // It should bypass the LLM-Native routing entirely and run the legacy fallback planning/acting,
+        // which will end with either BudgetExceeded, Success, or Aborted (but NOT fail on MockNativeDriver failure)
+        assert!(matches!(
+            out,
+            LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
+        ));
+    }
 }

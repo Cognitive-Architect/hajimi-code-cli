@@ -180,10 +180,12 @@ impl HierarchicalPlanner {
         ))
     }
 
-    // LLM-NATIVE-TODO (Phase 3+): This entire function is legacy rule-based intent destruction.
-    // In the LLM-Native path (HAJIMI_AGENT_LLM_NATIVE_ENABLED=true) this must never be called
-    // on the primary execution route. It will be kept only as an offline fallback when LLM is unavailable.
-    // See docs/roadmap/Hajimi Search/LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md
+    /// LEGACY / OFFLINE FALLBACK
+    ///
+    /// LLM-NATIVE-TODO (Phase 3+): This entire function is legacy rule-based intent destruction.
+    /// In the LLM-Native path (HAJIMI_AGENT_LLM_NATIVE_ENABLED=true) this must never be called
+    /// on the primary execution route. It will be kept only as an offline fallback when LLM is unavailable.
+    /// See docs/roadmap/Hajimi Search/LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md
     fn decompose_rule_based(&self, goal: &Goal) -> Vec<SubGoal> {
         let desc = goal.description.to_lowercase();
         // FIX-I18N-001: Add Chinese keyword support for rule-based decomposition.
@@ -233,9 +235,11 @@ impl HierarchicalPlanner {
         }
     }
 
-    // LLM-NATIVE-TODO (Phase 3+): Legacy rule-based task generation.
-    // This function performs a second round of keyword-based rewriting on already-damaged SubGoal descriptions.
-    // It must be bypassed in the main LLM-Native path.
+    /// LEGACY / OFFLINE FALLBACK
+    ///
+    /// LLM-NATIVE-TODO (Phase 3+): Legacy rule-based task generation.
+    /// This function performs a second round of keyword-based rewriting on already-damaged SubGoal descriptions.
+    /// It must be bypassed in the main LLM-Native path.
     fn generate_tasks_for(&self, sg: &SubGoal) -> Vec<Task> {
         let desc = sg.description.to_lowercase();
         // FIX-I18N-002: Add Chinese keyword support for task generation.
