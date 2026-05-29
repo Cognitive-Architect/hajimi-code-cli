@@ -48,9 +48,9 @@ pub trait LlmToolExecutor: Send + Sync {
 ///
 /// **NEG-003**: Uses standard non-blocking tracing logs to ensure it never blocks the main execution flow.
 fn emit_trace(step: &str, details: &str) {
-    // UX-001: Includes "TraceEvent" and "Native" to ensure audit recognizability
+    // UX-001: Includes "[LLM-Native]" prefix to ensure audit recognizability
     tracing::info!(
-        "[TraceEvent][Native] Step: '{}', Details: '{}'",
+        "[LLM-Native][TraceEvent] Step: '{}', Details: '{}'",
         step,
         details
     );
@@ -113,7 +113,7 @@ pub async fn llm_native_turn(
 ) -> AgentResult<TurnOutcome> {
     let session_id = intent.session_id.clone();
     tracing::trace!(
-        "llm_native_turn: Starting multi-turn loop. session_id = '{}', intent = '{}'",
+        "[LLM-Native] Starting multi-turn loop. session_id = '{}', intent = '{}'",
         session_id,
         intent.text
     );
@@ -129,7 +129,7 @@ pub async fn llm_native_turn(
     while iterations < max_iterations {
         if cancellation.is_cancelled() {
             tracing::trace!(
-                "llm_native_turn: Cancellation detected before iteration {}.",
+                "[LLM-Native] Cancellation detected before iteration {}.",
                 iterations + 1
             );
             return Ok(TurnOutcome {
@@ -143,7 +143,7 @@ pub async fn llm_native_turn(
 
         iterations += 1;
         tracing::trace!(
-            "llm_native_turn: Iteration {}/{}. History length = {}",
+            "[LLM-Native] Iteration {}/{}. History length = {}",
             iterations,
             max_iterations,
             history.len()
@@ -161,7 +161,7 @@ pub async fn llm_native_turn(
             token_tracker.add_usage(prompt, completion);
 
             tracing::trace!(
-                "llm_native_turn: Token budget usage rate: {:.2}%. prompt_tokens = {}, completion_tokens = {}, total = {}",
+                "[LLM-Native] Token budget usage rate: {:.2}%. prompt_tokens = {}, completion_tokens = {}, total = {}",
                 (token_tracker.total_tokens() as f64 / 8192.0) * 100.0,
                 token_tracker.prompt_tokens(),
                 token_tracker.completion_tokens(),
@@ -198,21 +198,19 @@ pub async fn llm_native_turn(
                 tool_calls,
             } => {
                 if tool_calls.is_empty() {
-                    tracing::trace!(
-                        "llm_native_turn: Assistant provided final content. Ending loop."
-                    );
+                    tracing::trace!("[LLM-Native] Assistant provided final content. Ending loop.");
                     final_message = content;
                     break;
                 } else {
                     tracing::trace!(
-                        "llm_native_turn: Assistant requested {} tool call(s). Starting execution.",
+                        "[LLM-Native] Assistant requested {} tool call(s). Starting execution.",
                         tool_calls.len()
                     );
 
                     for tool_call in tool_calls {
                         if cancellation.is_cancelled() {
                             tracing::trace!(
-                                "llm_native_turn: Cancellation detected during tool calls."
+                                "[LLM-Native] Cancellation detected during tool calls."
                             );
                             return Ok(TurnOutcome {
                                 success: false,
@@ -427,9 +425,7 @@ pub async fn llm_native_turn(
                 }
             }
             _ => {
-                tracing::trace!(
-                    "llm_native_turn: Error. Expected Assistant message but got other."
-                );
+                tracing::trace!("[LLM-Native] Error. Expected Assistant message but got other.");
                 return Err(crate::ports::AgentError::Internal(
                     "LLM step returned non-Assistant message".to_string(),
                 ));
@@ -439,7 +435,7 @@ pub async fn llm_native_turn(
 
     if iterations >= max_iterations && final_message.is_none() {
         tracing::trace!(
-            "llm_native_turn: Maximum iteration budget of {} exceeded.",
+            "[LLM-Native] Maximum iteration budget of {} exceeded.",
             max_iterations
         );
         eprintln!("=============================================================");

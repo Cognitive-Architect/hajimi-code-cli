@@ -250,9 +250,7 @@ impl LlmStepExecutor for LlmNativeDriver {
 
         while let Some(chunk) = stream.next().await {
             if cancellation.is_cancelled() {
-                tracing::trace!(
-                    "LlmNativeDriver: Step execution cancelled during stream processing"
-                );
+                tracing::trace!("[LLM-Native] Step execution cancelled during stream processing");
                 return Ok(TurnMessage::Assistant {
                     content: Some("Cancelled".to_string()),
                     tool_calls: vec![],
@@ -260,7 +258,7 @@ impl LlmStepExecutor for LlmNativeDriver {
             }
 
             // UX-001: 流解析每个事件的进度包含 trace! 日志打印
-            tracing::trace!("LlmNativeDriver stream chunk event progress: {:?}", chunk);
+            tracing::trace!("[LLM-Native] stream chunk event progress: {:?}", chunk);
 
             match chunk {
                 engine_llm_core::StreamChunk::Output(text) => {
@@ -296,14 +294,14 @@ impl LlmStepExecutor for LlmNativeDriver {
                                 if args.is_object() {
                                     args
                                 } else {
-                                    tracing::trace!("HIGH-001 assertion: parameters is not a JSON object, defaulting");
+                                    tracing::trace!("[LLM-Native] HIGH-001 assertion: parameters is not a JSON object, defaulting");
                                     serde_json::json!({})
                                 }
                             }
                             Err(e) => {
                                 // NEG-002: Arguments 合并出现非标符号或解析失败时，记录并降级报错给模型而不崩溃 panic
                                 tracing::trace!(
-                                    "NEG-002: JSON argument parsing failed for id = {}: {:?}",
+                                    "[LLM-Native] NEG-002: JSON argument parsing failed for id = {}: {:?}",
                                     id,
                                     e
                                 );
@@ -324,7 +322,10 @@ impl LlmStepExecutor for LlmNativeDriver {
                 }
                 engine_llm_core::StreamChunk::Error(err_msg) => {
                     // NEG-003: Client 连接遇到网络异常断开时，抛出正确的底层 Network 异常变体
-                    tracing::trace!("LlmNativeDriver: received stream error: {}", err_msg);
+                    tracing::trace!(
+                        "[LLM-Native] LlmNativeDriver: received stream error: {}",
+                        err_msg
+                    );
                     return Err(crate::ports::AgentError::Internal(format!(
                         "Network Error: {}",
                         err_msg
@@ -427,12 +428,12 @@ impl AgentTurnDriver for LlmNativeDriver {
     ) -> crate::AgentResult<TurnOutcome> {
         // Trace tracking message to satisfy UX-001/UX-002:
         tracing::trace!(
-            "LlmNativeDriver: executing run_turn for session_id = {}",
+            "[LLM-Native] LlmNativeDriver: executing run_turn for session_id = {}",
             intent.session_id
         );
 
         if cancellation.is_cancelled() {
-            tracing::trace!("LlmNativeDriver: run_turn execution cancelled early");
+            tracing::trace!("[LLM-Native] LlmNativeDriver: run_turn execution cancelled early");
             return Ok(TurnOutcome {
                 success: false,
                 final_message: Some("Cancelled".to_string()),
@@ -444,7 +445,9 @@ impl AgentTurnDriver for LlmNativeDriver {
 
         if self.client.is_none() {
             // Skeleton mode fallback
-            tracing::trace!("LlmNativeDriver: client is None, falling back to skeleton outcome");
+            tracing::trace!(
+                "[LLM-Native] LlmNativeDriver: client is None, falling back to skeleton outcome"
+            );
             return Ok(TurnOutcome {
                 success: true,
                 final_message: Some(
