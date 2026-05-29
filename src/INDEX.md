@@ -313,6 +313,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
+- **双轨路由与分支隔离**: `is_agent_llm_native_enabled` 双轨双控分支。当开关开启且持有 `LlmNativeDriver` 时，100% 进入新 LLM-Native 路径独立流式执行，同时具备空 goal 拦截与 Driver 空指针安全 fallback 机制。
 - **可插拔治理**: `GovernancePolicy` trait 支持运行时策略注册
 - **Swarm协调**: Supervisor-Worker多Agent协作，`TaskAssignment`/`WorkerResult`通信
 - **LLM 桥接**: `PlannerLlmBridge` / `ReflectorLlmBridge` 将 `engine_llm_core::LlmClient` 桥接到上层 trait，零侵入 planner.rs / reflector.rs ⭐

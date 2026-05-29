@@ -164,7 +164,10 @@ impl LlmStepExecutor for LlmNativeDriver {
                         timestamp: None,
                     });
                 }
-                TurnMessage::Assistant { content, tool_calls } => {
+                TurnMessage::Assistant {
+                    content,
+                    tool_calls,
+                } => {
                     let mut content_str = content.clone().unwrap_or_default();
                     if !tool_calls.is_empty() {
                         if !content_str.is_empty() {
@@ -225,7 +228,9 @@ impl LlmStepExecutor for LlmNativeDriver {
                 engine_llm_core::ToolChoiceMode::Auto,
             )
             .await
-            .map_err(|e| crate::ports::AgentError::Internal(format!("LLM stream error: {:?}", e)))?;
+            .map_err(|e| {
+                crate::ports::AgentError::Internal(format!("LLM stream error: {:?}", e))
+            })?;
 
         // 4. Stream parsing status machine
         struct PendingTool {
@@ -240,7 +245,9 @@ impl LlmStepExecutor for LlmNativeDriver {
 
         while let Some(chunk) = stream.next().await {
             if cancellation.is_cancelled() {
-                tracing::trace!("LlmNativeDriver: Step execution cancelled during stream processing");
+                tracing::trace!(
+                    "LlmNativeDriver: Step execution cancelled during stream processing"
+                );
                 return Ok(TurnMessage::Assistant {
                     content: Some("Cancelled".to_string()),
                     tool_calls: vec![],
@@ -277,7 +284,9 @@ impl LlmStepExecutor for LlmNativeDriver {
                         let call = &pending_tools[pos];
 
                         // HIGH-001: 安全防御：对导出的工具参数进行实体结构合法性硬断言
-                        let parsed_args = match serde_json::from_str::<serde_json::Value>(&call.arguments) {
+                        let parsed_args = match serde_json::from_str::<serde_json::Value>(
+                            &call.arguments,
+                        ) {
                             Ok(args) => {
                                 if args.is_object() {
                                     args
@@ -342,7 +351,9 @@ pub struct DefaultToolExecutor {
 }
 
 impl DefaultToolExecutor {
-    pub fn new(registry: Option<Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>>) -> Self {
+    pub fn new(
+        registry: Option<Arc<tokio::sync::Mutex<engine_tool_system::ToolRegistry>>>,
+    ) -> Self {
         Self { registry }
     }
 }
@@ -391,7 +402,10 @@ impl LlmToolExecutor for DefaultToolExecutor {
                 Ok(format!("Tool '{}' not found in registry", name))
             }
         } else {
-            Ok(format!("Dummy success for {} with args: {:?}", name, arguments))
+            Ok(format!(
+                "Dummy success for {} with args: {:?}",
+                name, arguments
+            ))
         }
     }
 }
@@ -468,7 +482,10 @@ mod tests {
 
     #[async_trait]
     impl engine_llm_core::LlmClient for MockLlmClientForStreaming {
-        async fn stream_chat(&self, _prompt: String) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+        async fn stream_chat(
+            &self,
+            _prompt: String,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
             unimplemented!()
         }
         async fn stream_chat_with_context(
@@ -486,7 +503,9 @@ mod tests {
             _tool_choice: engine_llm_core::ToolChoiceMode,
         ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
             let (stream, tx) = engine_llm_core::ChannelStream::new(100);
-            let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let count = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let chunks_to_send = if count == 0 {
                 &self.tool_chunks
             } else {
@@ -661,7 +680,10 @@ mod tests {
         assert!(outcome.success);
         assert_eq!(outcome.tool_calls_executed, 1);
         assert_eq!(outcome.iterations, 2); // 1轮 (ToolCall) + 1轮 (Output final answer) = 2 轮
-        assert!(outcome.final_message.unwrap().contains("Final answer text."));
+        assert!(outcome
+            .final_message
+            .unwrap()
+            .contains("Final answer text."));
     }
 
     #[tokio::test]
@@ -695,7 +717,10 @@ mod tests {
         assert!(outcome.success);
         assert_eq!(outcome.tool_calls_executed, 0);
         assert_eq!(outcome.iterations, 1);
-        assert_eq!(outcome.final_message.unwrap(), "Hello! I am a helper agent.");
+        assert_eq!(
+            outcome.final_message.unwrap(),
+            "Hello! I am a helper agent."
+        );
     }
 
     #[tokio::test]

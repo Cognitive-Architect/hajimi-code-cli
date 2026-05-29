@@ -37,6 +37,7 @@ mod tests {
             skill_registry: None,
             skill_router: None,
             tool_registry: None,
+            native_driver: None,
         })
     }
 
@@ -880,5 +881,114 @@ mod tests {
         assert!(result_entry
             .value
             .contains("Local execution of read_file succeeded"));
+    }
+
+    struct MockNativeDriver {
+        should_success: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::llm_native::AgentTurnDriver for MockNativeDriver {
+        async fn run_turn(
+            &self,
+            _intent: crate::llm_native::RawUserIntent,
+            _visible_tools: Vec<crate::llm_native::ModelVisibleToolSpec>,
+            _history: Vec<crate::llm_native::TurnMessage>,
+            _governance: std::sync::Arc<dyn crate::governance::AgentGovernance>,
+            _cancellation: crate::llm_native::CancellationToken,
+        ) -> crate::AgentResult<crate::llm_native::TurnOutcome> {
+            Ok(crate::llm_native::TurnOutcome {
+                success: self.should_success,
+                tool_calls_executed: 0,
+                iterations: 1,
+                final_message: Some("Mock native output message".to_string()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_double_track_isolation() {
+        let _guard = ENV_MUTEX.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("double_track_test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver = Arc::new(MockNativeDriver { should_success: true });
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(mock_driver))
+            .build()
+            .unwrap();
+
+        // 验证 is_agent_llm_native_enabled 为 true 且提供了 native_driver 时成功通过新路径
+        let res = agent_loop.run("agent1".to_string(), "Test native goal").await.unwrap();
+        assert_eq!(res, LoopOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_empty_goal() {
+        let _guard = ENV_MUTEX.lock().await;
+        let l = test_loop();
+        let res = l.run("agent1".to_string(), "   ").await;
+        assert!(res.is_err());
+        if let Err(chimera_repl::traits::ReplError::Session(msg)) = res {
+            assert_eq!(msg, "EmptyGoal");
+        } else {
+            panic!("Expected empty goal error");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_driver_none_fallback() {
+        let _guard = ENV_MUTEX.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        // Driver 为 None，即使开关开启也 fallback 优雅走回旧规划
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("fallback_none_test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(None) // No driver
+            .build()
+            .unwrap();
+
+        let out = agent_loop.run("agent1".to_string(), "Test goal fallback").await.unwrap();
+        assert!(matches!(
+            out,
+            LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
+        ));
     }
 }

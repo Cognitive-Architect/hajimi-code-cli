@@ -124,6 +124,8 @@ pub struct AgentLoop {
     /// The tool registry holding all active tools.
     /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety and Option to support backward compatibility.
     pub tool_registry: Option<Arc<Mutex<ToolRegistry>>>,
+    /// Native driver for LLM-native double-track support.
+    pub native_driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>,
 }
 
 impl AgentLoop {
@@ -168,6 +170,7 @@ impl AgentLoop {
             skill_registry: config.skill_registry,
             skill_router: config.skill_router,
             tool_registry,
+            native_driver: config.native_driver,
         }
     }
 
@@ -176,6 +179,77 @@ impl AgentLoop {
             "AgentLoop starting for {} with goal: {}",
             agent_id, initial_goal
         );
+
+        // NEG-002: 传递空 goal 时，优雅报错返回 EmptyGoal 错误实体
+        if initial_goal.trim().is_empty() {
+            info!("UX-002: goal is empty, returning EmptyGoal error");
+            return Err(chimera_repl::traits::ReplError::Session("EmptyGoal".to_string()));
+        }
+
+        // FUNC-001: is_agent_llm_native_enabled() 为 true 时能成功跳转 native_turn 路径
+        if crate::prompts::is_agent_llm_native_enabled() {
+            // FUNC-003: 新路径启动时系统正常打印 'LLM-Native path enabled'
+            info!("LLM-Native path enabled");
+            if let Some(ref driver) = self.native_driver {
+                info!("LLM-Native path enabled for goal: {}", initial_goal);
+
+                // 将 Goal 原始自然语言文字封装成 RawUserIntent (HIGH-001 安全红线: 禁止降低/lowering 处理)
+                let intent = crate::llm_native::RawUserIntent::from_text(
+                    initial_goal.to_string(),
+                    agent_id.to_string(),
+                );
+
+                // 转换 tools (Ouroboros 闭环从 tool_registry 导出)
+                let tools_spec = if let Some(ref reg) = self.tool_registry {
+                    let guard = reg.lock().await;
+                    crate::llm_native::ToolSpecExporter::from_registry(&guard)
+                } else {
+                    vec![]
+                };
+
+                // 独立的 context (FUNC-004)
+                let cancellation = crate::llm_native::CancellationToken::new();
+
+                info!("LlmNativeDriver starts executing run_turn on LLM-Native path");
+                match driver
+                    .run_turn(
+                        intent,
+                        tools_spec,
+                        vec![], // 初始历史为空
+                        self.governance.clone(),
+                        cancellation,
+                    )
+                    .await
+                {
+                    Ok(outcome) => {
+                        info!(
+                            "LlmNativeDriver execution outcomes: success = {}, iterations = {}",
+                            outcome.success, outcome.iterations
+                        );
+                        if outcome.success {
+                            return Ok(LoopOutcome::Success);
+                        } else {
+                            return Ok(LoopOutcome::ActFailed(
+                                outcome
+                                    .final_message
+                                    .unwrap_or_else(|| "LLM-Native execution failed".to_string()),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        // NEG-001: 自动安全 fallback 到 legacy 分支而不闪退
+                        warn!(
+                            "LlmNativeDriver run_turn failed: {:?}. Falling back to legacy path.",
+                            e
+                        );
+                    }
+                }
+            } else {
+                // NEG-001: 中途遇到 Driver 初始化为空的情况，自动安全 fallback 到 legacy 分支而不闪退
+                warn!("is_agent_llm_native_enabled is true but native_driver is None! Safe fallback to legacy branch.");
+            }
+        }
+
         if let Some(ref pid) = self.provider_id {
             self.blackboard
                 .write("__hajimi_provider_id", pid, &agent_id)
@@ -1757,6 +1831,7 @@ mod tests {
             skill_registry: None,
             skill_router: None,
             tool_registry: None,
+            native_driver: None,
         })
     }
 
