@@ -153,24 +153,13 @@ logs/
 coverage/
 
 # ============================================
-# 内部文档（不对外公开）
+# 文档追踪范围（仅开放 debt 与 roadmap）
 # ============================================
 docs/*
-!docs/agent-skills/
-docs/agent-skills/*
-!docs/agent-skills/SKILL-PACK-SPEC.md
 !docs/debt/
-docs/debt/*
-!docs/debt/DEBT-AGENT-SKILLS-V0.md
+!docs/debt/**
 !docs/roadmap/
-docs/roadmap/*
-!docs/roadmap/hajimi build/
-docs/roadmap/hajimi build/*
-!docs/roadmap/hajimi build/Hajimi Skills/
-docs/roadmap/hajimi build/Hajimi Skills/*
-!docs/roadmap/hajimi build/Hajimi Skills/audit report/
-docs/roadmap/hajimi build/Hajimi Skills/audit report/*
-!docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md
+!docs/roadmap/**
 
 # ============================================
 # 脚本编译产物
@@ -187,8 +176,6 @@ templates/*
 !templates/skills/
 audit-report/
 audit report/
-!docs/roadmap/hajimi build/Hajimi Skills/audit report/
-!docs/roadmap/hajimi build/Hajimi Skills/audit report/B-01-AUDIT-REPORT.md
 
 # ============================================
 # 过时技术栈内容（已清理）
