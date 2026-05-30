@@ -253,11 +253,11 @@ rg -n "创建|实现|修复|read_file.*content is|FIX-I18N|FIX-B08" src/intellig
 
 - [ ] 中文 `/代理 创建一个名为 xxx 的文件，内容是 yyy` 能成功创建文件，内容正确，无 `read_file` 误调用
 - [ ] 复杂多步任务（读取 → 分析 → 修改 → 验证）全程由 LLM 自主规划与执行，中间无本地规则干预痕迹
-- [ ] 所有中英文关键词补丁（FIX-I18N-*、FIX-B08-*）从主执行路径中消失
-- [ ] `cargo check --workspace` 0 errors，核心包测试通过
-- [ ] `src/ARCHITECTURE.md` 和 `src/INDEX.md` 已同步更新
+- [x] 所有中英文关键词补丁（FIX-I18N-*、FIX-B08-*）从主执行路径中消失
+- [x] `cargo check --workspace` 0 errors，核心包测试通过
+- [x] `src/ARCHITECTURE.md` 和 `src/INDEX.md` 已同步更新
 - [ ] 清债文档 `DEBT-AGENT-LLM-NATIVE-MIGRATION.md` 已创建，内容完整、数据诚实
-- [ ] 新架构在文档中被明确描述为「默认/推荐」路径，旧规则层被明确标记为「legacy / offline fallback」
+- [x] 新架构在文档中被明确描述为「默认/推荐」路径，旧规则层被明确标记为「legacy / offline fallback」
 
 ---
 
