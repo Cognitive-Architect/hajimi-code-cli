@@ -30,6 +30,8 @@ Use this file first:
 - `docs/debt/code-level/DEBTFIX-V5-CLOSURE-RECEIPT.md`: Closure receipt for the DebtFix V5 code-level automation pass, with residual real-provider and WebView manual debts retained.
 - `docs/debt/DEBT-AGENT-UI-REMEDIATION.md`: Closure receipt for the Agent UI Integration (Day 1 - Day 8) code-level E2E pass, documenting triggers, state trace, approval bridge, and residual manual smoke blockers.
 - `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md`: **P0** — [RESOLVED IN DAY 4/5] Fully resolved via Arc-Mutex ToolRegistry desktop main injection (Day 4) and LLM Bootstrap mechanism (Day 5).
+- `docs/debt/DEBT-AGENT-CHINESE-I18N.md`: **P1** — [RESOLVED IN DAY 22] Completely resolved by removing brittle rule-based intent tamperings and allowing Raw User Intent direct-to-LLM streaming.
+- `docs/debt/DEBT-AGENT-LLM-NATIVE-MIGRATION.md`: **P0/P1** — [RESOLVED IN DAY 24] Grand technical debt closure report, archiving both loop no-op and i18n intent tampering issues and detailing residual micro-debts.
 
 
 ## Archived In Latest Pass
