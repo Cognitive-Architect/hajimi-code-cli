@@ -239,16 +239,31 @@ impl AgentLoop {
                         }
                     }
                     Err(e) => {
-                        // NEG-001: 自动安全 fallback 到 legacy 分支而不闪退
+                        // Native provider/runtime errors are the primary failure signal.
+                        // Do not hide them behind the legacy offline fallback; that path can
+                        // emit a secondary read_file(Cargo.toml) failure and obscure root cause.
                         warn!(
-                            "LlmNativeDriver run_turn failed: {:?}. Falling back to legacy path.",
+                            "LlmNativeDriver run_turn failed: {:?}. Aborting before legacy fallback.",
                             e
                         );
+                        let message = format!("LLM-Native Turn Error: {}", e);
+                        self.emit_trace(
+                            LoopState::Acting,
+                            format!("{}; legacy fallback skipped.", message),
+                            0,
+                        );
+                        return Ok(LoopOutcome::ActFailed(message));
                     }
                 }
             } else {
-                // NEG-001: 中途遇到 Driver 初始化为空的情况，自动安全 fallback 到 legacy 分支而不闪退
-                warn!("is_agent_llm_native_enabled is true but native_driver is None! Safe fallback to legacy branch.");
+                // Native mode is enabled, so missing driver setup is a configuration error.
+                // Surface it directly instead of silently executing the legacy path.
+                warn!("⚠️ LLM-Native enabled but native_driver is None. \
+                       Legacy fallback skipped. This typically means the desktop driver was not injected. \
+                       Check DesktopAgentTurnDriver initialization in main.rs setup().");
+                let message = "LLM-Native enabled but native_driver is not initialized".to_string();
+                self.emit_trace(LoopState::Acting, message.clone(), 0);
+                return Ok(LoopOutcome::ActFailed(message));
             }
         }
 
@@ -664,11 +679,17 @@ impl AgentLoop {
                     serde_json::Value::Object(tc.parameters.clone().into_iter().collect()),
                 )
             } else {
-                // Direct simple default fallback without keyword matching
-                (
-                    "read_file".to_string(),
-                    serde_json::json!({ "path": "Cargo.toml" }),
-                )
+                let message = format!(
+                    "No tool call generated for task '{}'; legacy default read_file(Cargo.toml) fallback disabled",
+                    task.description
+                );
+                warn!("{}", message);
+                self.emit_trace(LoopState::Acting, message.clone(), iter);
+                return Ok(TaskResult {
+                    success: false,
+                    output: message,
+                    timestamp: chrono::Utc::now(),
+                });
             };
 
             info!(
@@ -829,21 +850,17 @@ impl AgentLoop {
                 next_step_hint: None,
             }
         } else {
-            // Direct simple default fallback without keyword matching
-            ToolCallV1 {
-                schema_version: "1".to_string(),
-                action_type: crate::act_dto::ActionType::CallTool,
-                tool_name: "read_file".to_string(),
-                parameters: serde_json::json!({ "path": "Cargo.toml" }),
-                reason: format!("Bootstrap default fallback for task: {}", task.description),
-                expected_output: "Success".to_string(),
-                expected_evidence: "Success".to_string(),
-                fallback_tool: None,
-                governance_required: false,
-                risk_level: crate::tool_manifest::RiskLevel::Low,
-                idempotency_key: format!("{}-bootstrap-{}", agent_id, uuid::Uuid::new_v4()),
-                next_step_hint: None,
-            }
+            let message = format!(
+                "No tool call generated during bootstrap for task '{}'; default read_file(Cargo.toml) fallback disabled",
+                task.description
+            );
+            warn!("{}", message);
+            self.emit_trace(
+                LoopState::Acting,
+                message,
+                *self.iteration_count.lock().await,
+            );
+            return Ok(None);
         };
 
         // Validate tool_name using registry before writing

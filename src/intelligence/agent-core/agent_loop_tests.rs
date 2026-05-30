@@ -96,6 +96,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_autonomous_goal_completion() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
+
         let l = test_loop();
         let outcome = l
             .execute_goal("agent1".to_string(), "Create a simple test plan")
@@ -292,6 +296,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_goals_isolation() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
+
         let loop1 = test_loop();
         let loop2 = test_loop();
         let h1 = tokio::spawn(async move { loop1.run("a1".to_string(), "Goal 1").await });
@@ -344,6 +352,8 @@ mod tests {
     #[tokio::test]
     async fn test_skills_routing_disabled() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("false");
 
@@ -403,6 +413,8 @@ mod tests {
     #[tokio::test]
     async fn test_skills_routing_enabled() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -542,6 +554,8 @@ mod tests {
     #[tokio::test]
     async fn test_skills_routing_unset_gate_disabled() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.unset();
 
@@ -601,6 +615,8 @@ mod tests {
     #[tokio::test]
     async fn test_skills_routing_enabled_missing_components_degrades() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -652,6 +668,8 @@ mod tests {
     #[tokio::test]
     async fn test_skills_execution_receipt_written() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -731,6 +749,24 @@ mod tests {
         }
     }
 
+    struct MockFailingNativeDriver;
+
+    #[async_trait::async_trait]
+    impl crate::llm_native::AgentTurnDriver for MockFailingNativeDriver {
+        async fn run_turn(
+            &self,
+            _intent: crate::llm_native::RawUserIntent,
+            _visible_tools: Vec<crate::llm_native::ModelVisibleToolSpec>,
+            _history: Vec<crate::llm_native::TurnMessage>,
+            _governance: std::sync::Arc<dyn crate::governance::AgentGovernance>,
+            _cancellation: crate::llm_native::CancellationToken,
+        ) -> crate::AgentResult<crate::llm_native::TurnOutcome> {
+            Err(crate::AgentError::Internal(
+                "provider smoke failure".to_string(),
+            ))
+        }
+    }
+
     #[tokio::test]
     async fn test_double_track_isolation() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
@@ -786,12 +822,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_agent_loop_driver_none_fallback() {
+    async fn test_agent_loop_driver_none_reports_configuration_error() {
         let _guard = crate::TEST_ENV_LOCK.lock().await;
         let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
         native_env.set("true");
 
-        // Driver 为 None，即使开关开启也 fallback 优雅走回旧规划
+        // Driver is missing while native mode is enabled: report the setup error directly.
         let mem = Arc::new(Mutex::new(MemoryGateway::new("fallback_none_test")));
         let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
             mem.clone(),
@@ -819,10 +855,47 @@ mod tests {
             .run("agent1".to_string(), "Test goal fallback")
             .await
             .unwrap();
-        assert!(matches!(
-            out,
-            LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
-        ));
+        assert!(
+            matches!(out, LoopOutcome::ActFailed(message) if message.contains("native_driver"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_native_error_does_not_fallback_to_legacy() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("native_error_no_fallback")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(Arc::new(MockFailingNativeDriver)))
+            .build()
+            .unwrap();
+
+        let out = agent_loop
+            .run("agent1".to_string(), "Test native provider failure")
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, LoopOutcome::ActFailed(message) if message.contains("provider smoke failure"))
+        );
     }
 
     #[tokio::test]
@@ -898,7 +971,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let out = agent_loop_fallback
+        let _out = agent_loop_fallback
             .run("agent1".to_string(), "Test goal fallback explicit false")
             .await
             .unwrap();

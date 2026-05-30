@@ -530,6 +530,36 @@ impl ReplEngineCore for AgentOrchestrator {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original_value: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn new(key: &'static str) -> Self {
+            let original_value = std::env::var(key).ok();
+            Self {
+                key,
+                original_value,
+            }
+        }
+
+        fn set(&self, value: &str) {
+            std::env::set_var(self.key, value);
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(ref val) = self.original_value {
+                std::env::set_var(self.key, val);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_orchestrator_lifecycle() {
         let orch = AgentOrchestrator::new(Arc::new(Mutex::new(MemoryGateway::new("test"))));
@@ -588,6 +618,10 @@ mod tests {
     }
     #[tokio::test]
     async fn test_autonomous_goal_completion() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
+
         let orch = AgentOrchestrator::new(Arc::new(Mutex::new(MemoryGateway::new("test"))));
         let outcome = orch
             .execute_natural_language_goal("agent1", "Create a simple plan")

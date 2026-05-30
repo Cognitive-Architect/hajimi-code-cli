@@ -599,8 +599,6 @@ mod tests {
         }
     }
 
-    static SKILL_RUNTIME_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     struct EnvVarGuard {
         key: &'static str,
         original_value: Option<String>,
@@ -766,7 +764,7 @@ mod tests {
 
     #[tokio::test]
     async fn skill_runtime_act_executor_write_requires_governance() {
-        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "true");
         let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let mut registry = ToolRegistry::new();
@@ -810,7 +808,7 @@ mod tests {
 
     #[tokio::test]
     async fn skill_runtime_act_executor_denies_shell_by_default() {
-        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "true");
         let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let executor = ActExecutor::new(
@@ -851,7 +849,7 @@ mod tests {
 
     #[tokio::test]
     async fn skill_runtime_act_executor_gate_false_has_no_effect() {
-        let _guard = SKILL_RUNTIME_ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         let _env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV, "false");
         let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let mut registry = ToolRegistry::new();
