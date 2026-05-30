@@ -251,6 +251,10 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `workflow_orchestrator.rs` | Test→Fix→Commit closed loop, SmartCommit, PR description, auto-checkpoint (Phase 4 Day 4) | ~220 |
 | `lsp_integration.rs` | `LspContextProvider` / `ASTContextProvider`, `enhance_retrieve_with_ast()` (Phase 4 Day 2) | ~120 |
 | `prompts/mod.rs` | Prompt resources and feature gates; `is_agent_skills_v0_enabled()` reads `HAJIMI_AGENT_SKILLS_V0` and defaults to false | ~70 |
+| `llm_native/mod.rs` | LLM-Native 模块导出 | ~15 |
+| `llm_native/specs.rs` | 模型可见工具规格 `ModelVisibleToolSpec` 导出 | ~85 |
+| `llm_native/driver.rs` | `LlmNativeDriver` 调度核心实现 | ~145 |
+| `llm_native/turn.rs` | `llm_native_turn` 多轮工具流式迭代调度环 (含 Governance 前置安全鉴权网关与非阻塞 Trace 审计 TraceEvent 发射) | ~712 |
 
 <!-- AGENT-SKILLS-V0-2026-05-19: local skill pack integration initiated -->
 **Agent Skills V0 status**: `DEBT-AGENT-SKILLS-V0` is initiated. Day 1 adds only `docs/agent-skills/SKILL-PACK-SPEC.md`, debt/index documentation, and the default-off `HAJIMI_AGENT_SKILLS_V0` gate. V0a / V0b / V0c remain planned follow-up work; no `src/intelligence/agent-core/skills/` Registry, Router, Runtime, AgentLoop wiring, or `.hajimi/skills` scan exists in this Day 1 baseline.
@@ -313,6 +317,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
+- **双轨路由与分支隔离**: `is_agent_llm_native_enabled` 双轨双控分支。当开关开启且持有 `LlmNativeDriver` 时，100% 进入新 LLM-Native 路径独立流式执行，同时具备空 goal 拦截与 Driver 空指针安全 fallback 机制。
 - **可插拔治理**: `GovernancePolicy` trait 支持运行时策略注册
 - **Swarm协调**: Supervisor-Worker多Agent协作，`TaskAssignment`/`WorkerResult`通信
 - **LLM 桥接**: `PlannerLlmBridge` / `ReflectorLlmBridge` 将 `engine_llm_core::LlmClient` 桥接到上层 trait，零侵入 planner.rs / reflector.rs ⭐
@@ -921,3 +926,12 @@ interface/mcp-server/
 **Roadmap**: `docs/roadmap/Hajimi Thinking UI/THINKING-UI-IMPLEMENTATION-ROADMAP.md`
 
 *本索引文档与代码同步维护，最后更新于 2026-04-30*
+
+---
+
+## 🎯 债务清偿记录 (Remediation Logs)
+
+- **DEBT-AGENT-CHINESE-I18N** (中英文关键词过滤与语义改写层): ✅ **CLOSED (已完全割除与清偿)** (2026-05-29)
+  - **割除范围**: `planner.rs` (decompose_rule_based, generate_tasks_for) 彻底清除多语言关键词硬编码逻辑，实现输入意图的纯净直达。
+  - **清偿依据与路线图**: 详见 [LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md](file:///F:/hajimi-code-cli/docs/roadmap/Hajimi%20LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md) 以及 Day 22 验收报告。
+

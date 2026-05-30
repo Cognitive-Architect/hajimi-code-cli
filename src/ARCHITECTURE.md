@@ -240,10 +240,100 @@ pub async fn reflect(&self, goal: &Goal, results: &[WorkerResult]) -> ReplResult
 }
 ```
 
-### 7. Agent Skills V0 Integration (智能技能包本地增强)
+### 7. Codex-Style LLM-Native 架构 ⭐ (Phase 4 宣告完成)
+
+Hajimi 在 Phase 4 全面引入了基于 Codex 核心意志的 **LLM-Native 架构**。该架构彻底消除了原有的「三层本地规则映射 + 意图破坏」逻辑，取而代之的是由 **用户原始意图（UserIntent）直达 LLM** 并由模型通过 `tool_choice=auto` 流式驱动工具调用的先进设计。
+
+#### 核心拓扑架构图 (Mermaid & ASCII)
+
+```mermaid
+flowchart TD
+    UserInput[用户输入 / 自然语言] -->|原样保留, 零篡改| UserIntent[RawUserIntent 意图载体]
+    UserIntent --> LlmNativeDriver[LlmNativeDriver 核心转轮]
+    
+    subgraph Intelligence 层 (agent-core)
+        LlmNativeDriver -->|1. 动态装配 RAG 上下文| RetrieveGate[SyncMemoryGateway / 多层检索]
+        LlmNativeDriver -->|2. 流式 ToolCall| LlmNativeTurn[LlmNativeTurn 执行闭环]
+        LlmNativeTurn -->|3. 拦截与审批| AgentGovernance[AgentGovernance 治理鉴权网关]
+    end
+    
+    subgraph Engine 层 (llm-core & tool-system)
+        LlmNativeTurn -->|4. 流式调用| LlmClient[LlmClient stream_chat_with_tools]
+        LlmClient -->|返回 ToolCall 流| LlmNativeTurn
+        AgentGovernance -->|5. 许可放行| ToolRegistry[ToolRegistry 工具注册中心]
+        ToolRegistry -->|6. 参数化执行| Execute[真实工具执行]
+    end
+    
+    Execute -->|反馈结果| LlmNativeTurn
+    LlmNativeTurn -->|任务终结| Complete[输出最终响应]
+```
+
+```text
+========================================================================================
+                          HAJIMI LLM-NATIVE RUNTIME DATAFLOW
+========================================================================================
+
+    [ Natural Language User Input ]
+                 │
+                 ▼  (RawUserIntent: 100% Preserved)
+      ┌─────────────────────┐
+      │   LlmNativeDriver   │ ◄─────────────────────────┐
+      └──────────┬──────────┘                           │
+                 │                                      │
+                 ▼  (1. Retrieve multi-tier Memory)     │ (Iterative Stream Loop)
+      ┌─────────────────────┐                           │
+      │ SyncMemoryGateway   │                           │
+      └──────────┬──────────┘                           │
+                 │                                      │
+                 ▼  (2. Stream Chat with tool specs)    │
+      ┌─────────────────────┐                           │
+      │ stream_chat_with_   │                           │
+      │        tools        │ ────► [ Stream ToolCall ] │
+      └──────────┬──────────┘               │           │
+                 │                          ▼           │
+                 │               ┌──────────────────┐   │
+                 │               │ AgentGovernance  │   │ (4. Feedback Tool Result)
+                 │               └──────────┬───────┘   │
+                 │                          │           │
+                 │                  [ Approve / REDLINE ]
+                 │                          │           │
+                 │                          ▼           │
+                 │               ┌──────────────────┐   │
+                 └──────────────►│   ToolRegistry   │───┘
+                                 └──────────────────┘
+```
+
+#### 🛡️ 安全硬防线：治理鉴权网关 (AgentGovernance) 审批设计
+
+在 LLM-Native 架构下，虽然执行控制流交由 LLM 自主规划与决策，但 **安全红线绝对不向模型妥协**。
+- **治理网关拦截 (Governance Interceptor)**: 所有的工具调用请求在分发至 `ToolRegistry` 执行前，必须强制经过 `AgentGovernance` 拦截。
+- **5 级审批策略 (Redline Approval)**:
+  - `FullDeny`: 对 `rm`, `sudo`, `mv` 或未授权 shell 写操作直接静默阻断，彻底防范 Prompt 注入攻击。
+  - `AskBeforeExec`: 对高风险写操作（如修改代码、提交 Git、发起网络请求），通过 Tauri Oneshots Approval Bridge 强制弹窗请求用户人工授权（Approve / Reject / Selective Apply）。
+  - `Advisory` / `FullAuto`: 仅对低风险的只读工具（如 `read_file`, `list_dir`）在 RAG 范围内免批自动执行。
+- **AST 感知与安全沙箱**: 通过 `Tree-sitter` AST 分析并阻断任何危险代码的修改和非法目录穿越。
+
+#### 🔌 离线降级兜底方案 (Offline-Only Fallback)
+
+为保障系统在无网络或 LLM 异常时的极端生存能力，Hajimi 保留了原有的三层规则映射作为 **Offline-Only Fallback**。
+- 当 `HAJIMI_AGENT_LLM_NATIVE_ENABLED=false` 或网络连接检测失败时，系统将优雅降级至 `legacy_act` 和 `bootstrap_first_tool_call` 规则通道。
+- 降级机制处于次要、仅离线生效的地位，绝不干扰 LLM-Native 主通道对原始意图的 100% 忠实传递。
+
+#### 🛠️ 调试与异常排查诊断
+
+新架构依托高清晰的可观测性 Trace system，提供完美的流式调试能力：
+- **Thinking UI 诊断**: 前端流式 Thinking Block 实时渲染 `<thinking>` 标签，呈现 LLM 自主规划过程。
+- **Operation Summary 追踪**: 工具执行进度条实时展示 `OperationSummary` 吞吐量和当前步骤，防范死锁。
+- **异常事件监测**:
+  - `ToolCallException`: 模型输出畸形 JSON 参数时，由 LlmNativeTurn 捕获并自动构造错误提示反馈给模型实现“自愈”。
+  - `GovernanceDenyException`: 模型试图发起越权指令时，阻断并将“越权拒绝”回传，促使模型改变规划路径。
+
+---
+
+### 8. Agent Skills V0 Integration (智能技能包本地增强)
 Hajimi Agent Skills V0 作为智能体决策流的本地强化层，旨在通过重用高频工作流模版提供更高确定性的输出保障，其架构设计划分为以下三阶段：
 - **V0a (已清偿)**: 提供本地技能包协议注册中心（Registry、Loader）及多轮路由与匹配得分（Router），并在 Planner 执行前向 LLM 注入技能上下文（ContextBlock），在任务产出后通过超低延迟（毫秒级）的强规则 Output Evaluator 执行确定性输出断言（`must_include`/`must_not_include`）。
-- **V0b (已集成)**: 限制技能运行期（Skill Runtime）权限与可用工具，构建专属工具约束（`__hajimi_skill_tool_constraints`），并由 ActExecutor 在拦截器层级配合 Governance 强制执行 Ask (需要审批) / Deny (直接拒绝) 操作。
+- **V0b (已集成)**: 限制技能运行期（Skill Runtime）权限与可用工具，构建专属工具约束（`__hajimi_skill_tool_constraints`），并由 ActExecutor 在拦截器层级配合 Governance 强制执行 Ask (需要审批) / Deny (直接拒绝)操作。
 - **V0c (部分集成)**: 建立技能执行小票（`SkillExecutionReceipt`）契约，在 AgentLoop 反射（`reflect`）末期将执行结果（成功/失败等元数据）序列化为 JSON 数组并自动留档写入 Blackboard 键 `__hajimi_skill_execution_receipts`。关系图谱存储（Graph memory）、云端同步（Cloud sync）以及 Interface 列表/验证交互已被延迟至 V1 阶段开发。
 
 ---

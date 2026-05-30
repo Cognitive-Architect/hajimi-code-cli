@@ -124,6 +124,8 @@ pub struct AgentLoop {
     /// The tool registry holding all active tools.
     /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety and Option to support backward compatibility.
     pub tool_registry: Option<Arc<Mutex<ToolRegistry>>>,
+    /// Native driver for LLM-native double-track support.
+    pub native_driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>,
 }
 
 impl AgentLoop {
@@ -168,6 +170,7 @@ impl AgentLoop {
             skill_registry: config.skill_registry,
             skill_router: config.skill_router,
             tool_registry,
+            native_driver: config.native_driver,
         }
     }
 
@@ -176,6 +179,94 @@ impl AgentLoop {
             "AgentLoop starting for {} with goal: {}",
             agent_id, initial_goal
         );
+
+        // NEG-002: 传递空 goal 时，优雅报错返回 EmptyGoal 错误实体
+        if initial_goal.trim().is_empty() {
+            info!("UX-002: goal is empty, returning EmptyGoal error");
+            return Err(chimera_repl::traits::ReplError::Session(
+                "EmptyGoal".to_string(),
+            ));
+        }
+
+        // FUNC-001: is_agent_llm_native_enabled() 为 true 时能成功跳转 native_turn 路径
+        if crate::prompts::is_agent_llm_native_enabled() {
+            // FUNC-003: 新路径启动时系统正常打印 'LLM-Native path enabled'
+            info!("✨✨ [Hajimi IDE] LLM-Native Agent Loop Core Activated. Routing execution to autonomous LLM-Native path! ✨✨");
+            if let Some(ref driver) = self.native_driver {
+                info!("LLM-Native path enabled for goal: {}", initial_goal);
+
+                // 将 Goal 原始自然语言文字封装成 RawUserIntent (HIGH-001 安全红线: 禁止降低/lowering 处理)
+                let intent = crate::llm_native::RawUserIntent::from_text(
+                    initial_goal.to_string(),
+                    agent_id.to_string(),
+                );
+
+                // 转换 tools (Ouroboros 闭环从 tool_registry 导出)
+                let tools_spec = if let Some(ref reg) = self.tool_registry {
+                    let guard = reg.lock().await;
+                    crate::llm_native::ToolSpecExporter::from_registry(&guard)
+                } else {
+                    vec![]
+                };
+
+                // 独立的 context (FUNC-004)
+                let cancellation = crate::llm_native::CancellationToken::new();
+
+                info!("LlmNativeDriver starts executing run_turn on LLM-Native path");
+                match driver
+                    .run_turn(
+                        intent,
+                        tools_spec,
+                        vec![], // 初始历史为空
+                        self.governance.clone(),
+                        cancellation,
+                    )
+                    .await
+                {
+                    Ok(outcome) => {
+                        info!(
+                            "LlmNativeDriver execution outcomes: success = {}, iterations = {}",
+                            outcome.success, outcome.iterations
+                        );
+                        if outcome.success {
+                            return Ok(LoopOutcome::Success);
+                        } else {
+                            return Ok(LoopOutcome::ActFailed(
+                                outcome
+                                    .final_message
+                                    .unwrap_or_else(|| "LLM-Native execution failed".to_string()),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        // Native provider/runtime errors are the primary failure signal.
+                        // Do not hide them behind the legacy offline fallback; that path can
+                        // emit a secondary read_file(Cargo.toml) failure and obscure root cause.
+                        warn!(
+                            "LlmNativeDriver run_turn failed: {:?}. Aborting before legacy fallback.",
+                            e
+                        );
+                        let message = format!("LLM-Native Turn Error: {}", e);
+                        self.emit_trace(
+                            LoopState::Acting,
+                            format!("{}; legacy fallback skipped.", message),
+                            0,
+                        );
+                        return Ok(LoopOutcome::ActFailed(message));
+                    }
+                }
+            } else {
+                // Native mode is enabled, so missing driver setup is a configuration error.
+                // Surface it directly instead of silently executing the legacy path.
+                warn!("⚠️ LLM-Native enabled but native_driver is None. \
+                       Legacy fallback skipped. This typically means the desktop driver was not injected. \
+                       Check DesktopAgentTurnDriver initialization in main.rs setup().");
+                let message = "LLM-Native enabled but native_driver is not initialized".to_string();
+                self.emit_trace(LoopState::Acting, message.clone(), 0);
+                return Ok(LoopOutcome::ActFailed(message));
+            }
+        }
+
         if let Some(ref pid) = self.provider_id {
             self.blackboard
                 .write("__hajimi_provider_id", pid, &agent_id)
@@ -501,6 +592,15 @@ impl AgentLoop {
         }))
     }
 
+    /// LEGACY / OFFLINE FALLBACK
+    ///
+    /// LLM-NATIVE-TODO (Phase 3+): This is the third (and most destructive) layer of local rule-based intent mapping.
+    /// The massive if-else chain at ~628-692 (and the duplicate in bootstrap_first_tool_call at ~848-910)
+    /// performs keyword matching on Task.description — which has already been mangled by upstream Planner rules.
+    ///
+    /// In the LLM-Native path this entire method must be unreachable for normal operation.
+    /// It is retained only as an emergency offline fallback.
+    /// See LLM-NATIVE-AGENT-MIGRATION-001-EXECUTION-PLAN.md Day 10-14 for the systematic demotion plan.
     pub(crate) async fn legacy_act(
         &self,
         agent_id: &AgentId,
@@ -579,49 +679,17 @@ impl AgentLoop {
                     serde_json::Value::Object(tc.parameters.clone().into_iter().collect()),
                 )
             } else {
-                // Task has no tool calls, perform rule-based mapping (fallback)
-                let desc = task.description.to_lowercase();
-                let tool_name = if desc.contains("read") || desc.contains("analyze") {
-                    "read_file".to_string()
-                } else if desc.contains("write")
-                    || desc.contains("edit")
-                    || desc.contains("create")
-                    || desc.contains("implement")
-                {
-                    "write_file".to_string()
-                } else if desc.contains("test")
-                    || desc.contains("run")
-                    || desc.contains("compile")
-                    || desc.contains("build")
-                {
-                    "powershell".to_string()
-                } else {
-                    "read_file".to_string() // default safe fallback
-                };
-
-                // Verify if the mapped tool exists in registry, else fallback to any available safe tool or default
-                let mut resolved_tool_name = tool_name;
-                {
-                    let guard = registry.lock().await;
-                    if guard.get(&resolved_tool_name).is_none() {
-                        for alternative in &["analyze", "ls", "read_file"] {
-                            if guard.get(*alternative).is_some() {
-                                resolved_tool_name = alternative.to_string();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                let parameters = if resolved_tool_name == "powershell" {
-                    serde_json::json!({ "command": "echo 'local check'" })
-                } else if resolved_tool_name == "read_file" {
-                    serde_json::json!({ "path": "Cargo.toml" })
-                } else {
-                    serde_json::json!({})
-                };
-
-                (resolved_tool_name, parameters)
+                let message = format!(
+                    "No tool call generated for task '{}'; legacy default read_file(Cargo.toml) fallback disabled",
+                    task.description
+                );
+                warn!("{}", message);
+                self.emit_trace(LoopState::Acting, message.clone(), iter);
+                return Ok(TaskResult {
+                    success: false,
+                    output: message,
+                    timestamp: chrono::Utc::now(),
+                });
             };
 
             info!(
@@ -699,6 +767,9 @@ impl AgentLoop {
         }
     }
 
+    // LLM-NATIVE-TODO (Phase 3+): bootstrap_first_tool_call still goes through Planner (decompose/expand)
+    // and contains its own duplicate rule-mapping logic (~848-910) that is almost identical to legacy_act.
+    // In LLM-Native mode this path should be bypassed entirely except for pure offline fallback scenarios.
     /// Bootstrap the first tool call when blackboard has no pending tools.
     ///
     /// This method is part of the LLM Bootstrap mechanism that automatically populates the planner
@@ -779,67 +850,17 @@ impl AgentLoop {
                 next_step_hint: None,
             }
         } else {
-            // Task has no tool calls, perform rule-based mapping (fallback)
-            let desc = task.description.to_lowercase();
-            let tool_name = if desc.contains("read") || desc.contains("analyze") {
-                "read_file".to_string()
-            } else if desc.contains("write")
-                || desc.contains("edit")
-                || desc.contains("create")
-                || desc.contains("implement")
-            {
-                "write_file".to_string()
-            } else if desc.contains("test")
-                || desc.contains("run")
-                || desc.contains("compile")
-                || desc.contains("build")
-            {
-                "powershell".to_string()
-            } else {
-                "read_file".to_string() // default safe fallback
-            };
-
-            // Verify if the mapped tool exists in self.tool_registry, else fallback to any available safe tool or default
-            let mut resolved_tool_name = tool_name;
-            if let Some(ref reg) = self.tool_registry {
-                let guard = reg.lock().await;
-                if guard.get(&resolved_tool_name).is_none() {
-                    // Try some safe alternatives
-                    for alternative in &["analyze", "ls", "read_file"] {
-                        if guard.get(*alternative).is_some() {
-                            resolved_tool_name = alternative.to_string();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Create default parameters matching the chosen tool
-            let parameters = if resolved_tool_name == "powershell" {
-                serde_json::json!({ "command": "echo 'bootstrap check'" })
-            } else if resolved_tool_name == "read_file" {
-                serde_json::json!({ "path": "Cargo.toml" })
-            } else {
-                serde_json::json!({})
-            };
-
-            ToolCallV1 {
-                schema_version: "1".to_string(),
-                action_type: crate::act_dto::ActionType::CallTool,
-                tool_name: resolved_tool_name,
-                parameters,
-                reason: format!(
-                    "Bootstrap rule-based fallback for task: {}",
-                    task.description
-                ),
-                expected_output: "Success".to_string(),
-                expected_evidence: "Success".to_string(),
-                fallback_tool: None,
-                governance_required: false,
-                risk_level: crate::tool_manifest::RiskLevel::Low,
-                idempotency_key: format!("{}-bootstrap-{}", agent_id, uuid::Uuid::new_v4()),
-                next_step_hint: None,
-            }
+            let message = format!(
+                "No tool call generated during bootstrap for task '{}'; default read_file(Cargo.toml) fallback disabled",
+                task.description
+            );
+            warn!("{}", message);
+            self.emit_trace(
+                LoopState::Acting,
+                message,
+                *self.iteration_count.lock().await,
+            );
+            return Ok(None);
         };
 
         // Validate tool_name using registry before writing
@@ -1675,6 +1696,7 @@ mod tests {
             skill_registry: None,
             skill_router: None,
             tool_registry: None,
+            native_driver: None,
         })
     }
 

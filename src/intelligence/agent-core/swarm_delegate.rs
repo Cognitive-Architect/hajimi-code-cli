@@ -68,8 +68,7 @@ impl SwarmDelegate {
 mod tests {
     use super::*;
     use crate::governance::DefaultGovernance;
-    use crate::ports::WorkerMetrics;
-    use crate::swarm::{Supervisor, TaskAssignment, WorkerResult};
+    use crate::swarm::Supervisor;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 

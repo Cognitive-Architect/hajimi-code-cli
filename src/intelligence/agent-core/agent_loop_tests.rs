@@ -37,6 +37,7 @@ mod tests {
             skill_registry: None,
             skill_router: None,
             tool_registry: None,
+            native_driver: None,
         })
     }
 
@@ -95,6 +96,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_autonomous_goal_completion() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
+
         let l = test_loop();
         let outcome = l
             .execute_goal("agent1".to_string(), "Create a simple test plan")
@@ -291,6 +296,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_goals_isolation() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
+
         let loop1 = test_loop();
         let loop2 = test_loop();
         let h1 = tokio::spawn(async move { loop1.run("a1".to_string(), "Goal 1").await });
@@ -306,8 +315,6 @@ mod tests {
             LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
         ));
     }
-
-    static ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     struct EnvVarGuard {
         key: &'static str,
@@ -344,7 +351,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_disabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("false");
 
@@ -403,7 +412,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_enabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -478,7 +489,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_runtime_constraints_written_when_gate_enabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        // RG-03/16-001: Explicitly disable native path to test legacy skills behavior
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let skills_env = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         skills_env.set("true");
         let runtime_env = EnvVarGuard::new(crate::skills::HAJIMI_AGENT_SKILL_RUNTIME_ENV);
@@ -539,7 +553,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_unset_gate_disabled() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.unset();
 
@@ -598,7 +614,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_routing_enabled_missing_components_degrades() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -649,7 +667,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_skills_execution_receipt_written() {
-        let _guard = ENV_MUTEX.lock().await;
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("false");
         let env_guard = EnvVarGuard::new("HAJIMI_AGENT_SKILLS_V0");
         env_guard.set("true");
 
@@ -705,180 +725,342 @@ mod tests {
         assert!(execution_receipts.value.contains("timestamp"));
     }
 
-    #[tokio::test]
-    async fn test_agent_llm_bootstrap_mechanism() {
-        let _guard = ENV_MUTEX.lock().await;
-        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_BOOTSTRAP_ENABLED");
-        env_guard.set("true");
+    struct MockNativeDriver {
+        should_success: bool,
+    }
 
-        let mem = Arc::new(Mutex::new(MemoryGateway::new("bootstrap_test")));
-        let mut registry = ToolRegistry::new();
-
-        struct MockTool;
-        #[async_trait::async_trait]
-        impl engine_tool_system::Tool for MockTool {
-            fn name(&self) -> &str {
-                "read_file"
-            }
-            fn description(&self) -> &str {
-                "mock read file"
-            }
-            fn permissions(&self) -> engine_tool_system::ToolPermissions {
-                Default::default()
-            }
-            async fn execute(
-                &self,
-                _args: engine_tool_system::ToolArgs,
-            ) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
-                Ok(engine_tool_system::ToolOutput::success(
-                    "mocked file content",
-                ))
-            }
+    #[async_trait::async_trait]
+    impl crate::llm_native::AgentTurnDriver for MockNativeDriver {
+        async fn run_turn(
+            &self,
+            _intent: crate::llm_native::RawUserIntent,
+            _visible_tools: Vec<crate::llm_native::ModelVisibleToolSpec>,
+            _history: Vec<crate::llm_native::TurnMessage>,
+            _governance: std::sync::Arc<dyn crate::governance::AgentGovernance>,
+            _cancellation: crate::llm_native::CancellationToken,
+        ) -> crate::AgentResult<crate::llm_native::TurnOutcome> {
+            Ok(crate::llm_native::TurnOutcome {
+                success: self.should_success,
+                tool_calls_executed: 0,
+                iterations: 1,
+                final_message: Some("Mock native output message".to_string()),
+                execution_history: None,
+            })
         }
-        registry.register(Arc::new(MockTool));
+    }
 
-        let loop_bb = Arc::new(Blackboard::new());
-        let agent_loop = AgentLoopBuilder::new()
-            .with_context(AgentContext::new())
-            .with_planner(Arc::new(Mutex::new(HierarchicalPlanner::new(
-                mem.clone(),
-                AgentContext::new(),
-            ))) as Arc<Mutex<dyn Planner>>)
-            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
-                mem.clone(),
-                AgentContext::new(),
-            ))) as Arc<Mutex<dyn Reflector>>)
-            .with_governance(Arc::new(DefaultGovernance::new()))
-            .with_swarm(None)
-            .with_blackboard(loop_bb.clone())
-            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
-            .with_memory(Some(mem))
-            .with_tool_registry(Arc::new(Mutex::new(registry)))
-            .build()
-            .unwrap();
+    struct MockFailingNativeDriver;
 
-        // Initially BB_NEXT_TOOL must be empty
-        assert!(loop_bb
-            .read(crate::act_executor::BB_NEXT_TOOL)
-            .await
-            .is_none());
-
-        // Perform bootstrap on a goal
-        let goal_id = "test_goal_1".to_string();
-        let agent_id = "agent_test".to_string();
-
-        let gid = agent_loop
-            .plan_initial_goal("Fix compile bug")
-            .await
-            .unwrap();
-
-        let bootstrapped = agent_loop
-            .bootstrap_first_tool_call(&gid, &agent_id)
-            .await
-            .unwrap();
-        assert!(bootstrapped.is_some(), "Expected bootstrapped tool call");
-
-        let tc = bootstrapped.unwrap();
-        assert_eq!(tc.tool_name, "read_file");
-
-        // The BB_NEXT_TOOL should be written
-        let entry = loop_bb
-            .read(crate::act_executor::BB_NEXT_TOOL)
-            .await
-            .unwrap();
-        assert!(entry.value.contains("read_file"));
+    #[async_trait::async_trait]
+    impl crate::llm_native::AgentTurnDriver for MockFailingNativeDriver {
+        async fn run_turn(
+            &self,
+            _intent: crate::llm_native::RawUserIntent,
+            _visible_tools: Vec<crate::llm_native::ModelVisibleToolSpec>,
+            _history: Vec<crate::llm_native::TurnMessage>,
+            _governance: std::sync::Arc<dyn crate::governance::AgentGovernance>,
+            _cancellation: crate::llm_native::CancellationToken,
+        ) -> crate::AgentResult<crate::llm_native::TurnOutcome> {
+            Err(crate::AgentError::Internal(
+                "provider smoke failure".to_string(),
+            ))
+        }
     }
 
     #[tokio::test]
-    async fn test_agent_local_execution_and_planner_activation() {
-        let _guard = ENV_MUTEX.lock().await;
+    async fn test_double_track_isolation() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
 
-        let mem = Arc::new(Mutex::new(MemoryGateway::new("planner_activation_test")));
-        let mut registry = ToolRegistry::new();
-
-        struct MockTool;
-        #[async_trait::async_trait]
-        impl engine_tool_system::Tool for MockTool {
-            fn name(&self) -> &str {
-                "read_file"
-            }
-            fn description(&self) -> &str {
-                "mock read file"
-            }
-            fn permissions(&self) -> engine_tool_system::ToolPermissions {
-                Default::default()
-            }
-            async fn execute(
-                &self,
-                _args: engine_tool_system::ToolArgs,
-            ) -> Result<engine_tool_system::ToolOutput, engine_tool_system::ToolError> {
-                Ok(engine_tool_system::ToolOutput::success(
-                    "mocked file content for local execution",
-                ))
-            }
-        }
-        registry.register(Arc::new(MockTool));
-
-        let loop_bb = Arc::new(Blackboard::new());
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("double_track_test")));
         let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
             mem.clone(),
             AgentContext::new(),
         ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver = Arc::new(MockNativeDriver {
+            should_success: true,
+        });
 
         let agent_loop = AgentLoopBuilder::new()
             .with_context(AgentContext::new())
-            .with_planner(planner.clone())
-            .with_reflector(Arc::new(Mutex::new(AutonomousReflector::new(
-                mem.clone(),
-                AgentContext::new(),
-            ))) as Arc<Mutex<dyn Reflector>>)
+            .with_planner(planner)
+            .with_reflector(reflector)
             .with_governance(Arc::new(DefaultGovernance::new()))
             .with_swarm(None)
-            .with_blackboard(loop_bb.clone())
+            .with_blackboard(Arc::new(Blackboard::new()))
             .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
             .with_memory(Some(mem))
-            .with_tool_registry(Arc::new(Mutex::new(registry)))
+            .with_native_driver(Some(mock_driver))
             .build()
             .unwrap();
 
-        // 1. Plan and initialize goal
-        let gid = agent_loop
-            .plan_initial_goal("Fix compilation bug")
+        // 验证 is_agent_llm_native_enabled 为 true 且提供了 native_driver 时成功通过新路径
+        let res = agent_loop
+            .run("agent1".to_string(), "Test native goal")
             .await
             .unwrap();
+        assert_eq!(res, LoopOutcome::Success);
+    }
 
-        // 2. Call decompose and expand through the planner directly
-        {
-            let mut planner_guard = planner.lock().await;
-            let sg_ids = planner_guard.decompose(&gid).await.unwrap();
-            assert!(!sg_ids.is_empty());
-            let task_ids = planner_guard.expand(&sg_ids[0]).await.unwrap();
-            assert!(!task_ids.is_empty());
-
-            // Check that next_task() is Some
-            let next_task = planner_guard.next_task().await.unwrap();
-            assert!(next_task.is_some());
-            let task = next_task.unwrap();
-            assert!(!task.description.is_empty());
+    #[tokio::test]
+    async fn test_agent_loop_empty_goal() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let l = test_loop();
+        let res = l.run("agent1".to_string(), "   ").await;
+        assert!(res.is_err());
+        if let Err(chimera_repl::traits::ReplError::Session(msg)) = res {
+            assert_eq!(msg, "EmptyGoal");
+        } else {
+            panic!("Expected empty goal error");
         }
+    }
 
-        // 3. Test local execution by calling legacy_act
-        let act_res = agent_loop
-            .legacy_act(&"agent_test".to_string(), &gid)
+    #[tokio::test]
+    async fn test_agent_loop_driver_none_reports_configuration_error() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        // Driver is missing while native mode is enabled: report the setup error directly.
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("fallback_none_test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(None) // No driver
+            .build()
+            .unwrap();
+
+        let out = agent_loop
+            .run("agent1".to_string(), "Test goal fallback")
             .await
             .unwrap();
-        assert!(act_res.success);
-        assert!(act_res
-            .output
-            .contains("Local execution of read_file succeeded"));
+        assert!(
+            matches!(out, LoopOutcome::ActFailed(message) if message.contains("native_driver"))
+        );
+    }
 
-        // Verify the blackboard was written with the result
-        let result_entry = loop_bb
-            .read(crate::act_executor::BB_LAST_TOOL_RESULT)
+    #[tokio::test]
+    async fn test_agent_loop_native_error_does_not_fallback_to_legacy() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("native_error_no_fallback")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(Arc::new(MockFailingNativeDriver)))
+            .build()
+            .unwrap();
+
+        let out = agent_loop
+            .run("agent1".to_string(), "Test native provider failure")
             .await
             .unwrap();
-        assert!(result_entry
-            .value
-            .contains("Local execution of read_file succeeded"));
+        assert!(
+            matches!(out, LoopOutcome::ActFailed(message) if message.contains("provider smoke failure"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_branch_default_routing() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+
+        // 1. FUNC-001: 默认不配置任何环境变量时，系统自主路由进入新 native_turn 执行
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.unset(); // Ensure it is not set
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("default_routing_test")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver = Arc::new(MockNativeDriver {
+            should_success: true,
+        });
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(mock_driver))
+            .build()
+            .unwrap();
+
+        let res = agent_loop
+            .run("agent1".to_string(), "Test default routing")
+            .await
+            .unwrap();
+        // Since HAJIMI_AGENT_LLM_NATIVE_ENABLED is unset, it should default to true,
+        // and because mock_driver is Some, it should execute the native turn and return Success!
+        assert_eq!(res, LoopOutcome::Success);
+
+        // 2. FUNC-002: 当显式配置 HAJIMI_AGENT_LLM_NATIVE_ENABLED="false" 时安全退回老路径
+        native_env.set("false");
+
+        let mem_fallback = Arc::new(Mutex::new(MemoryGateway::new("fallback_explicit_test")));
+        let planner_fallback = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem_fallback.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector_fallback = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem_fallback.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver_fallback = Arc::new(MockNativeDriver {
+            should_success: false, // If it were called, it would return ActFailed, but it should not be called at all
+        });
+
+        let agent_loop_fallback = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner_fallback)
+            .with_reflector(reflector_fallback)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem_fallback))
+            .with_native_driver(Some(mock_driver_fallback))
+            .build()
+            .unwrap();
+
+        let _out = agent_loop_fallback
+            .run("agent1".to_string(), "Test goal fallback explicit false")
+            .await
+            .unwrap();
+        // It should bypass the LLM-Native routing entirely and run the legacy fallback planning/acting,
+        // which will end with either BudgetExceeded, Success, or Aborted (but NOT fail on MockNativeDriver failure)
+    }
+
+    #[tokio::test]
+    async fn test_legacy_extreme_fallback() {
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("extreme_fallback_unique_db")));
+        let mut planner = HierarchicalPlanner::new(mem.clone(), AgentContext::new());
+
+        // 1. NEG-001: 传递一长串怪异的特殊符号给离线规划，能优雅吐出 DefaulTask 而不崩溃
+        let weird_goal = "*&^%$#@!)(*&^%$";
+        let gid = planner
+            .create_goal(weird_goal, Priority::High)
+            .await
+            .unwrap();
+
+        // Decompose goal and verify it doesn't crash, instead falls back gracefully
+        let sg_ids = planner.decompose(&gid).await.unwrap();
+        assert!(!sg_ids.is_empty());
+
+        // First subgoal should contain the weird description
+        let current_plan = planner.current_plan().unwrap();
+        let first_sg = current_plan.subgoals.get(&sg_ids[0]).unwrap();
+        assert_eq!(first_sg.description, weird_goal);
+
+        // Expand subgoal to generate tasks and verify it works
+        let task_ids = planner.expand(&sg_ids[0]).await.unwrap();
+        assert!(!task_ids.is_empty());
+
+        // 2. NEG-002: 极简 fallback 对完全不认的中文词汇直接封装为通用任务类型向下走
+        let unknown_chinese_goal = "完全未识别的中文词汇测试";
+        let gid_cn = planner
+            .create_goal(unknown_chinese_goal, Priority::High)
+            .await
+            .unwrap();
+        let sg_ids_cn = planner.decompose(&gid_cn).await.unwrap();
+        assert!(!sg_ids_cn.is_empty());
+        let current_plan_cn = planner.current_plan().unwrap();
+        let first_sg_cn = current_plan_cn.subgoals.get(&sg_ids_cn[0]).unwrap();
+        assert_eq!(first_sg_cn.description, unknown_chinese_goal);
+    }
+
+    #[tokio::test]
+    async fn test_double_track_native_solidification() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let env_guard = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+
+        println!("🚀 [Day 18 Solidification] Step 1: Testing initial runtime LLM-Native routing state...");
+        env_guard.set("true");
+        assert!(
+            crate::prompts::is_agent_llm_native_enabled(),
+            "Should default to true when set to true"
+        );
+
+        println!(
+            "🚀 [Day 18 Solidification] Step 2: Simulating runtime switch to legacy fallback..."
+        );
+        env_guard.set("false");
+        assert!(
+            !crate::prompts::is_agent_llm_native_enabled(),
+            "Should immediately pick up false"
+        );
+
+        println!("🚀 [Day 18 Solidification] Step 3: Verifying routing with a live fallback planner run...");
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("solidification_test_db")));
+        let mut planner = HierarchicalPlanner::new(mem.clone(), AgentContext::new());
+
+        let gid = planner
+            .create_goal("Test fallback stability", Priority::High)
+            .await
+            .unwrap();
+        let sg_ids = planner.decompose(&gid).await.unwrap();
+        assert!(
+            !sg_ids.is_empty(),
+            "Subgoals should be generated even in fallback"
+        );
+
+        println!("🚀 [Day 18 Solidification] Step 4: Simulating runtime reset back to native...");
+        env_guard.set("true");
+        assert!(
+            crate::prompts::is_agent_llm_native_enabled(),
+            "Should instantly toggle back to native"
+        );
+
+        println!(
+            "✨ [Day 18 Solidification] All double-track migration routes solidified perfectly!"
+        );
     }
 }

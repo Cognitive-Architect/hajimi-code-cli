@@ -2081,6 +2081,7 @@ async fn stream_chat(
                 engine_llm_core::StreamChunk::Output(t) => (t, false, false),
                 engine_llm_core::StreamChunk::Error(e) => (e, false, true),
                 engine_llm_core::StreamChunk::Done => (String::new(), true, false),
+                _ => (String::new(), false, false),
             };
             if is_done {
                 done_events += 1;
@@ -2679,6 +2680,7 @@ async fn create_agent_with_provider(
                 engine_llm_core::StreamChunk::Output(text) => output.push_str(&text),
                 engine_llm_core::StreamChunk::Error(e) => return Err(format!("LLM error: {}", e)),
                 engine_llm_core::StreamChunk::Done => break,
+                _ => {}
             }
         }
         let usage = client.last_usage();

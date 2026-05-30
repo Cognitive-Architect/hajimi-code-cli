@@ -705,6 +705,7 @@ pub async fn collect_stream(
                 return Err(engine_llm_core::EngineError::InvalidParameters(e))
             }
             engine_llm_core::StreamChunk::Done => break,
+            _ => {}
         }
     }
     Ok(text)
@@ -770,9 +771,6 @@ mod tests {
     use super::*;
     use crate::reflector::ReflectionLlmClient;
     use std::sync::Mutex;
-
-    /// Serialisation lock for tests that mutate process-wide environment variables.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Mock LlmClient that returns a pre-configured response for testing decompose paths.
     struct MockLlmClient {
@@ -990,7 +988,7 @@ mod tests {
     /// B-06/14: v1 path with valid PlannerSubgoalPlanV1 JSON produces SubGoals.
     #[tokio::test]
     async fn test_decompose_goal_v1_valid_json() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         std::env::set_var("HAJIMI_PLANNER_V1_ENABLED", "true");
         let response = r#"{"schema_version":"PlannerSubgoalPlanV1","goal_id":"g1","summary":"test","subgoals":[{"id_hint":"sg1","description":"Analyze","priority":"High","depends_on":[],"suggested_tools":[],"expected_evidence":[],"validation_intent":"None","risk_level":"Low","requires_user_approval":false,"stop_conditions":[]}],"global_risks":[],"notes":[]}"#;
         let bridge = PlannerLlmBridge::new(Arc::new(MockLlmClient {
@@ -1012,7 +1010,7 @@ mod tests {
     /// B-06/14: v1 path with invalid JSON returns Err (no panic).
     #[tokio::test]
     async fn test_decompose_goal_v1_invalid_json() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         std::env::set_var("HAJIMI_PLANNER_V1_ENABLED", "true");
         let bridge = PlannerLlmBridge::new(Arc::new(MockLlmClient {
             response: "not json".to_string(),
@@ -1161,7 +1159,7 @@ mod tests {
 
     #[tokio::test]
     async fn planner_skill_injection_adds_p1_context_block_from_blackboard() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         clear_planner_injection_env();
         std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
         std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
@@ -1234,7 +1232,7 @@ mod tests {
 
     #[tokio::test]
     async fn planner_skill_injection_no_skill_keeps_two_p0_messages() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         clear_planner_injection_env();
         std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
         std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");
@@ -1312,7 +1310,7 @@ mod tests {
 
     #[tokio::test]
     async fn reflector_skill_eval_injects_lightweight_criteria_from_blackboard() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         clear_planner_injection_env();
         std::env::set_var("HAJIMI_AGENT_SKILLS_V0", "true");
         std::env::set_var("HAJIMI_CONTEXT_WINDOW_ENABLED", "true");

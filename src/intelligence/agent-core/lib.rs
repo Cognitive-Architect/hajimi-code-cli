@@ -17,6 +17,7 @@ pub mod event_tracing;
 pub mod events;
 pub mod governance;
 pub mod llm;
+pub mod llm_native;
 pub mod long_context_pack;
 pub mod loop_state_machine;
 pub mod memory_bootstrapper;
@@ -72,6 +73,9 @@ pub use swarm::{
     Supervisor, SupervisorMetrics, SwarmCoordinator, SwarmMessage, TaskAssignment, Worker,
     WorkerResult, WorkerStatus,
 };
+
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[cfg(test)]
 mod agent_loop_tests;

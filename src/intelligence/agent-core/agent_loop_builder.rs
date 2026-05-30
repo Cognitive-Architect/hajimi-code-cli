@@ -31,6 +31,8 @@ pub struct AgentLoopConfig {
     /// The tool registry holding all active tools.
     /// SAFETY: Wrapped in Arc<Mutex<>> for thread safety and Option to support backward compatibility.
     pub tool_registry: Option<Arc<Mutex<ToolRegistry>>>,
+    /// Native driver for driving LLM-native execution path.
+    pub native_driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>,
 }
 
 pub struct AgentLoopBuilder {
@@ -48,6 +50,7 @@ pub struct AgentLoopBuilder {
     skill_registry: Option<Option<Arc<crate::skills::SkillRegistry>>>,
     skill_router: Option<Option<Arc<crate::skills::SkillRouter>>>,
     tool_registry: Option<Option<Arc<Mutex<ToolRegistry>>>>,
+    native_driver: Option<Option<Arc<dyn crate::llm_native::AgentTurnDriver>>>,
 }
 
 impl AgentLoopBuilder {
@@ -67,6 +70,7 @@ impl AgentLoopBuilder {
             skill_registry: Some(None),
             skill_router: Some(None),
             tool_registry: Some(None),
+            native_driver: Some(None),
         }
     }
 
@@ -154,6 +158,14 @@ impl AgentLoopBuilder {
         self.tool_registry = Some(Some(reg));
         self
     }
+    /// Injects a custom `AgentTurnDriver` for LLM-native double-track support.
+    pub fn with_native_driver(
+        mut self,
+        driver: Option<Arc<dyn crate::llm_native::AgentTurnDriver>>,
+    ) -> Self {
+        self.native_driver = Some(driver);
+        self
+    }
 
     pub fn build(self) -> Result<AgentLoop, AgentError> {
         let context = self.context.unwrap_or_default();
@@ -179,6 +191,7 @@ impl AgentLoopBuilder {
         let skill_registry = self.skill_registry.flatten();
         let skill_router = self.skill_router.flatten();
         let tool_registry = self.tool_registry.flatten();
+        let native_driver = self.native_driver.flatten();
         let _iteration_count = Arc::new(Mutex::new(0));
         let _current_state = Arc::new(Mutex::new(crate::agent_loop::LoopState::Idle));
         let mut agent_loop = AgentLoop::from_components(AgentLoopConfig {
@@ -196,6 +209,7 @@ impl AgentLoopBuilder {
             skill_registry,
             skill_router,
             tool_registry,
+            native_driver,
         });
         if let Some(ea) = edit_applier {
             agent_loop = agent_loop.with_edit_applier(ea);

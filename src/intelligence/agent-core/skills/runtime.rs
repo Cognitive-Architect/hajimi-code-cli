@@ -272,9 +272,6 @@ mod tests {
     use super::*;
     use crate::governance::ApprovalLevel;
     use crate::skills::types::{SkillPermissions, SkillRiskLevel};
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn manifest_with(allowed_tools: Vec<&str>, permissions: SkillPermissions) -> SkillManifest {
         SkillManifest {
@@ -296,9 +293,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn skill_runtime_gate_defaults_false() {
-        let _guard = ENV_LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn skill_runtime_gate_defaults_false() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
         std::env::remove_var(HAJIMI_AGENT_SKILL_RUNTIME_ENV);
         assert!(!is_agent_skill_runtime_enabled());
 
