@@ -1,3 +1,4 @@
+#![deny(warnings)]
 //! LLM Native Chinese Intent and Double-Channel E2E Integration Tests.
 //!
 //! This suite validates that raw Chinese natural language intents reach the LLM completely

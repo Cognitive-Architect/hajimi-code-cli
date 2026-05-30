@@ -4,7 +4,7 @@
 > **状态**: ✅ **SUCCESSFULLY CLOSED (全部清偿并封档)**
 > **主导角色**: Architect
 > **分支**: `feature/llm-native-debt-closure`
-> **当前 HEAD SHA**: `abfc72b7`
+> **当前 HEAD SHA**: `32446133954b25a4cd0232e047058d54c81ba007`
 
 ---
 
@@ -29,9 +29,9 @@
 |:---|:---|:---|:---:|
 | **LlmNativeDriver** | [driver.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/llm_native/driver.rs#L1-L150) | 承接原始意图、动态装配 RAG 检索并调度 Turn 核心循环转轮 | ✅ 纯净已实装 |
 | **LlmNativeTurn** | [turn.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/llm_native/turn.rs#L1-L200) | 承载单轮与多轮 stream_chat_with_tools 流式工具提取与结果回填 | ✅ 纯净已实装 |
-| **AgentLoop** | [agent_loop.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/agent_loop.rs#L100-L300) | 桥接与流式转播、TraceEvent 广播及与 Blackboard 的双向数据交互 | ✅ 纯净已实装 |
-| **HierarchicalPlanner** | [planner.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/planner.rs#L500-L734) | 彻底割除 `decompose_rule_based` 意图篡改逻辑，保留 100% 原始输入 | ✅ 纯净已实装 |
-| **AgentLoopTests** | [agent_loop_tests.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/agent_loop_tests.rs#L900-L1000) | 彻底物理切除已废弃的旧 bootstrap、legacy_act 测试用例，杜绝死代码 | ✅ 已清理完毕 |
+| **AgentLoop** | [agent_loop.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/agent_loop.rs#L100-L300) | AgentLoop 结构体定义与核心字段声明（桥接、TraceEvent、Blackboard 交互由后续方法实现） | ✅ 纯净已实装 |
+| **HierarchicalPlanner** | [planner.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/planner.rs#L500-L733) | 彻底割除 `decompose_rule_based` 意图篡改逻辑，保留 100% 原始输入 | ✅ 纯净已实装 |
+| **AgentLoopTests** | [agent_loop_tests.rs](file:///f:/hajimi-code-cli/src/intelligence/agent-core/agent_loop_tests.rs#L900-L993) | Negative Path 回归测试（特殊符号/中文不崩溃）+ `test_agent_loop_cleanup_verification` 验证极简 fallback | ✅ 已清理完毕 |
 
 ---
 
