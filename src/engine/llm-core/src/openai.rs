@@ -329,11 +329,137 @@ mod tests {
             serde_json::from_str(&call_write_state.arguments).unwrap();
         assert_eq!(json_write["content"], "hello; rm -rf / | grep &");
     }
+
+    #[test]
+    fn test_openai_tool_parameters_normalizes_empty_schema() {
+        // CONST-001 & NEG-003: 空 Schema {} 规范化为 object 且补齐 properties
+        let empty = serde_json::json!({});
+        let normalized = super::normalize_tool_parameters_for_openai(empty);
+        assert_eq!(normalized["type"], "object");
+        assert!(normalized["properties"].is_object());
+        assert_eq!(normalized["additionalProperties"], true);
+    }
+
+    #[test]
+    fn test_openai_tool_parameters_normalizes_null_schema() {
+        // CONST-002: Null Schema 规范化为 object
+        let val_null = serde_json::Value::Null;
+        let normalized = super::normalize_tool_parameters_for_openai(val_null);
+        assert_eq!(normalized["type"], "object");
+        assert!(normalized["properties"].is_object());
+        assert_eq!(normalized["additionalProperties"], true);
+    }
+
+    #[test]
+    fn test_openai_tool_parameters_preserves_valid_schema() {
+        // CONST-003: 正常 Schema 保留
+        let valid = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string"
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        });
+        let normalized = super::normalize_tool_parameters_for_openai(valid.clone());
+        assert_eq!(normalized, valid);
+    }
+
+    #[test]
+    fn test_openai_chat_request_serialization_tools_are_objects() {
+        // CONST-004 & NEG-001 & NEG-002: 请求整体序列化，负向防退化检测，缺 type 自动补 type: "object"
+        use crate::ToolDefinition;
+
+        // 构造缺失 type 的工具，以及传入非 object (裸字符串) 的工具
+        let tools = vec![
+            ToolDefinition {
+                name: "tool_missing_type".into(),
+                description: "desc".into(),
+                parameters: serde_json::json!({
+                    "properties": {
+                        "path": { "type": "string" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "tool_non_object".into(),
+                description: "desc".into(),
+                parameters: serde_json::json!("non_object_string"),
+            },
+        ];
+
+        // 我们手动测试对这组 tools 转换后的 JSON payload
+        let mapped_tools: Vec<serde_json::Value> = tools
+            .into_iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": super::normalize_tool_parameters_for_openai(t.parameters)
+                    }
+                })
+            })
+            .collect();
+
+        let req = super::ChatRequest {
+            model: "gpt-4".into(),
+            messages: vec![],
+            stream: true,
+            tools: Some(mapped_tools),
+            tool_choice: None,
+        };
+
+        let serialized = serde_json::to_value(&req).unwrap();
+        let tools_list = serialized["tools"].as_array().unwrap();
+        assert_eq!(tools_list.len(), 2);
+
+        // 1. 验证 tool_missing_type 补全了 type: "object"
+        let t1 = &tools_list[0]["function"];
+        assert_eq!(t1["name"], "tool_missing_type");
+        assert_eq!(t1["parameters"]["type"], "object");
+        assert!(t1["parameters"]["properties"]["path"].is_object());
+
+        // 2. 验证 tool_non_object 防退化为默认合法 schema
+        let t2 = &tools_list[1]["function"];
+        assert_eq!(t2["name"], "tool_non_object");
+        assert_eq!(t2["parameters"]["type"], "object");
+        assert!(t2["parameters"]["properties"].is_object());
+        assert_eq!(t2["parameters"]["additionalProperties"], true);
+    }
 }
+#[derive(Serialize)]
+struct OpenAiMessage {
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAiToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct OpenAiToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    ty: String,
+    function: OpenAiFunctionCall,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct OpenAiFunctionCall {
+    name: String,
+    arguments: String,
+}
+
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
-    messages: Vec<crate::ChatMessage>,
+    messages: Vec<OpenAiMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<serde_json::Value>>,
@@ -767,7 +893,7 @@ impl LlmClient for OpenAiClient {
                         "function": {
                             "name": t.name,
                             "description": t.description,
-                            "parameters": t.parameters
+                            "parameters": normalize_tool_parameters_for_openai(t.parameters)
                         }
                     })
                 })
@@ -791,11 +917,100 @@ impl LlmClient for OpenAiClient {
             (Some(mapped_tools), choice_val)
         };
 
+        let mut mapped_messages = Vec::new();
+        for m in msgs {
+            let role = m.role.clone();
+            if role == "assistant" {
+                if let Some(idx) = m.content.find("[Tool Calls: ") {
+                    let text_content = m.content[..idx].trim().to_string();
+                    let final_content = if text_content.is_empty() {
+                        None
+                    } else {
+                        Some(text_content)
+                    };
+                    let array_slice = &m.content[idx + 13..m.content.len().saturating_sub(1)];
+                    let parsed_calls: Result<Vec<serde_json::Value>, _> =
+                        serde_json::from_str(array_slice);
+                    let mut otc_list = Vec::new();
+                    if let Ok(calls) = parsed_calls {
+                        for tc in calls {
+                            let id = tc
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let name = tc
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let arguments = tc
+                                .get("arguments")
+                                .map(|v| {
+                                    if v.is_string() {
+                                        v.as_str().unwrap().to_string()
+                                    } else {
+                                        serde_json::to_string(v).unwrap_or_default()
+                                    }
+                                })
+                                .unwrap_or_default();
+                            otc_list.push(OpenAiToolCall {
+                                id,
+                                ty: "function".to_string(),
+                                function: OpenAiFunctionCall { name, arguments },
+                            });
+                        }
+                    }
+                    mapped_messages.push(OpenAiMessage {
+                        role,
+                        content: final_content,
+                        tool_calls: if otc_list.is_empty() {
+                            None
+                        } else {
+                            Some(otc_list)
+                        },
+                        tool_call_id: None,
+                    });
+                } else {
+                    mapped_messages.push(OpenAiMessage {
+                        role,
+                        content: Some(m.content),
+                        tool_calls: None,
+                        tool_call_id: None,
+                    });
+                }
+            } else if role == "tool" {
+                let mut tool_call_id = None;
+                let mut final_content = m.content.clone();
+                if m.content.starts_with("[Tool Result for ") {
+                    if let Some(id_start) = m.content.find(" (id: ") {
+                        if let Some(id_end) = m.content.find(")]: ") {
+                            tool_call_id = Some(m.content[id_start + 6..id_end].to_string());
+                            final_content = m.content[id_end + 4..].to_string();
+                        }
+                    }
+                }
+                mapped_messages.push(OpenAiMessage {
+                    role,
+                    content: Some(final_content),
+                    tool_calls: None,
+                    tool_call_id,
+                });
+            } else {
+                mapped_messages.push(OpenAiMessage {
+                    role,
+                    content: Some(m.content),
+                    tool_calls: None,
+                    tool_call_id: None,
+                });
+            }
+        }
+
         let client = Client::new();
         let url = crate::openai_chat_completions_url(&base_url);
         let req = ChatRequest {
             model: model.clone(),
-            messages: msgs,
+            messages: mapped_messages,
             stream: true,
             tools: tools_val,
             tool_choice: tool_choice_val,
@@ -826,8 +1041,16 @@ impl LlmClient for OpenAiClient {
                         };
                         let _ = tx.send(StreamChunk::Error(err_msg)).await;
                     } else if !status.is_success() {
+                        let err_body = r
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unknown error body".to_string());
+                        println!("🔴 HTTP Error Body: {}", err_body);
                         let _ = tx
-                            .send(StreamChunk::Error(format!("HTTP 错误: {}", status)))
+                            .send(StreamChunk::Error(format!(
+                                "HTTP 错误: {} - {}",
+                                status, err_body
+                            )))
                             .await;
                     } else {
                         let mut s = r.bytes_stream();
@@ -900,5 +1123,48 @@ impl LlmClient for OpenAiClient {
             let _ = model;
             Ok(crate::heuristic_token_count(&messages))
         }
+    }
+}
+
+/// DeepSeek Gateway Parameter Defense
+///
+/// Normalizes a parameter schema value to ensure it meets OpenAI and DeepSeek strict expectations.
+/// It forces a top-level `type: "object"`, guarantees a `properties` object, and handles
+/// graceful fallbacks for missing, null, or malformed schemas.
+fn normalize_tool_parameters_for_openai(parameters: serde_json::Value) -> serde_json::Value {
+    let default_schema = serde_json::json!({
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+    });
+
+    if let serde_json::Value::Object(mut map) = parameters {
+        if map.is_empty() {
+            return default_schema;
+        }
+        let type_val = map.get("type");
+        match type_val {
+            Some(serde_json::Value::String(s)) if s == "object" => {
+                // Valid object type
+            }
+            None => {
+                map.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("object".to_string()),
+                );
+            }
+            _ => {
+                return default_schema;
+            }
+        }
+        if !map.get("properties").is_some_and(|v| v.is_object()) {
+            map.insert(
+                "properties".to_string(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
+        }
+        serde_json::Value::Object(map)
+    } else {
+        default_schema
     }
 }
