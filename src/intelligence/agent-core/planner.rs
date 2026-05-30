@@ -676,4 +676,58 @@ mod tests {
             "Original description in task must be 100% preserved"
         );
     }
+
+    #[test]
+    fn test_struct_cleanup_verification() {
+        // Assert that Task has the precise clean fields and is serializable without obsolete properties
+        let task = Task {
+            id: "t1".to_string(),
+            parent_subgoal: "sg1".to_string(),
+            description: "clean task".to_string(),
+            tool_calls: Vec::new(),
+            status: PlanStatus::Pending,
+            result: None,
+        };
+        let serialized = serde_json::to_value(&task).unwrap();
+        // The serialized object must NOT contain any field named "source_goal"
+        assert!(
+            serialized.get("source_goal").is_none(),
+            "Task must not contain legacy source_goal field"
+        );
+
+        // Ensure Goal and SubGoal also do not have "source_goal" in their serialized forms
+        let goal = Goal {
+            id: "g1".to_string(),
+            description: "clean goal".to_string(),
+            priority: Priority::High,
+            status: PlanStatus::Pending,
+            subgoals: Vec::new(),
+            metadata: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            approved: true,
+        };
+        let goal_serialized = serde_json::to_value(&goal).unwrap();
+        assert!(
+            goal_serialized.get("source_goal").is_none(),
+            "Goal must not contain legacy source_goal field"
+        );
+
+        let subgoal = SubGoal {
+            id: "sg1".to_string(),
+            parent_goal: "g1".to_string(),
+            description: "clean subgoal".to_string(),
+            priority: Priority::High,
+            status: PlanStatus::Pending,
+            tasks: Vec::new(),
+            dependencies: Vec::new(),
+            metadata: HashMap::new(),
+        };
+        let sg_serialized = serde_json::to_value(&subgoal).unwrap();
+        assert!(
+            sg_serialized.get("source_goal").is_none(),
+            "SubGoal must not contain legacy source_goal field"
+        );
+
+        println!("✨ [Day 21 Purity] Structs are audited and verified to be extremely pure!");
+    }
 }

@@ -193,18 +193,18 @@ cargo test -p engine-llm-core
 
 ---
 
-### Phase 4: 彻底清理与多语言债务清零（2-3 天）
+### Phase 4: 彻底清理与多语言债务清零（2-3 天）[COMPLETE]
 
 **目标**：消除所有「因为本地规则而不得不写的语言特定补丁」。
 
 **关键动作**：
 - 删除或大幅精简：
-  - `decompose_rule_based` 中的所有中英文关键词分支
-  - `generate_tasks_for` 中的所有关键词分支
-  - `legacy_act` 中的所有关键词 + 参数提取逻辑（仅保留最基础的兜底）
-  - `Task` 结构体上的 `source_goal` 字段（如果新架构不再需要）
-  - 前端 `commandMap` 中文映射中与 Agent 相关的部分（如果 trigger 也统一由后端 LLM 处理）
-- 清理测试中依赖旧规则行为的 case，或明确标记为 legacy 测试
+  - `decompose_rule_based` 中的所有中英文关键词分支 [COMPLETE]
+  - `generate_tasks_for` 中的所有关键词分支 [COMPLETE]
+  - `legacy_act` 中的所有关键词 + 参数提取逻辑（仅保留最基础的兜底） [COMPLETE]
+  - `Task` 结构体及其他实体上的 `source_goal` 等冗余字段与废弃结构彻底清偿清扫，并通过自动化的单元测试进行结构纯净防线保护 [COMPLETE]
+  - 前端 `commandMap` 中文映射中与 Agent 相关的部分 [COMPLETE]
+- 清理测试中依赖旧规则行为的 case，或明确标记为 legacy 测试 [COMPLETE]
 
 **验证**：
 ```bash
