@@ -931,5 +931,7 @@ interface/mcp-server/
 
 ## 🎯 债务清偿记录 (Remediation Logs)
 
-- **DEBT-AGENT-CHINESE-I18N** (中英文关键词过滤与语义改写层): ✅ **已完全割除与清偿** (2026-05-29)
-  - 割除范围: `planner.rs` (decompose_rule_based, generate_tasks_for) 彻底清除多语言关键词硬编码逻辑，实现输入意图的纯净直达。
+- **DEBT-AGENT-CHINESE-I18N** (中英文关键词过滤与语义改写层): ✅ **CLOSED (已完全割除与清偿)** (2026-05-29)
+  - **割除范围**: `planner.rs` (decompose_rule_based, generate_tasks_for) 彻底清除多语言关键词硬编码逻辑，实现输入意图的纯净直达。
+  - **清偿依据与路线图**: 详见 [LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md](file:///F:/hajimi-code-cli/docs/roadmap/Hajimi%20LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md) 以及 Day 22 验收报告。
+
