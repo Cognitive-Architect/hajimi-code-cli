@@ -179,7 +179,10 @@ async fn test_autonomous_loop() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -307,7 +310,10 @@ async fn test_demo_greeting() {
     println!("test_demo_greeting output: {:?}", out);
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -361,7 +367,10 @@ async fn test_multi_step_task() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -375,7 +384,10 @@ async fn test_urgent_goal() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -423,6 +435,7 @@ async fn test_completion_rate() {
             .await
         {
             Ok(LoopOutcome::Success)
+            | Ok(LoopOutcome::SuccessWithMessage(_))
             | Ok(LoopOutcome::BudgetExceeded)
             | Ok(LoopOutcome::Aborted) => ok += 1,
             _ => {}
@@ -599,7 +612,10 @@ async fn test_real_agent_file_creation_e2e() {
 
     assert!(matches!(
         outcome,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 
     // Verify the file was created and contains the correct contents

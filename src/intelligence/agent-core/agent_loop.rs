@@ -248,6 +248,7 @@ impl AgentLoop {
                             outcome.success, outcome.iterations
                         );
                         if outcome.success {
+                            let final_message = outcome.final_message.unwrap_or_default();
                             self.emit_trace(
                                 LoopState::Completed,
                                 format!(
@@ -256,7 +257,10 @@ impl AgentLoop {
                                 ),
                                 0,
                             );
-                            return Ok(LoopOutcome::Success);
+                            if final_message.trim().is_empty() {
+                                return Ok(LoopOutcome::Success);
+                            }
+                            return Ok(LoopOutcome::SuccessWithMessage(final_message));
                         } else {
                             let message = outcome
                                 .final_message
@@ -1676,6 +1680,7 @@ pub struct Observation {
 pub enum LoopOutcome {
     InProgress,
     Success,
+    SuccessWithMessage(String),
     Aborted,
     BudgetExceeded,
     ActFailed(String),

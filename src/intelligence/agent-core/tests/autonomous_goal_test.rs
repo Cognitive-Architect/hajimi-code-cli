@@ -16,7 +16,10 @@ async fn test_simple_goal() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -28,7 +31,10 @@ async fn test_multi_step_task() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -48,6 +54,7 @@ async fn test_completion_rate() {
             .await
         {
             Ok(LoopOutcome::Success)
+            | Ok(LoopOutcome::SuccessWithMessage(_))
             | Ok(LoopOutcome::BudgetExceeded)
             | Ok(LoopOutcome::Aborted) => ok += 1,
             _ => {}
@@ -85,7 +92,10 @@ async fn test_demo_greeting_e2e() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 
@@ -97,7 +107,10 @@ async fn test_urgent_goal() {
         .unwrap();
     assert!(matches!(
         out,
-        LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+        LoopOutcome::Success
+            | LoopOutcome::SuccessWithMessage(_)
+            | LoopOutcome::BudgetExceeded
+            | LoopOutcome::Aborted
     ));
 }
 

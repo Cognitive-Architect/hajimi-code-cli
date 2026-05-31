@@ -77,7 +77,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             out,
-            LoopOutcome::BudgetExceeded | LoopOutcome::Success | LoopOutcome::Aborted
+            LoopOutcome::BudgetExceeded
+                | LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::Aborted
         ));
     }
 
@@ -107,7 +110,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
     }
 
@@ -308,11 +314,17 @@ mod tests {
         assert!(r1.is_ok() && r2.is_ok());
         assert!(matches!(
             r1.unwrap().unwrap(),
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
         assert!(matches!(
             r2.unwrap().unwrap(),
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
     }
 
@@ -395,7 +407,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         // When disabled, no skill keys should be written to the blackboard
@@ -456,7 +471,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         // When enabled, the skill keys must be correctly routed and loaded to the blackboard
@@ -538,7 +556,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         let constraints = agent_loop
@@ -597,7 +618,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         // When unset, no skill keys should be written to the blackboard
@@ -650,7 +674,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         // Assert no blackboard keys are populated
@@ -711,7 +738,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
 
         let bb = agent_loop.blackboard();
@@ -727,6 +757,7 @@ mod tests {
 
     struct MockNativeDriver {
         should_success: bool,
+        final_message: Option<String>,
     }
 
     #[async_trait::async_trait]
@@ -743,7 +774,7 @@ mod tests {
                 success: self.should_success,
                 tool_calls_executed: 0,
                 iterations: 1,
-                final_message: Some("Mock native output message".to_string()),
+                final_message: self.final_message.clone(),
                 execution_history: None,
             })
         }
@@ -785,6 +816,7 @@ mod tests {
 
         let mock_driver = Arc::new(MockNativeDriver {
             should_success: true,
+            final_message: Some("Mock native output message".to_string()),
         });
 
         let agent_loop = AgentLoopBuilder::new()
@@ -803,6 +835,50 @@ mod tests {
         // 验证 is_agent_llm_native_enabled 为 true 且提供了 native_driver 时成功通过新路径
         let res = agent_loop
             .run("agent1".to_string(), "Test native goal")
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            LoopOutcome::SuccessWithMessage("Mock native output message".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_native_success_empty_message_falls_back_to_success() {
+        let _guard = crate::TEST_ENV_LOCK.lock().await;
+        let native_env = EnvVarGuard::new("HAJIMI_AGENT_LLM_NATIVE_ENABLED");
+        native_env.set("true");
+
+        let mem = Arc::new(Mutex::new(MemoryGateway::new("native_empty_message")));
+        let planner = Arc::new(Mutex::new(HierarchicalPlanner::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Planner>>;
+        let reflector = Arc::new(Mutex::new(AutonomousReflector::new(
+            mem.clone(),
+            AgentContext::new(),
+        ))) as Arc<Mutex<dyn Reflector>>;
+
+        let mock_driver = Arc::new(MockNativeDriver {
+            should_success: true,
+            final_message: Some("   ".to_string()),
+        });
+
+        let agent_loop = AgentLoopBuilder::new()
+            .with_context(AgentContext::new())
+            .with_planner(planner)
+            .with_reflector(reflector)
+            .with_governance(Arc::new(DefaultGovernance::new()))
+            .with_swarm(None)
+            .with_blackboard(Arc::new(Blackboard::new()))
+            .with_checkpoint_mgr(Arc::new(CheckpointManager::new()))
+            .with_memory(Some(mem))
+            .with_native_driver(Some(mock_driver))
+            .build()
+            .unwrap();
+
+        let res = agent_loop
+            .run("agent1".to_string(), "Test empty native message")
             .await
             .unwrap();
         assert_eq!(res, LoopOutcome::Success);
@@ -918,6 +994,7 @@ mod tests {
 
         let mock_driver = Arc::new(MockNativeDriver {
             should_success: true,
+            final_message: Some("Mock native output message".to_string()),
         });
 
         let agent_loop = AgentLoopBuilder::new()
@@ -939,7 +1016,10 @@ mod tests {
             .unwrap();
         // Since HAJIMI_AGENT_LLM_NATIVE_ENABLED is unset, it should default to true,
         // and because mock_driver is Some, it should execute the native turn and return Success!
-        assert_eq!(res, LoopOutcome::Success);
+        assert_eq!(
+            res,
+            LoopOutcome::SuccessWithMessage("Mock native output message".to_string())
+        );
 
         // 2. FUNC-002: 当显式配置 HAJIMI_AGENT_LLM_NATIVE_ENABLED="false" 时安全退回老路径
         native_env.set("false");
@@ -956,6 +1036,7 @@ mod tests {
 
         let mock_driver_fallback = Arc::new(MockNativeDriver {
             should_success: false, // If it were called, it would return ActFailed, but it should not be called at all
+            final_message: Some("Mock native output message".to_string()),
         });
 
         let agent_loop_fallback = AgentLoopBuilder::new()

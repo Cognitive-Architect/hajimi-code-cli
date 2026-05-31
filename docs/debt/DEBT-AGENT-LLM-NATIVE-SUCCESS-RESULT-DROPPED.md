@@ -3,7 +3,7 @@
 > **ID**: `DEBT-AGENT-LLM-NATIVE-SUCCESS-RESULT-DROPPED`
 > **Priority**: **P1**
 > **Date**: 2026-05-31
-> **Status**: `OPEN / DIAGNOSED / DO-NOT-FIX-IN-THIS-PASS`
+> **Status**: `CODE-LEVEL FIXED / PENDING-REAL-WEBVIEW-SMOKE`
 > **Scope**: Desktop `/agent`, LLM-Native final answer propagation, Agent UI result rendering
 
 ---
@@ -223,3 +223,76 @@ User-visible final answer propagation is incomplete.
 ```
 
 The next implementation pass should focus on result payload propagation and frontend rendering, not on DeepSeek provider behavior.
+
+---
+
+## 10. Code-Level Fix Receipt (2026-05-31)
+
+Status: `CODE-LEVEL FIXED / PENDING-REAL-WEBVIEW-SMOKE`
+
+Implemented V1 result propagation:
+
+- `src/intelligence/agent-core/agent_loop.rs`
+  - Added `LoopOutcome::SuccessWithMessage(String)`.
+  - LLM-Native success now preserves non-empty `TurnOutcome.final_message`.
+  - Empty or whitespace-only final messages still fall back to legacy `LoopOutcome::Success`.
+- `src/interface/desktop/src/main.rs`
+  - Added `agent_outcome_output`.
+  - `SuccessWithMessage` is sent to the frontend as the real message content.
+  - Legacy `Success`, `ActFailed`, `Aborted`, and `BudgetExceeded` keep their recognizable output shape.
+- `src/interface/web/app.js`
+  - The `/agent` result branch now renders non-empty unknown result output as successful final content below the success header.
+  - Existing explicit failure/budget branches remain intact.
+- `tests/frontend/agent_result_rendering_smoke.js`
+  - Added a focused frontend contract smoke test for the result rendering branch.
+
+Plain-language read: Hajimi now keeps the "done" label and also carries the actual answer to the chat card, instead of dropping the answer and showing only `Success`.
+
+Verification performed:
+
+```text
+cargo fmt -- --check
+Result: PASS
+```
+
+```text
+cargo test -p intelligence-agent-core agent_loop --lib
+Result: PASS, 40 passed
+```
+
+```text
+cargo test -p intelligence-agent-core llm_native --lib
+Result: PASS, 34 passed
+```
+
+```text
+cargo test -p hajimi-desktop agent_outcome_output
+Result: PASS, 3 passed
+```
+
+```text
+cargo check -p hajimi-desktop
+Result: PASS
+```
+
+```text
+node --check src/interface/web/app.js
+Result: PASS
+```
+
+```text
+node tests/frontend/agent_result_rendering_smoke.js
+Result: PASS
+```
+
+Known validation still required:
+
+```text
+/agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。
+```
+
+Expected real WebView result:
+
+- The chat card should show success plus the actual final answer content.
+- It must not show only `智能体任务已成功完成！(Success)`.
+- If the model returns an empty final answer, the UI may still show the no-display-content fallback.

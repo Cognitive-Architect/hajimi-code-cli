@@ -2777,6 +2777,13 @@ pub enum AgentUiEvent {
     },
 }
 
+fn agent_outcome_output(outcome: agent_core::agent_loop::LoopOutcome) -> String {
+    match outcome {
+        agent_core::agent_loop::LoopOutcome::SuccessWithMessage(message) => message,
+        other => format!("{:?}", other),
+    }
+}
+
 /// 启动并运行 Proactive Agent 核心任务循环
 #[tauri::command]
 async fn run_agent_task(
@@ -2852,10 +2859,8 @@ async fn run_agent_task(
 
     match agent_loop.execute_goal(agent_id, trimmed_goal).await {
         Ok(outcome) => {
-            let outcome_str = format!("{:?}", outcome);
-            let _ = on_event.send(AgentUiEvent::Result {
-                output: outcome_str,
-            });
+            let output = agent_outcome_output(outcome);
+            let _ = on_event.send(AgentUiEvent::Result { output });
             let _ = on_event.send(AgentUiEvent::Done);
         }
         Err(e) => {
@@ -3790,6 +3795,31 @@ mod tests {
             pending.lock().await.get(&request_id).is_none(),
             "timed out approval request should be removed from pending map"
         );
+    }
+
+    #[test]
+    fn agent_outcome_output_returns_success_message() {
+        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::SuccessWithMessage(
+            "a\nb\nc".to_string(),
+        ));
+
+        assert_eq!(output, "a\nb\nc");
+    }
+
+    #[test]
+    fn agent_outcome_output_keeps_legacy_success() {
+        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::Success);
+
+        assert_eq!(output, "Success");
+    }
+
+    #[test]
+    fn agent_outcome_output_keeps_failure_debug_shape() {
+        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::ActFailed(
+            "boom".into(),
+        ));
+
+        assert_eq!(output, "ActFailed(\"boom\")");
     }
 
     #[test]

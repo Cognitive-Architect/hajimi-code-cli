@@ -629,7 +629,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             outcome,
-            LoopOutcome::Success | LoopOutcome::BudgetExceeded | LoopOutcome::Aborted
+            LoopOutcome::Success
+                | LoopOutcome::SuccessWithMessage(_)
+                | LoopOutcome::BudgetExceeded
+                | LoopOutcome::Aborted
         ));
     }
 }

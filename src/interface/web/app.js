@@ -3172,7 +3172,7 @@ window.app = {
         content: `**智能体执行中...**\n\n${statusHistory.join('\n')}`
       });
     } else if (event.type === 'result') {
-      const outcome = event.output;
+      const outcome = event.output || '';
       let friendlyOutcome = '';
       let isSuccess = false;
       
@@ -3186,8 +3186,12 @@ window.app = {
       } else if (outcome && outcome.startsWith('ActFailed')) {
         const errorDetail = outcome.slice(10, -1) || '';
         friendlyOutcome = `❌ 智能体在执行动作时失败：${errorDetail} (ActFailed)`;
+      } else if (outcome.trim()) {
+        friendlyOutcome = `✅ 智能体任务已成功完成！\n\n${outcome}`;
+        isSuccess = true;
       } else {
-        friendlyOutcome = `⚠️ 智能体任务结束，结果为：${outcome}`;
+        friendlyOutcome = '✅ 智能体任务已成功完成，但没有返回可展示内容。';
+        isSuccess = true;
       }
 
       this.updateTurnResponse(turn, {
