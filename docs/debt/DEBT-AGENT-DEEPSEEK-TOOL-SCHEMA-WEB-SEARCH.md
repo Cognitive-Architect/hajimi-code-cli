@@ -3,7 +3,7 @@
 > **ID**: `DEBT-AGENT-DEEPSEEK-TOOL-SCHEMA-WEB-SEARCH`  
 > **Priority**: **P0**  
 > **Date**: 2026-05-30  
-> **Status**: `OPEN / INVESTIGATING`  
+> **Status**: `IMPLEMENTED_PENDING_SMOKE`  
 > **Scope**: Desktop `/agent`, LLM-Native tool export, DeepSeek/OpenAI-compatible tool schema
 
 ---
@@ -264,3 +264,24 @@ Stop condition: if DeepSeek then rejects another tool name, record that tool and
 This is no longer primarily a local file access problem. The current blocker is provider-side tool schema compatibility: DeepSeek refuses the request because `web_search` is exported with an invalid/incomplete JSON Schema.
 
 The earlier fallback repair succeeded in exposing the real error; `/agent` now needs tool schema normalization or complete schema coverage before DeepSeek can accept the turn.
+
+---
+
+## 10. Implementation and Resolution Record (Day 1 - Day 3)
+
+The P0 DeepSeek tool schema problem has been fully addressed by implementing a robust "Dual-Shield Schema Defense" mechanism:
+
+### 10.1 Intelligence Tier Defense (Day 1)
+- Added a static schema for the registered desktop tool `web_search` under `ToolSpecExporter::get_tool_schema` (defined in `src/intelligence/agent-core/llm_native/tool_spec.rs`). The schema is properly defined as an `object` type with a required `query` parameter (type: `string`).
+- Implemented `ToolSpecExporter::normalize_parameters_schema` which sanitizes and normalizes all exported tool parameters. If the schema is missing, null, empty, or not a JSON Object, it degrades gracefully to a default `{ "type": "object", "properties": {}, "additionalProperties": true }` schema. If a schema is an object but lacks the top-level `"type": "object"` property, it is automatically added.
+
+### 10.2 Engine Tier Defense (Day 2)
+- Added `normalize_tool_parameters_for_openai` to `src/engine/llm-core/src/openai.rs` at the final API serialization boundary. This serves as a secondary defense line (the "last mile" gatekeeper) that prevents any malformed schema from reaching the DeepSeek / OpenAI API, avoiding the strict JSON Schema Bad Request failures.
+
+### 10.3 Integration and Completeness Gates (Day 3)
+- Added 12 total robust unit tests inside `llm_native/tool_spec.rs` and 27 tests in `engine/llm-core` to verify single and batch tool exports under various malformed, empty, or normal scenarios, asserting that every exported schema type is guaranteed to be `"object"`.
+- Verified 100% backward-compatibility across all 375+ tests in the workspace test suites, which all passed successfully.
+
+### 10.4 Current Status
+- **Current State**: `IMPLEMENTED_PENDING_SMOKE`
+- **Next Steps**: Day 4 verification is scheduled to perform live real-machine API smoke testing with `/agent` to confirm complete resolution and permanently close this P0 debt item.

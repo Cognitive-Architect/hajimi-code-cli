@@ -252,7 +252,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 | `lsp_integration.rs` | `LspContextProvider` / `ASTContextProvider`, `enhance_retrieve_with_ast()` (Phase 4 Day 2) | ~120 |
 | `prompts/mod.rs` | Prompt resources and feature gates; `is_agent_skills_v0_enabled()` reads `HAJIMI_AGENT_SKILLS_V0` and defaults to false | ~70 |
 | `llm_native/mod.rs` | LLM-Native 模块导出 | ~15 |
-| `llm_native/specs.rs` | 模型可见工具规格 `ModelVisibleToolSpec` 导出 | ~85 |
+| `llm_native/tool_spec.rs` | 模型可见工具规格 `ModelVisibleToolSpec` 导出与 DeepSeek-compatible schema 规范化防御边界 | ~514 |
 | `llm_native/driver.rs` | `LlmNativeDriver` 调度核心实现 | ~145 |
 | `llm_native/turn.rs` | `llm_native_turn` 多轮工具流式迭代调度环 (含 Governance 前置安全鉴权网关与非阻塞 Trace 审计 TraceEvent 发射) | ~712 |
 
@@ -317,7 +317,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
 
 **关键特性**:
 - **7步循环**: Observe → Retrieve → Plan → Act → Reflect → Store → Decide
-- **双轨路由与分支隔离**: `is_agent_llm_native_enabled` 双轨双控分支。当开关开启且持有 `LlmNativeDriver` 时，100% 进入新 LLM-Native 路径独立流式执行，同时具备空 goal 拦截与 Driver 空指针安全 fallback 机制。
+- **双轨路由与分支隔离**: `is_agent_llm_native_enabled` 双轨双控分支。当开关开启且持有 `LlmNativeDriver` 时，100% 进入新 LLM-Native 路径独立流式执行，同时具备空 goal 拦截与 Driver 空指针安全 fallback 机制。桌面端通过 `DesktopAgentTurnDriver`（`interface/desktop/src/main.rs`）动态延迟绑定注入，解决全局单例 AgentLoop vs 运行时 Provider 切换矛盾（P0-DRIVER-INJECTION-2026-05-30 修复）。
 - **可插拔治理**: `GovernancePolicy` trait 支持运行时策略注册
 - **Swarm协调**: Supervisor-Worker多Agent协作，`TaskAssignment`/`WorkerResult`通信
 - **LLM 桥接**: `PlannerLlmBridge` / `ReflectorLlmBridge` 将 `engine_llm_core::LlmClient` 桥接到上层 trait，零侵入 planner.rs / reflector.rs ⭐
@@ -934,4 +934,10 @@ interface/mcp-server/
 - **DEBT-AGENT-CHINESE-I18N** (中英文关键词过滤与语义改写层): ✅ **CLOSED (已完全割除与清偿)** (2026-05-29)
   - **割除范围**: `planner.rs` (decompose_rule_based, generate_tasks_for) 彻底清除多语言关键词硬编码逻辑，实现输入意图的纯净直达。
   - **清偿依据与路线图**: 详见 [LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md](file:///F:/hajimi-code-cli/docs/roadmap/Hajimi%20LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md) 以及 Day 22 验收报告。
+
+- **DEBT-AGENT-LLM-NATIVE-DRIVER-INJECTION** (P0 桌面端 LLM-Native Driver 未注入): ✅ **FIXED** (2026-05-30)
+  - **修复方案**: `DesktopAgentTurnDriver` 动态延迟绑定。通过 `Arc<RwLock<Option<Arc<dyn LlmClient>>>>` 共享槽位，`run_agent_task` 写入当前 Provider 的 client，`run_turn` 时读取并委托给真实 `LlmNativeDriver`。
+  - **变更文件**: `interface/desktop/src/main.rs`（新增 struct + trait impl + AppState 字段 + setup 装配 + run_agent_task 注入），`agent-core/agent_loop.rs`（增强 warn 日志）。
+  - **验证**: `cargo check --workspace` 0 errors，`cargo test -p intelligence-agent-core --lib` 325 passed，`cargo test --test llm_native_e2e_tests` 5 passed。
+  - **路线图**: 详见 [P0-LLM-NATIVE-DRIVER-INJECTION-FIX.md](file:///F:/hajimi-code-cli/docs/roadmap/hajimi%20interface/plan/P0-LLM-NATIVE-DRIVER-INJECTION-FIX.md)。
 
