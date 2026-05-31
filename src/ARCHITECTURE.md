@@ -145,6 +145,16 @@
 | `web/` | Web界面 | 纯 HTML/CSS/JS, Tauri v2 前端 | ✅ 稳定 |
 | `desktop/` | 桌面后端 | Tauri v2 Rust 后端，38+工具注册 | ✅ 稳定 |
 
+> <!-- P0-DRIVER-INJECTION-2026-05-30: DesktopAgentTurnDriver 装配线接通 -->
+> **P0 LLM-Native Driver 桌面注入 ✅**
+>
+> `interface/desktop/src/main.rs` 新增 `DesktopAgentTurnDriver`（实现 Intelligence 层 `AgentTurnDriver` trait），
+> 通过 `Arc<RwLock<Option<Arc<dyn LlmClient>>>>` 共享槽位实现动态延迟绑定。
+> `run_agent_task` 在每次 Agent 执行前根据用户当前 Provider 选择写入 LlmClient，
+> `DesktopAgentTurnDriver::run_turn` 在执行时读取，委托给 `LlmNativeDriver` 完成真实 LLM 调用。
+> 解决了 AgentLoop 全局单例 vs Provider 运行时动态切换的矛盾。
+> 详见 `docs/roadmap/hajimi interface/plan/P0-LLM-NATIVE-DRIVER-INJECTION-FIX.md`。
+
 ---
 
 ### Phase 5 UI Interaction Core 架构收口（2026-05-15）
@@ -195,6 +205,11 @@ interface ──────┐
 
 ### 3. Tool 系统架构
 统一 `Tool` trait（`name/description/permissions/is_enabled/execute`）。Shell 参数化执行：白名单校验 → 元字符过滤 → `Command::new` 执行，无 `bash -c` 拼接。
+
+#### LLM-Native Tool Schema Boundary (双重 Schema 防御防线)
+为了彻底防范模型提供商（如 DeepSeek/OpenAI）对工具导出 Schema 的严格格式限制（防止其因为 `type: null` 或空的 `properties` 引发 400 Bad Request 导致智能体崩溃），系统构筑了双重 Schema 规范化防线：
+1. **智能层防御 (Intelligence Tier)**: 在 `ToolSpecExporter::from_registry` 转换层，所有导出的工具参数 JSON Schema 均通过 `normalize_parameters_schema` 处理，强制补齐 `"type": "object"` 以及空的 `"properties"` 对象，并提供了高频工具（如 `ReadFileTool`/`WebSearchTool` 等）的完备静态 Schema 模板。
+2. **引擎层防御 (Engine Tier)**: 在最终发送至网络的 API 传输边界（`llm-core` 的 `openai.rs`）实现 `normalize_tool_parameters_for_openai` 纯函数，作为最后一公里的边界防线，即便上游意外泄露不合规 Schema，依然能拦截并降级为安全的 Fallback Schema，彻底杜绝 Bad Request。
 
 ### 4. 5级内存架构 (Codex-Twist)
 ```
