@@ -5,13 +5,15 @@
 //! iterations of Assistant -> ToolCall -> ToolResult -> Assistant until either a terminal
 //! message is received, cancellation is triggered, or maximum iterations budget is exceeded.
 
-use crate::governance::AgentGovernance;
+use crate::agent_loop::{LoopState, TraceEvent, TraceStepType};
+use crate::governance::{AgentGovernance, ApprovalLevel};
 use crate::llm_native::{
     CancellationToken, ModelVisibleToolSpec, RawUserIntent, TurnMessage, TurnOutcome,
 };
 use crate::AgentResult;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 #[async_trait]
 pub trait LlmStepExecutor: Send + Sync {
@@ -54,6 +56,95 @@ fn emit_trace(step: &str, details: &str) {
         step,
         details
     );
+}
+
+fn emit_native_trace(
+    trace_tx: &Option<broadcast::Sender<TraceEvent>>,
+    step: &str,
+    details: &str,
+    iteration: usize,
+) {
+    emit_trace(step, details);
+    if let Some(tx) = trace_tx {
+        let _ = tx.send(TraceEvent {
+            step: LoopState::Acting,
+            details: format!("{}: {}", step, details),
+            iteration,
+            timestamp: chrono::Utc::now(),
+            step_type: TraceStepType::Act,
+            plan_summary: None,
+            reflection_key_points: vec![],
+            confidence_score: None,
+            edit_payload: None,
+            operation_summary: None,
+            thinking_content: None,
+        });
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ToolGovernanceProfile {
+    risk_score: f32,
+    approval_level: ApprovalLevel,
+}
+
+fn is_read_only_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "list_directory"
+            | "list_dir"
+            | "ls"
+            | "read_file"
+            | "grep"
+            | "find"
+            | "glob"
+            | "git_status"
+            | "git_diff"
+            | "git_log"
+            | "lsp_definition"
+            | "lsp_hover"
+            | "lsp_references"
+            | "view_image"
+    )
+}
+
+fn is_existing_low_risk_shell_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "git"
+            | "cargo"
+            | "npm"
+            | "node"
+            | "python3"
+            | "ls"
+            | "cat"
+            | "echo"
+            | "pwd"
+            | "rustc"
+            | "bash"
+            | "sh"
+            | "pwsh"
+            | "powershell"
+            | "curl"
+            | "wget"
+            | "tar"
+            | "unzip"
+            | "make"
+    )
+}
+
+fn tool_governance_profile(tool_name: &str) -> ToolGovernanceProfile {
+    if is_read_only_tool(tool_name) || is_existing_low_risk_shell_tool(tool_name) {
+        ToolGovernanceProfile {
+            risk_score: 0.1,
+            approval_level: ApprovalLevel::Auto,
+        }
+    } else {
+        ToolGovernanceProfile {
+            risk_score: 0.95,
+            approval_level: ApprovalLevel::Critical,
+        }
+    }
 }
 
 /// Thread-safe, non-blocking O(1) Token usage accumulator.
@@ -106,10 +197,37 @@ pub async fn llm_native_turn(
     tool_executor: &dyn LlmToolExecutor,
     intent: RawUserIntent,
     tools: Vec<ModelVisibleToolSpec>,
+    history: Vec<TurnMessage>,
+    governance: Arc<dyn AgentGovernance>,
+    cancellation: CancellationToken,
+    max_iterations: usize,
+) -> AgentResult<TurnOutcome> {
+    llm_native_turn_with_trace(
+        llm_executor,
+        tool_executor,
+        intent,
+        tools,
+        history,
+        governance,
+        cancellation,
+        max_iterations,
+        None,
+    )
+    .await
+}
+
+/// Same as `llm_native_turn`, but emits model tool-call and governance progress to Agent Trace.
+#[allow(clippy::too_many_arguments)]
+pub async fn llm_native_turn_with_trace(
+    llm_executor: &dyn LlmStepExecutor,
+    tool_executor: &dyn LlmToolExecutor,
+    intent: RawUserIntent,
+    tools: Vec<ModelVisibleToolSpec>,
     mut history: Vec<TurnMessage>,
     governance: Arc<dyn AgentGovernance>,
     cancellation: CancellationToken,
     max_iterations: usize,
+    trace_tx: Option<broadcast::Sender<TraceEvent>>,
 ) -> AgentResult<TurnOutcome> {
     let session_id = intent.session_id.clone();
     tracing::trace!(
@@ -149,9 +267,41 @@ pub async fn llm_native_turn(
             history.len()
         );
 
-        let next_msg = llm_executor
+        emit_native_trace(
+            &trace_tx,
+            "ModelStepStarted",
+            &format!(
+                "LLM step {} started with {} model-visible tools and {} history messages.",
+                iterations,
+                tools.len(),
+                history.len()
+            ),
+            iterations,
+        );
+
+        let next_msg = match llm_executor
             .step(&intent, &tools, &history, &cancellation)
-            .await?;
+            .await
+        {
+            Ok(msg) => {
+                emit_native_trace(
+                    &trace_tx,
+                    "ModelStepCompleted",
+                    &format!("LLM step {} completed.", iterations),
+                    iterations,
+                );
+                msg
+            }
+            Err(e) => {
+                emit_native_trace(
+                    &trace_tx,
+                    "ModelStepFailed",
+                    &format!("LLM step {} failed: {}", iterations, e),
+                    iterations,
+                );
+                return Err(e);
+            }
+        };
 
         history.push(next_msg.clone());
 
@@ -267,36 +417,10 @@ pub async fn llm_native_turn(
                             }
                         }
 
-                        // 构造前置审查请求
-                        let is_whitelisted = matches!(
-                            tool_name.as_str(),
-                            "git"
-                                | "cargo"
-                                | "npm"
-                                | "node"
-                                | "python3"
-                                | "ls"
-                                | "cat"
-                                | "echo"
-                                | "pwd"
-                                | "rustc"
-                                | "bash"
-                                | "sh"
-                                | "pwsh"
-                                | "powershell"
-                                | "curl"
-                                | "wget"
-                                | "tar"
-                                | "unzip"
-                                | "make"
-                        );
-
-                        let risk_score = if is_whitelisted { 0.1 } else { 0.95 };
-                        let approval_level = if is_whitelisted {
-                            crate::governance::ApprovalLevel::Auto
-                        } else {
-                            crate::governance::ApprovalLevel::Critical
-                        };
+                        // 构造前置审查请求。只读导航/查看类工具不应走 Critical 弹窗等待。
+                        let profile = tool_governance_profile(&tool_name);
+                        let risk_score = profile.risk_score;
+                        let approval_level = profile.approval_level;
 
                         let req = crate::governance::GovernanceRequest {
                             requester: intent.session_id.clone(),
@@ -311,19 +435,38 @@ pub async fn llm_native_turn(
 
                         // FUNC-001: 在工具执行动作前，显式触发 governance.approve 审查拦截
                         let ctx = crate::AgentContext::new();
-                        emit_trace(
+                        emit_native_trace(
+                            &trace_tx,
                             "ToolCallInitiated",
                             &format!(
                                 "Tool '{}' requested. Initiating governance approval gate.",
                                 tool_name
                             ),
+                            iterations,
+                        );
+                        emit_native_trace(
+                            &trace_tx,
+                            "GovernanceWaiting",
+                            &format!(
+                                "Tool '{}' waiting for {:?} approval with risk score {:.2}.",
+                                tool_name, approval_level, risk_score
+                            ),
+                            iterations,
                         );
 
                         let tool_result_str = match governance.approve(&ctx, &req).await {
                             Ok(crate::governance::Decision::Approved) => {
-                                emit_trace(
+                                emit_native_trace(
+                                    &trace_tx,
                                     "GovernanceApproved",
                                     &format!("Tool '{}' approval granted.", tool_name),
+                                    iterations,
+                                );
+                                emit_native_trace(
+                                    &trace_tx,
+                                    "ToolExecutionStarted",
+                                    &format!("Tool '{}' execution started.", tool_name),
+                                    iterations,
                                 );
 
                                 // 执行工具
@@ -338,16 +481,20 @@ pub async fn llm_native_turn(
                                     .await
                                 {
                                     Ok(res) => {
-                                        emit_trace(
+                                        emit_native_trace(
+                                            &trace_tx,
                                             "ToolExecutionSuccess",
                                             &format!("Tool '{}' executed successfully.", tool_name),
+                                            iterations,
                                         );
                                         res
                                     }
                                     Err(e) => {
-                                        emit_trace(
+                                        emit_native_trace(
+                                            &trace_tx,
                                             "ToolExecutionFailed",
                                             &format!("Tool '{}' failed: {:?}", tool_name, e),
+                                            iterations,
                                         );
                                         format!("Error: {:?}", e)
                                     }
@@ -361,12 +508,14 @@ pub async fn llm_native_turn(
                                     "Security Gate Alert: Permission Denied! Action [execute_tool: {}] was rejected by the Governance policy. Reason: {}. Risk score evaluated: {}",
                                     tool_name, reason, risk_score
                                 );
-                                emit_trace(
+                                emit_native_trace(
+                                    &trace_tx,
                                     "GovernanceRejected",
                                     &format!(
                                         "Tool '{}' execution blocked. Details: {}",
                                         tool_name, err_msg
                                     ),
+                                    iterations,
                                 );
 
                                 // NEG-001: 循环能接住并转化为安全 outcome 返回
@@ -383,12 +532,14 @@ pub async fn llm_native_turn(
                                     "Security Blocked: Action [execute_tool: {}] did not receive Auto or Admin approval. Current decision status: {:?}",
                                     tool_name, other_decision
                                 );
-                                emit_trace(
+                                emit_native_trace(
+                                    &trace_tx,
                                     "GovernanceBlocked",
                                     &format!(
                                         "Tool '{}' execution was blocked: {:?}",
                                         tool_name, other_decision
                                     ),
+                                    iterations,
                                 );
 
                                 return Ok(TurnOutcome {
@@ -402,7 +553,12 @@ pub async fn llm_native_turn(
                             Err(e) => {
                                 let err_msg =
                                     format!("Governance Internal Error during approval: {:?}", e);
-                                emit_trace("GovernanceError", &err_msg);
+                                emit_native_trace(
+                                    &trace_tx,
+                                    "GovernanceError",
+                                    &err_msg,
+                                    iterations,
+                                );
                                 return Ok(TurnOutcome {
                                     success: false,
                                     final_message: Some(err_msg),
@@ -601,6 +757,154 @@ mod tests {
             } else {
                 Ok(format!("Executed {} successfully", name))
             }
+        }
+    }
+
+    #[test]
+    fn test_read_only_tools_are_not_promoted_to_critical() {
+        for tool in [
+            "list_directory",
+            "list_dir",
+            "read_file",
+            "grep",
+            "find",
+            "glob",
+            "git_status",
+            "git_diff",
+            "git_log",
+        ] {
+            let profile = tool_governance_profile(tool);
+            assert_eq!(
+                profile.approval_level,
+                crate::governance::ApprovalLevel::Auto,
+                "tool {} should not require manual Critical approval",
+                tool
+            );
+            assert!(
+                profile.risk_score < 0.4,
+                "tool {} should be treated as low risk",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn test_mutating_or_unknown_tools_remain_critical() {
+        for tool in ["write_file", "edit_file", "delete_file", "unknown_tool"] {
+            let profile = tool_governance_profile(tool);
+            assert_eq!(
+                profile.approval_level,
+                crate::governance::ApprovalLevel::Critical,
+                "tool {} should still require explicit approval",
+                tool
+            );
+            assert!(
+                profile.risk_score > 0.9,
+                "tool {} should remain high risk",
+                tool
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_native_turn_emits_tool_governance_trace_events() {
+        let step1 = TurnMessage::Assistant {
+            content: None,
+            tool_calls: vec![serde_json::json!({
+                "name": "list_directory",
+                "id": "call_list",
+                "arguments": {
+                    "path": "."
+                }
+            })],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Listed files.".to_string()),
+            tool_calls: vec![],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2]);
+        let tools = MockLlmToolExecutor::new(vec![("list_directory", "Cargo.toml\nsrc")]);
+        let intent = RawUserIntent::from_text("List files", "session_trace_test");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+
+        let outcome = llm_native_turn_with_trace(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+            Some(tx),
+        )
+        .await
+        .expect("llm_native_turn_with_trace failed");
+
+        assert!(outcome.success);
+
+        let mut details = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            details.push(event.details);
+        }
+
+        for expected in [
+            "ModelStepStarted",
+            "ModelStepCompleted",
+            "ToolCallInitiated",
+            "GovernanceWaiting",
+            "GovernanceApproved",
+            "ToolExecutionStarted",
+            "ToolExecutionSuccess",
+        ] {
+            assert!(
+                details.iter().any(|detail| detail.contains(expected)),
+                "missing trace event {}; got {:?}",
+                expected,
+                details
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_native_turn_emits_model_step_failure_trace_event() {
+        let llm = MockLlmStepExecutor::new(vec![]);
+        let tools = MockLlmToolExecutor::new(vec![]);
+        let intent = RawUserIntent::from_text("List files", "session_trace_failure_test");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+
+        let result = llm_native_turn_with_trace(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            1,
+            Some(tx),
+        )
+        .await;
+
+        assert!(result.is_err());
+
+        let mut details = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            details.push(event.details);
+        }
+
+        for expected in ["ModelStepStarted", "ModelStepFailed"] {
+            assert!(
+                details.iter().any(|detail| detail.contains(expected)),
+                "missing trace event {}; got {:?}",
+                expected,
+                details
+            );
         }
     }
 

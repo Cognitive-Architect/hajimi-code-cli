@@ -1022,11 +1022,13 @@ impl LlmClient for OpenAiClient {
 
         let key = api_key_secret.expose_secret().to_string();
         let usage_ref = self.last_usage.clone();
+        let timeout = std::time::Duration::from_millis(self.timeout_ms.max(1));
         tokio::spawn(async move {
             match client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", key))
                 .json(&req)
+                .timeout(timeout)
                 .send()
                 .await
             {

@@ -6,8 +6,9 @@
 //! Phase 2 Day 10: Real streaming, tool call parsing, and context management
 //! integrated with the Engine layer LlmClient stream_chat_with_tools.
 
+use crate::agent_loop::TraceEvent;
 use crate::governance::AgentGovernance;
-use crate::llm_native::turn::{llm_native_turn, LlmStepExecutor, LlmToolExecutor};
+use crate::llm_native::turn::{llm_native_turn_with_trace, LlmStepExecutor, LlmToolExecutor};
 use crate::llm_native::{ModelVisibleToolSpec, RawUserIntent};
 use crate::AgentResult;
 use async_trait::async_trait;
@@ -92,6 +93,21 @@ pub trait AgentTurnDriver: Send + Sync {
         cancellation: CancellationToken,
     ) -> crate::AgentResult<TurnOutcome>;
 
+    /// Execute one full turn and optionally stream native turn trace events.
+    async fn run_turn_with_trace(
+        &self,
+        intent: RawUserIntent,
+        tools: Vec<ModelVisibleToolSpec>,
+        history: Vec<TurnMessage>,
+        governance: Arc<dyn AgentGovernance>,
+        cancellation: CancellationToken,
+        trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
+    ) -> crate::AgentResult<TurnOutcome> {
+        let _ = trace_tx;
+        self.run_turn(intent, tools, history, governance, cancellation)
+            .await
+    }
+
     /// Optional: build the request object without actually calling the LLM (for testing / dry-run).
     async fn build_request(
         &self,
@@ -132,6 +148,62 @@ impl LlmNativeDriver {
     ) -> Self {
         self.tool_registry = Some(registry);
         self
+    }
+
+    async fn run_turn_inner(
+        &self,
+        intent: RawUserIntent,
+        tools: Vec<ModelVisibleToolSpec>,
+        history: Vec<TurnMessage>,
+        governance: Arc<dyn AgentGovernance>,
+        cancellation: CancellationToken,
+        trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
+    ) -> crate::AgentResult<TurnOutcome> {
+        tracing::trace!(
+            "[LLM-Native] LlmNativeDriver: executing run_turn for session_id = {}",
+            intent.session_id
+        );
+
+        if cancellation.is_cancelled() {
+            tracing::trace!("[LLM-Native] LlmNativeDriver: run_turn execution cancelled early");
+            return Ok(TurnOutcome {
+                success: false,
+                final_message: Some("Cancelled".to_string()),
+                tool_calls_executed: 0,
+                iterations: 0,
+                execution_history: None,
+            });
+        }
+
+        if self.client.is_none() {
+            tracing::trace!(
+                "[LLM-Native] LlmNativeDriver: client is None, falling back to skeleton outcome"
+            );
+            return Ok(TurnOutcome {
+                success: true,
+                final_message: Some(
+                    "[LLM-Native skeleton] No real LLM call yet. This is a placeholder turn."
+                        .to_string(),
+                ),
+                tool_calls_executed: 0,
+                iterations: 1,
+                execution_history: None,
+            });
+        }
+
+        let tool_executor = DefaultToolExecutor::new(self.tool_registry.clone());
+        llm_native_turn_with_trace(
+            self,
+            &tool_executor,
+            intent,
+            tools,
+            history,
+            governance,
+            cancellation,
+            10,
+            trace_tx,
+        )
+        .await
     }
 }
 
@@ -223,19 +295,36 @@ impl LlmStepExecutor for LlmNativeDriver {
             })
             .collect();
 
+        let timeout_ms = client.timeout_ms().max(1);
+        let timeout_duration = std::time::Duration::from_millis(timeout_ms);
+
         // 3. Call stream_chat_with_tools
         // FUNC-001: LlmNativeDriver能调用 stream_chat_with_tools 方法
-        let mut stream = client
-            .stream_chat_with_tools(
+        let mut stream = match tokio::time::timeout(
+            timeout_duration,
+            client.stream_chat_with_tools(
                 chat_messages,
                 None,
                 tool_definitions,
                 engine_llm_core::ToolChoiceMode::Auto,
-            )
-            .await
-            .map_err(|e| {
-                crate::ports::AgentError::Internal(format!("LLM stream error: {:?}", e))
-            })?;
+            ),
+        )
+        .await
+        {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(e)) => {
+                return Err(crate::ports::AgentError::Internal(format!(
+                    "LLM stream error: {:?}",
+                    e
+                )));
+            }
+            Err(_) => {
+                return Err(crate::ports::AgentError::Internal(format!(
+                    "LLM stream start timed out after {}ms",
+                    timeout_ms
+                )));
+            }
+        };
 
         // 4. Stream parsing status machine
         struct PendingTool {
@@ -248,7 +337,18 @@ impl LlmStepExecutor for LlmNativeDriver {
         let mut completed_tool_calls: Vec<serde_json::Value> = Vec::new();
         let mut assistant_content = String::new();
 
-        while let Some(chunk) = stream.next().await {
+        loop {
+            let chunk = match tokio::time::timeout(timeout_duration, stream.next()).await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) => {
+                    return Err(crate::ports::AgentError::Internal(format!(
+                        "LLM stream stalled for {}ms while waiting for next chunk",
+                        timeout_ms
+                    )));
+                }
+            };
+
             if cancellation.is_cancelled() {
                 tracing::trace!("[LLM-Native] Step execution cancelled during stream processing");
                 return Ok(TurnMessage::Assistant {
@@ -371,38 +471,25 @@ impl LlmToolExecutor for DefaultToolExecutor {
         name: &str,
         arguments: &serde_json::Value,
         _call_id: &str,
-        governance: Arc<dyn AgentGovernance>,
+        _governance: Arc<dyn AgentGovernance>,
         _cancellation: &CancellationToken,
     ) -> AgentResult<String> {
         if let Some(ref reg) = self.registry {
             let guard = reg.lock().await;
-            if let Some(tool) = guard.get(name) {
-                let ctx = crate::AgentContext::new();
-                let req = crate::governance::GovernanceRequest {
-                    requester: "llm_native_driver".to_string(),
-                    action_type: name.to_string(),
-                    risk_score: 0.5,
-                    description: format!("Execute tool {} with args {:?}", name, arguments),
-                    level: crate::governance::ApprovalLevel::Required,
-                };
-                match governance.approve(&ctx, &req).await {
-                    Ok(crate::governance::Decision::Approved) => {
-                        let args_val = arguments.clone();
-                        match tool.execute(args_val).await {
-                            Ok(out) => {
-                                if out.exit_code == Some(0) {
-                                    Ok(out.stdout)
-                                } else {
-                                    Ok(out.stderr)
-                                }
-                            }
-                            Err(e) => Ok(format!("Tool execution error: {:?}", e)),
+            let tool = guard.get(name);
+            drop(guard);
+
+            if let Some(tool) = tool {
+                let args_val = arguments.clone();
+                match tool.execute(args_val).await {
+                    Ok(out) => {
+                        if out.exit_code == Some(0) {
+                            Ok(out.stdout)
+                        } else {
+                            Ok(out.stderr)
                         }
                     }
-                    Ok(crate::governance::Decision::Rejected(r)) => {
-                        Ok(format!("Rejected by governance: {}", r))
-                    }
-                    _ => Ok("Rejected or pending".to_string()),
+                    Err(e) => Ok(format!("Tool execution error: {:?}", e)),
                 }
             } else {
                 Ok(format!("Tool '{}' not found in registry", name))
@@ -426,53 +513,21 @@ impl AgentTurnDriver for LlmNativeDriver {
         governance: Arc<dyn AgentGovernance>,
         cancellation: CancellationToken,
     ) -> crate::AgentResult<TurnOutcome> {
-        // Trace tracking message to satisfy UX-001/UX-002:
-        tracing::trace!(
-            "[LLM-Native] LlmNativeDriver: executing run_turn for session_id = {}",
-            intent.session_id
-        );
+        self.run_turn_inner(intent, tools, history, governance, cancellation, None)
+            .await
+    }
 
-        if cancellation.is_cancelled() {
-            tracing::trace!("[LLM-Native] LlmNativeDriver: run_turn execution cancelled early");
-            return Ok(TurnOutcome {
-                success: false,
-                final_message: Some("Cancelled".to_string()),
-                tool_calls_executed: 0,
-                iterations: 0,
-                execution_history: None,
-            });
-        }
-
-        if self.client.is_none() {
-            // Skeleton mode fallback
-            tracing::trace!(
-                "[LLM-Native] LlmNativeDriver: client is None, falling back to skeleton outcome"
-            );
-            return Ok(TurnOutcome {
-                success: true,
-                final_message: Some(
-                    "[LLM-Native skeleton] No real LLM call yet. This is a placeholder turn."
-                        .to_string(),
-                ),
-                tool_calls_executed: 0,
-                iterations: 1,
-                execution_history: None,
-            });
-        }
-
-        // Complete the loop execution using the new Day 9 turn scheduler
-        let tool_executor = DefaultToolExecutor::new(self.tool_registry.clone());
-        llm_native_turn(
-            self,
-            &tool_executor,
-            intent,
-            tools,
-            history,
-            governance,
-            cancellation,
-            10, // max iterations
-        )
-        .await
+    async fn run_turn_with_trace(
+        &self,
+        intent: RawUserIntent,
+        tools: Vec<ModelVisibleToolSpec>,
+        history: Vec<TurnMessage>,
+        governance: Arc<dyn AgentGovernance>,
+        cancellation: CancellationToken,
+        trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
+    ) -> crate::AgentResult<TurnOutcome> {
+        self.run_turn_inner(intent, tools, history, governance, cancellation, trace_tx)
+            .await
     }
 }
 
@@ -482,7 +537,11 @@ mod tests {
     use crate::governance::AgentGovernance;
     use crate::llm_native::RawUserIntent;
     use chimera_repl::traits::ReplResult;
-    use std::sync::Arc;
+    use engine_tool_system::{
+        Config, Tool, ToolArgs, ToolError, ToolOutput, ToolPermissions, ToolRegistry,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     /// Mock governance that always approves — used so driver tests are not blocked
     /// by the security-critical `DefaultGovernance` whitelist logic added in Day 12.
@@ -593,6 +652,197 @@ mod tests {
         }
         fn last_usage(&self) -> Option<engine_llm_core::Usage> {
             None
+        }
+    }
+
+    struct HangingStreamLlmClient {
+        provider: engine_llm_core::LlmProvider,
+        retained_senders: Arc<Mutex<Vec<tokio::sync::mpsc::Sender<engine_llm_core::StreamChunk>>>>,
+        timeout_ms: u64,
+    }
+
+    #[async_trait]
+    impl engine_llm_core::LlmClient for HangingStreamLlmClient {
+        async fn stream_chat(
+            &self,
+            _prompt: String,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+
+        async fn stream_chat_with_context(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+
+        async fn stream_chat_with_tools(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+            _tools: Vec<engine_llm_core::ToolDefinition>,
+            _tool_choice: engine_llm_core::ToolChoiceMode,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            let (stream, tx) = engine_llm_core::ChannelStream::new(1);
+            self.retained_senders.lock().unwrap().push(tx);
+            Ok(stream)
+        }
+
+        fn provider(&self) -> &engine_llm_core::LlmProvider {
+            &self.provider
+        }
+
+        fn count_tokens(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _model: &str,
+        ) -> Result<usize, engine_llm_core::EngineError> {
+            Ok(0)
+        }
+
+        fn timeout_ms(&self) -> u64 {
+            self.timeout_ms
+        }
+
+        fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+            None
+        }
+    }
+
+    struct HangingStartLlmClient {
+        provider: engine_llm_core::LlmProvider,
+        timeout_ms: u64,
+    }
+
+    #[async_trait]
+    impl engine_llm_core::LlmClient for HangingStartLlmClient {
+        async fn stream_chat(
+            &self,
+            _prompt: String,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+
+        async fn stream_chat_with_context(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            unimplemented!()
+        }
+
+        async fn stream_chat_with_tools(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _system_prompt: Option<String>,
+            _tools: Vec<engine_llm_core::ToolDefinition>,
+            _tool_choice: engine_llm_core::ToolChoiceMode,
+        ) -> Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError> {
+            std::future::pending::<
+                Result<engine_llm_core::ChannelStream, engine_llm_core::EngineError>,
+            >()
+            .await
+        }
+
+        fn provider(&self) -> &engine_llm_core::LlmProvider {
+            &self.provider
+        }
+
+        fn count_tokens(
+            &self,
+            _messages: Vec<engine_llm_core::ChatMessage>,
+            _model: &str,
+        ) -> Result<usize, engine_llm_core::EngineError> {
+            Ok(0)
+        }
+
+        fn timeout_ms(&self) -> u64 {
+            self.timeout_ms
+        }
+
+        fn last_usage(&self) -> Option<engine_llm_core::Usage> {
+            None
+        }
+    }
+
+    struct DummyReadTool;
+
+    #[async_trait]
+    impl Tool for DummyReadTool {
+        fn name(&self) -> &str {
+            "read_file"
+        }
+
+        fn description(&self) -> &str {
+            "Dummy read tool"
+        }
+
+        fn permissions(&self) -> ToolPermissions {
+            ToolPermissions::default()
+        }
+
+        fn is_enabled(&self, _config: &Config) -> bool {
+            true
+        }
+
+        async fn execute(&self, _args: ToolArgs) -> Result<ToolOutput, ToolError> {
+            Ok(ToolOutput::success("file contents"))
+        }
+    }
+
+    struct CountingApprovalGovernance {
+        approvals: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl AgentGovernance for CountingApprovalGovernance {
+        async fn policy(
+            &self,
+            _ctx: &crate::AgentContext,
+            req: &crate::governance::GovernanceRequest,
+        ) -> crate::governance::ApprovalLevel {
+            req.level
+        }
+        async fn approve(
+            &self,
+            _ctx: &crate::AgentContext,
+            _req: &crate::governance::GovernanceRequest,
+        ) -> ReplResult<crate::governance::Decision> {
+            self.approvals.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::governance::Decision::Approved)
+        }
+        async fn vote(
+            &self,
+            _voter_id: &str,
+            _proposal_id: &str,
+            _vote: crate::governance::Vote,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn escalate(
+            &self,
+            req: &crate::governance::GovernanceRequest,
+            _to_level: crate::governance::ApprovalLevel,
+        ) -> ReplResult<crate::governance::GovernanceRequest> {
+            Ok(req.clone())
+        }
+        async fn register_policy(
+            &mut self,
+            _name: &str,
+            _policy: Arc<dyn crate::governance::GovernancePolicy>,
+            _caller: &str,
+            _required_level: crate::governance::PermissionLevel,
+        ) -> ReplResult<()> {
+            Ok(())
+        }
+        async fn record_feedback(
+            &self,
+            _ctx: &crate::AgentContext,
+            _feedback: &crate::governance::UserFeedback,
+        ) -> ReplResult<()> {
+            Ok(())
         }
     }
 
@@ -753,6 +1003,127 @@ mod tests {
             .final_message
             .unwrap()
             .contains("Final answer text."));
+    }
+
+    #[tokio::test]
+    async fn test_driver_executes_tool_with_single_governance_approval() {
+        let tool_chunks = vec![
+            engine_llm_core::StreamChunk::ToolCallStart {
+                id: "call_file".to_string(),
+                name: "read_file".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallArgumentsDelta {
+                id: "call_file".to_string(),
+                delta: "{\"path\":\"Cargo.toml\"}".to_string(),
+            },
+            engine_llm_core::StreamChunk::ToolCallEnd {
+                id: "call_file".to_string(),
+            },
+            engine_llm_core::StreamChunk::Done,
+        ];
+        let final_chunks = vec![
+            engine_llm_core::StreamChunk::Output("Done.".to_string()),
+            engine_llm_core::StreamChunk::Done,
+        ];
+
+        let mock_client = Arc::new(MockLlmClientForStreaming {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            call_count: AtomicUsize::new(0),
+            tool_chunks,
+            final_chunks,
+        });
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(DummyReadTool));
+        let registry = Arc::new(tokio::sync::Mutex::new(registry));
+        let approvals = Arc::new(AtomicUsize::new(0));
+        let governance = Arc::new(CountingApprovalGovernance {
+            approvals: approvals.clone(),
+        });
+        let driver = LlmNativeDriver::with_client(mock_client).with_registry(registry);
+
+        let outcome = driver
+            .run_turn(
+                RawUserIntent::from_text("Read Cargo.toml", "single_approval"),
+                vec![],
+                vec![],
+                governance,
+                CancellationToken::new(),
+            )
+            .await
+            .expect("run_turn failed");
+
+        assert!(outcome.success);
+        assert_eq!(outcome.tool_calls_executed, 1);
+        assert_eq!(
+            approvals.load(Ordering::SeqCst),
+            1,
+            "tool execution should not trigger a second governance approval"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_driver_stream_start_times_out_instead_of_hanging() {
+        let mock_client = Arc::new(HangingStartLlmClient {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            timeout_ms: 25,
+        });
+        let driver = LlmNativeDriver::with_client(mock_client);
+        let intent = RawUserIntent::from_text("List files", "stream_start_timeout");
+        let governance = Arc::new(MockApprovedGovernance);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            driver.run_turn(intent, vec![], vec![], governance, CancellationToken::new()),
+        )
+        .await
+        .expect("driver should return before the outer test timeout");
+
+        let err = result.expect_err("driver should surface a stream start timeout");
+        assert!(
+            err.to_string()
+                .contains("LLM stream start timed out after 25ms"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_driver_stream_stall_times_out_instead_of_hanging() {
+        let retained_senders = Arc::new(Mutex::new(Vec::new()));
+        let mock_client = Arc::new(HangingStreamLlmClient {
+            provider: engine_llm_core::LlmProvider::Ollama {
+                base_url: "http://localhost".to_string(),
+                model: "llama3".to_string(),
+            },
+            retained_senders: retained_senders.clone(),
+            timeout_ms: 25,
+        });
+        let driver = LlmNativeDriver::with_client(mock_client);
+        let intent = RawUserIntent::from_text("List files", "stream_stall_timeout");
+        let governance = Arc::new(MockApprovedGovernance);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            driver.run_turn(intent, vec![], vec![], governance, CancellationToken::new()),
+        )
+        .await
+        .expect("driver should return before the outer test timeout");
+
+        let err = result.expect_err("driver should surface a stream stall timeout");
+        assert!(
+            err.to_string()
+                .contains("LLM stream stalled for 25ms while waiting for next chunk"),
+            "unexpected error: {}",
+            err
+        );
+        assert_eq!(retained_senders.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

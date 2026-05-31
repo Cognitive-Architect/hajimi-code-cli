@@ -159,6 +159,42 @@ struct AppState {
     memory_gateway: Arc<MemoryGateway>,
     token_tracker: Arc<TokenUsageTracker>,
     pending_approvals: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+    /// Shared LLM client slot for DesktopAgentTurnDriver.
+    /// Updated by run_agent_task before each agent execution with the user's current provider.
+    /// SAFETY: Arc<RwLock<>> ensures thread-safe concurrent access across Tauri commands.
+    agent_llm_client: Arc<tokio::sync::RwLock<Option<Arc<dyn engine_llm_core::LlmClient>>>>,
+}
+
+const APPROVAL_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+type PendingApprovalMap =
+    Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>;
+
+async fn await_ui_approval_response(
+    pending_approvals: PendingApprovalMap,
+    request_id: String,
+    action_type: String,
+    rx: tokio::sync::oneshot::Receiver<bool>,
+    timeout: std::time::Duration,
+) -> agent_core::governance::Decision {
+    let decision = match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(true)) => agent_core::governance::Decision::Approved,
+        Ok(Ok(false)) => {
+            agent_core::governance::Decision::Rejected("User denied approval".to_string())
+        }
+        Ok(Err(_)) => {
+            agent_core::governance::Decision::Rejected("Approval channel closed".to_string())
+        }
+        Err(_) => agent_core::governance::Decision::Rejected(format!(
+            "Approval timed out while waiting for user response for tool '{}' after {}s",
+            action_type,
+            timeout.as_secs()
+        )),
+    };
+
+    let mut map = pending_approvals.lock().await;
+    map.remove(&request_id);
+    decision
 }
 
 impl AppState {
@@ -2780,6 +2816,13 @@ async fn run_agent_task(
     )
     .await;
 
+    // P0-DRIVER-INJECTION-2026-05-30: Create LlmClient for the user's current provider
+    // and write it to the shared slot so DesktopAgentTurnDriver picks it up at run_turn time.
+    let client_box = create_llm_client(&provider, profile.as_deref(), config.clone())
+        .map_err(|e| format!("Failed to create LLM client for agent: {}", e))?;
+    let client_arc: Arc<dyn engine_llm_core::LlmClient> = Arc::from(client_box);
+    *state.agent_llm_client.write().await = Some(client_arc);
+
     // Send initial status event
     let _ = on_event.send(AgentUiEvent::Status {
         message: format!("Agent task started with goal: {}", trimmed_goal),
@@ -2807,31 +2850,20 @@ async fn run_agent_task(
         });
     }
 
-    let agent_id_clone = agent_id.clone();
-    let goal_clone = goal.clone();
-    let agent_loop_clone = agent_loop.inner().clone();
-    let on_event_clone = on_event.clone();
-
-    // Run long asynchronous goal execution in a background tokio task
-    tokio::spawn(async move {
-        match agent_loop_clone
-            .execute_goal(agent_id_clone, &goal_clone)
-            .await
-        {
-            Ok(outcome) => {
-                let outcome_str = format!("{:?}", outcome);
-                let _ = on_event_clone.send(AgentUiEvent::Result {
-                    output: outcome_str,
-                });
-                let _ = on_event_clone.send(AgentUiEvent::Done);
-            }
-            Err(e) => {
-                let _ = on_event_clone.send(AgentUiEvent::Error {
-                    message: format!("Agent loop execution failed: {}", e),
-                });
-            }
+    match agent_loop.execute_goal(agent_id, trimmed_goal).await {
+        Ok(outcome) => {
+            let outcome_str = format!("{:?}", outcome);
+            let _ = on_event.send(AgentUiEvent::Result {
+                output: outcome_str,
+            });
+            let _ = on_event.send(AgentUiEvent::Done);
         }
-    });
+        Err(e) => {
+            let _ = on_event.send(AgentUiEvent::Error {
+                message: format!("Agent loop execution failed: {}", e),
+            });
+        }
+    }
 
     Ok(())
 }
@@ -3294,6 +3326,71 @@ fn sanitize_description(s: &str) -> String {
     redacted_sk.to_string()
 }
 
+// ------------------------------------------------------------------
+// Desktop LLM-Native Agent Driver (P0-DRIVER-INJECTION-2026-05-30)
+// ------------------------------------------------------------------
+
+/// Desktop LLM-Native Agent Turn Driver with dynamic late-binding.
+///
+/// Resolves the current LlmClient from a shared slot at `run_turn` time,
+/// solving the singleton AgentLoop vs dynamic Provider selection contradiction.
+/// The shared `agent_llm_client` slot is populated by `run_agent_task` before
+/// each agent execution with the user's currently selected provider.
+///
+/// SAFETY: Arc<RwLock<>> guarantees thread-safe concurrent access across Tauri async commands.
+struct DesktopAgentTurnDriver {
+    agent_llm_client: Arc<tokio::sync::RwLock<Option<Arc<dyn engine_llm_core::LlmClient>>>>,
+    tool_registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
+}
+
+#[async_trait]
+impl agent_core::llm_native::AgentTurnDriver for DesktopAgentTurnDriver {
+    async fn run_turn(
+        &self,
+        intent: agent_core::llm_native::RawUserIntent,
+        tools: Vec<agent_core::llm_native::ModelVisibleToolSpec>,
+        history: Vec<agent_core::llm_native::TurnMessage>,
+        governance: Arc<dyn agent_core::governance::AgentGovernance>,
+        cancellation: agent_core::llm_native::CancellationToken,
+    ) -> agent_core::AgentResult<agent_core::llm_native::TurnOutcome> {
+        let client = self.agent_llm_client.read().await.clone().ok_or_else(|| {
+            agent_core::AgentError::Session(
+                "LLM provider not configured. Please select a provider and configure API key before using /agent.".to_string()
+            )
+        })?;
+
+        let driver = agent_core::llm_native::LlmNativeDriver::with_client(client)
+            .with_registry(self.tool_registry.clone());
+
+        driver
+            .run_turn(intent, tools, history, governance, cancellation)
+            .await
+    }
+
+    async fn run_turn_with_trace(
+        &self,
+        intent: agent_core::llm_native::RawUserIntent,
+        tools: Vec<agent_core::llm_native::ModelVisibleToolSpec>,
+        history: Vec<agent_core::llm_native::TurnMessage>,
+        governance: Arc<dyn agent_core::governance::AgentGovernance>,
+        cancellation: agent_core::llm_native::CancellationToken,
+        trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
+    ) -> agent_core::AgentResult<agent_core::llm_native::TurnOutcome> {
+        let client = self.agent_llm_client.read().await.clone().ok_or_else(|| {
+            agent_core::AgentError::Session(
+                "LLM provider not configured. Please select a provider and configure API key before using /agent.".to_string()
+            )
+        })?;
+
+        let driver = agent_core::llm_native::LlmNativeDriver::with_client(client)
+            .with_registry(self.tool_registry.clone());
+
+        driver
+            .run_turn_with_trace(intent, tools, history, governance, cancellation, trace_tx)
+            .await
+    }
+}
+
 struct UiBridgeGovernance {
     inner: Arc<agent_core::governance::DefaultGovernance>,
     app_handle: tauri::AppHandle,
@@ -3360,6 +3457,7 @@ impl agent_core::governance::AgentGovernance for UiBridgeGovernance {
                     action_type: String,
                     risk_score: f32,
                     description: String,
+                    timeout_ms: u64,
                 }
 
                 let payload = ApprovalRequestPayload {
@@ -3367,24 +3465,19 @@ impl agent_core::governance::AgentGovernance for UiBridgeGovernance {
                     action_type: redacted_action,
                     risk_score: req.risk_score,
                     description: redacted_description,
+                    timeout_ms: APPROVAL_REQUEST_TIMEOUT.as_millis() as u64,
                 };
 
                 let _ = self.app_handle.emit("approval_request", payload);
 
-                match rx.await {
-                    Ok(approved) => {
-                        if approved {
-                            Ok(agent_core::governance::Decision::Approved)
-                        } else {
-                            Ok(agent_core::governance::Decision::Rejected(
-                                "User denied approval".to_string(),
-                            ))
-                        }
-                    }
-                    Err(_) => Ok(agent_core::governance::Decision::Rejected(
-                        "Approval channel closed".to_string(),
-                    )),
-                }
+                Ok(await_ui_approval_response(
+                    state.pending_approvals.clone(),
+                    request_id,
+                    req.action_type.clone(),
+                    rx,
+                    APPROVAL_REQUEST_TIMEOUT,
+                )
+                .await)
             } else {
                 self.inner.approve(ctx, req).await
             }
@@ -3500,7 +3593,17 @@ fn main() {
             let tool_count = built_registry.list().len();
             let registry = Arc::new(tokio::sync::Mutex::new(built_registry));
 
-            // Create production-ready AgentLoop with planner, reflector, and real ToolRegistry injected.
+            // P0-DRIVER-INJECTION-2026-05-30: Create shared LLM client slot + dynamic Driver
+            let agent_llm_client: Arc<
+                tokio::sync::RwLock<Option<Arc<dyn engine_llm_core::LlmClient>>>,
+            > = Arc::new(tokio::sync::RwLock::new(None));
+
+            let desktop_driver = Arc::new(DesktopAgentTurnDriver {
+                agent_llm_client: agent_llm_client.clone(),
+                tool_registry: registry.clone(),
+            });
+
+            // Create production-ready AgentLoop with planner, reflector, real ToolRegistry, and LLM-Native Driver injected.
             // SAFETY: AgentLoop is Send + Sync; safe to hold in AppState and register with Tauri.
             let agent_loop = {
                 let mem = Arc::new(tokio::sync::Mutex::new(AgentMemoryGateway::new(
@@ -3519,6 +3622,7 @@ fn main() {
                     .with_reflector(reflector)
                     .with_governance(custom_gov)
                     .with_tool_registry(registry.clone()) // Inject real ToolRegistry
+                    .with_native_driver(Some(desktop_driver)) // P0 fix: inject dynamic LLM-Native Driver
                     .build()
                     .expect("AgentLoop build failed")
             };
@@ -3543,6 +3647,7 @@ fn main() {
                 })),
                 token_tracker: Arc::new(TokenUsageTracker::new()),
                 pending_approvals,
+                agent_llm_client,
             };
 
             // Inject the broadcast sender so frontend trace panel receives real AgentLoop events.
@@ -3657,6 +3762,34 @@ mod tests {
 
     fn cleanup_test_workspace(temp: &PathBuf) {
         let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[tokio::test]
+    async fn approval_wait_times_out_and_cleans_pending_request() {
+        let pending: PendingApprovalMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let request_id = "approval-timeout-test".to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        pending.lock().await.insert(request_id.clone(), tx);
+
+        let decision = await_ui_approval_response(
+            pending.clone(),
+            request_id.clone(),
+            "list_directory".to_string(),
+            rx,
+            std::time::Duration::from_millis(5),
+        )
+        .await;
+
+        assert!(matches!(
+            decision,
+            agent_core::governance::Decision::Rejected(ref reason)
+                if reason.contains("Approval timed out")
+                    && reason.contains("list_directory")
+        ));
+        assert!(
+            pending.lock().await.get(&request_id).is_none(),
+            "timed out approval request should be removed from pending map"
+        );
     }
 
     #[test]
@@ -4797,5 +4930,134 @@ mod tests {
         let done_event = AgentUiEvent::Done;
         let done_json = serde_json::to_string(&done_event).unwrap();
         assert_eq!(done_json, r#"{"type":"done"}"#);
+    }
+
+    #[tokio::test]
+    async fn test_capture_agent_trace() {
+        use agent_core::llm_native::AgentTurnDriver;
+        use chimera_repl::ReplResult;
+        println!("🚀 Starting Real Agent Trace Capture E2E...");
+        let providers_path = PathBuf::from(r"C:\Users\22129\AppData\Roaming\hajimi\providers.json");
+        let content =
+            std::fs::read_to_string(&providers_path).expect("Failed to read providers.json");
+        let configs: Vec<ProviderConfig> =
+            serde_json::from_str(&content).expect("Failed to parse providers.json");
+        let cfg = configs
+            .into_iter()
+            .find(|c| c.name == "deepseek")
+            .expect("No provider named deepseek found");
+        println!("Loaded custom provider: {:?}", cfg);
+
+        // Fetch api key
+        let api_key =
+            get_api_key_with_profile(&cfg.id, None).expect("Failed to fetch api key from keyring");
+        println!(
+            "Successfully fetched API Key from OS Keyring (length: {})",
+            api_key.len()
+        );
+
+        let client = create_llm_client(&cfg.id, None, Some(cfg.clone()))
+            .expect("Failed to create llm client");
+        let client_arc: Arc<dyn engine_llm_core::LlmClient> = Arc::from(client);
+
+        // Build empty tool registry
+        let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
+        // Register write_file tool
+        {
+            let mut guard = registry.lock().await;
+            guard.register(Arc::new(engine_tool_system::WriteFileTool::new()));
+        }
+
+        let driver = agent_core::llm_native::LlmNativeDriver::with_client(client_arc)
+            .with_registry(registry);
+
+        let intent = agent_core::llm_native::RawUserIntent::from_text(
+            "请在当前项目根目录下创建一个名为 native-smoke.txt 的文件，文件内容写上 'Hajimi Agent Live!'",
+            "session_capture_trace",
+        );
+
+        struct MockGov;
+        #[async_trait]
+        impl agent_core::governance::AgentGovernance for MockGov {
+            async fn policy(
+                &self,
+                _ctx: &agent_core::AgentContext,
+                _req: &agent_core::governance::GovernanceRequest,
+            ) -> agent_core::governance::ApprovalLevel {
+                agent_core::governance::ApprovalLevel::Auto
+            }
+            async fn approve(
+                &self,
+                _ctx: &agent_core::AgentContext,
+                _req: &agent_core::governance::GovernanceRequest,
+            ) -> ReplResult<agent_core::governance::Decision> {
+                Ok(agent_core::governance::Decision::Approved)
+            }
+            async fn vote(
+                &self,
+                _voter_id: &str,
+                _proposal_id: &str,
+                _vote: agent_core::governance::Vote,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
+            async fn escalate(
+                &self,
+                req: &agent_core::governance::GovernanceRequest,
+                _to_level: agent_core::governance::ApprovalLevel,
+            ) -> ReplResult<agent_core::governance::GovernanceRequest> {
+                Ok(req.clone())
+            }
+            async fn register_policy(
+                &mut self,
+                _name: &str,
+                _policy: Arc<dyn agent_core::governance::GovernancePolicy>,
+                _caller: &str,
+                _required_level: agent_core::governance::PermissionLevel,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
+            async fn record_feedback(
+                &self,
+                _ctx: &agent_core::AgentContext,
+                _feedback: &agent_core::governance::UserFeedback,
+            ) -> ReplResult<()> {
+                Ok(())
+            }
+        }
+        let governance = Arc::new(MockGov);
+
+        let cancellation = agent_core::llm_native::CancellationToken::new();
+
+        let tools = vec![agent_core::llm_native::ModelVisibleToolSpec {
+            name: "write_file".to_string(),
+            namespace: None,
+            description: "Write content into a file".to_string(),
+            parameters_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"]
+            }),
+            supports_parallel: true,
+            risk_level: agent_core::llm_native::RiskLevel::Low,
+        }];
+
+        println!("Executing real llm_native_turn directly...");
+        let result = driver
+            .run_turn(intent, tools, vec![], governance, cancellation)
+            .await;
+        match result {
+            Ok(outcome) => {
+                println!("🎉 Real E2E outcome success: {}", outcome.success);
+                println!("Iterations: {}", outcome.iterations);
+                println!("Final Message: {:?}", outcome.final_message);
+            }
+            Err(e) => {
+                println!("❌ Real E2E error encountered: {:?}", e);
+            }
+        }
     }
 }

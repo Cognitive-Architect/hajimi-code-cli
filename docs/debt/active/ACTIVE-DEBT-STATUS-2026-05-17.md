@@ -55,6 +55,7 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-011 Agent Governance UI waiting | `IMPLEMENTED/PENDING-UI-SMOKE` | P1 | `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
 | AD-012 Agent Checkpoint Diff Preview UI | `EXPLORED/PARTIAL-UI` | P1 | `docs/debt/DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | AD-013 Agent Loop LLM No-Op | CLOSED (CODE-LEVEL AUTOMATION PASS / PENDING-UI-SMOKE) | **P0** | `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-MIGRATION.md` | CLOSED at code and automation level. Arc-Mutex ToolRegistry desktop main injection (Day 4) and LLM Bootstrap mechanism (Day 5) are 100% active and verified. Real Goal->Plan->ToolCall->LLM->Execution->Reflect chain is live. |
+| AD-015 Agent LLM-Native Approval Hang | `CODE-LEVEL FIXED + RELEASE PACKAGED / PENDING-REAL-WEBVIEW-SMOKE` | **P0** | `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md`; `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Code now classifies read-only tools such as `list_directory` as low-risk, forwards native tool/governance events to Agent Trace, removes the duplicate tool-executor approval wait, and times out stale WebView approval requests after 30s with pending cleanup. A Tauri release package has been rebuilt; full closure still requires a real WebView `/agent` smoke. |
 
 ## 4. Manual Verification Debt
 
@@ -89,6 +90,7 @@ The root `docs/debt` directory intentionally keeps only active debt declarations
 ```text
 DEBT-AGENT-CHECKPOINT-DIFF-UI.md
 DEBT-AGENT-GOVERNANCE-UI-WAITING.md
+DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md
 DEBT-AGENT-LOOP-LLM-NO-OP.md
 DEBT-AGENT-SKILLS-V0.md
 DEBT-AGENT-UI-INTEGRATION.md

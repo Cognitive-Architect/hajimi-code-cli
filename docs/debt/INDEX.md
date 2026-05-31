@@ -1,6 +1,6 @@
 # Hajimi Debt Documentation Index
 
-> Updated: 2026-05-25
+> Updated: 2026-05-31
 > Current source of truth: `docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md`
 
 ## Active Summary
@@ -20,6 +20,8 @@ Use this file first:
 | `DEBT-UX-AGENT-001.md` | Startup/filetree/session fixes are code-level complete but need real GUI verification. |
 | `DEBT-UX-B07-001-TAURI-DEV-SMOKE-BLOCKED.md` | Tauri dev smoke blocker remains active. |
 | `DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
+| `DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md` | **P0** — Code-level fixed; pending rebuilt real WebView smoke. `/agent` no longer has an unbounded approval wait in code, read-only tools are not promoted to Critical, and native tool/governance trace events are forwarded. |
+| `DEBT-AGENT-LLM-NATIVE-SUCCESS-RESULT-DROPPED.md` | **P1** — [OPEN / DIAGNOSED] Real desktop `/agent` smoke proves DeepSeek and `list_directory` complete, but the chat card only displays `Success`; likely final-message/result payload is dropped between `TurnOutcome`, `LoopOutcome`, `AgentUiEvent::Result`, and frontend rendering. |
 | `DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | `SHELL-FEATURE-DEBT-002.md` | Complex shell features remain intentionally downgraded by design. |
 | `DEBT-COMPLEXITY-DAY05-001.md` | `bootstrap_first_tool_call` method exceeds 80 lines due to async locks, rule-based safe fallback tool mapping, registry verification, and UX trace emission. |
@@ -32,6 +34,7 @@ Use this file first:
 - `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md`: **P0** — [RESOLVED IN DAY 4/5] Fully resolved via Arc-Mutex ToolRegistry desktop main injection (Day 4) and LLM Bootstrap mechanism (Day 5).
 - `docs/debt/DEBT-AGENT-CHINESE-I18N.md`: **P1** — [RESOLVED IN DAY 22] Completely resolved by removing brittle rule-based intent tamperings and allowing Raw User Intent direct-to-LLM streaming.
 - `docs/debt/DEBT-AGENT-LLM-NATIVE-MIGRATION.md`: **P0/P1** — [RESOLVED IN DAY 24] Grand technical debt closure report, archiving both loop no-op and i18n intent tampering issues and detailing residual micro-debts.
+- `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md`: **P0** — [CODE-LEVEL FIXED + RELEASE PACKAGED / PENDING-REAL-WEBVIEW-SMOKE] Real-machine `/agent` hang diagnosis addressed in code by read-only tool approval classification, approval timeout cleanup, single approval point, native trace forwarding, and a rebuilt Tauri release package.
 
 
 ## Archived In Latest Pass

@@ -194,6 +194,11 @@ impl AgentLoop {
             info!("✨✨ [Hajimi IDE] LLM-Native Agent Loop Core Activated. Routing execution to autonomous LLM-Native path! ✨✨");
             if let Some(ref driver) = self.native_driver {
                 info!("LLM-Native path enabled for goal: {}", initial_goal);
+                self.emit_trace(
+                    LoopState::Acting,
+                    format!("LLM-Native path activated for goal: {}", initial_goal),
+                    0,
+                );
 
                 // 将 Goal 原始自然语言文字封装成 RawUserIntent (HIGH-001 安全红线: 禁止降低/lowering 处理)
                 let intent = crate::llm_native::RawUserIntent::from_text(
@@ -208,18 +213,32 @@ impl AgentLoop {
                 } else {
                     vec![]
                 };
+                self.emit_trace(
+                    LoopState::Acting,
+                    format!(
+                        "LLM-Native exported {} model-visible tools",
+                        tools_spec.len()
+                    ),
+                    0,
+                );
 
                 // 独立的 context (FUNC-004)
                 let cancellation = crate::llm_native::CancellationToken::new();
 
                 info!("LlmNativeDriver starts executing run_turn on LLM-Native path");
+                self.emit_trace(
+                    LoopState::Acting,
+                    "LLM-Native driver run_turn started".to_string(),
+                    0,
+                );
                 match driver
-                    .run_turn(
+                    .run_turn_with_trace(
                         intent,
                         tools_spec,
                         vec![], // 初始历史为空
                         self.governance.clone(),
                         cancellation,
+                        self.trace_tx(),
                     )
                     .await
                 {
@@ -229,13 +248,25 @@ impl AgentLoop {
                             outcome.success, outcome.iterations
                         );
                         if outcome.success {
+                            self.emit_trace(
+                                LoopState::Completed,
+                                format!(
+                                    "LLM-Native driver completed successfully after {} iteration(s)",
+                                    outcome.iterations
+                                ),
+                                0,
+                            );
                             return Ok(LoopOutcome::Success);
                         } else {
-                            return Ok(LoopOutcome::ActFailed(
-                                outcome
-                                    .final_message
-                                    .unwrap_or_else(|| "LLM-Native execution failed".to_string()),
-                            ));
+                            let message = outcome
+                                .final_message
+                                .unwrap_or_else(|| "LLM-Native execution failed".to_string());
+                            self.emit_trace(
+                                LoopState::Acting,
+                                format!("LLM-Native driver completed with failure: {}", message),
+                                0,
+                            );
+                            return Ok(LoopOutcome::ActFailed(message));
                         }
                     }
                     Err(e) => {
