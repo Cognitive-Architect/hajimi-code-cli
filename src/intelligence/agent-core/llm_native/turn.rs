@@ -1295,4 +1295,134 @@ mod tests {
         assert!(final_msg.contains("Potential infinite file modification self-lock detected"));
         assert_eq!(outcome.tool_calls_executed, 2); // Third one is blocked before execution!
     }
+
+    #[tokio::test]
+    async fn final_answer_is_preserved_even_if_token_threshold_crosses_on_final_step() {
+        // Mock LLM step returns Assistant { content: Some("final answer"), tool_calls: [] }
+        // Mock last_usage returns prompt_tokens + completion_tokens >= 8192
+        let step = TurnMessage::Assistant {
+            content: Some("final answer".to_string()),
+            tool_calls: vec![],
+        };
+        let simulated_usage = engine_llm_core::Usage {
+            prompt_tokens: 8500,
+            completion_tokens: 100,
+        };
+        let llm = MockLlmStepExecutor::with_simulated_usage(vec![step], simulated_usage);
+        let tools = MockLlmToolExecutor::new(vec![]);
+
+        let intent = RawUserIntent::from_text("List files", "session_token_meltdown_final");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        // Day 1 EXPECTED RED LIGHT: This will fail in Day 1 baseline because the budget check
+        // happens first, returning TurnOutcome with success = false and Budget Exceeded message.
+        // Once fixed in Day 2, this will succeed and final_message will be Some("final answer").
+        assert!(
+            outcome.success,
+            "Day 1 Expected Red: final answer should be preserved"
+        );
+        assert_eq!(outcome.final_message.as_deref(), Some("final answer"));
+    }
+
+    #[tokio::test]
+    async fn token_threshold_still_handoffs_when_model_requests_more_tools() {
+        // Mock LLM step returns Assistant with tool_calls = [list_directory]
+        // Mock last_usage total >= 8192
+        let step = TurnMessage::Assistant {
+            content: Some("I need to list directory".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "list_directory",
+                "id": "call_1",
+                "arguments": {
+                    "path": "."
+                }
+            })],
+        };
+        let simulated_usage = engine_llm_core::Usage {
+            prompt_tokens: 8500,
+            completion_tokens: 100,
+        };
+        let llm = MockLlmStepExecutor::with_simulated_usage(vec![step], simulated_usage);
+        let tools = MockLlmToolExecutor::new(vec![("list_directory", "{}")]);
+
+        let intent = RawUserIntent::from_text("List files", "session_token_meltdown_tools");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        // This should fail (handoff / success = false) because there are tool calls and token limit is crossed.
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(final_msg.contains("Budget Exceeded") || final_msg.contains("Budget Meltdown"));
+        assert_eq!(outcome.tool_calls_executed, 0); // No tools should be executed because it halts before execution
+    }
+
+    #[tokio::test]
+    async fn llm_native_turn_seeds_current_user_intent_once() {
+        let step = TurnMessage::Assistant {
+            content: Some("final answer".to_string()),
+            tool_calls: vec![],
+        };
+        let llm = MockLlmStepExecutor::new(vec![step]);
+        let tools = MockLlmToolExecutor::new(vec![]);
+
+        let intent = RawUserIntent::from_text("Seed task", "session_seed_once");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![], // Empty initial history
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(outcome.success);
+        let history = outcome.execution_history.expect("Expected history");
+
+        // Day 1 EXPECTED RED LIGHT: The current turn.rs does not seed history with User message,
+        // so history will not contain TurnMessage::User("Seed task").
+        // Once fixed in Day 2, it will seed history once.
+        let user_msgs: Vec<_> = history
+            .iter()
+            .filter(|m| matches!(m, TurnMessage::User(t) if t == "Seed task"))
+            .collect();
+        assert_eq!(
+            user_msgs.len(),
+            1,
+            "Day 1 Expected Red: Current user intent should be seeded exactly once"
+        );
+    }
 }

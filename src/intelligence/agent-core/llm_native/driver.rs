@@ -213,6 +213,68 @@ impl Default for LlmNativeDriver {
     }
 }
 
+/// Helper function to build ChatMessage list for a step.
+pub fn build_chat_messages_for_step(
+    intent: &RawUserIntent,
+    history: &[TurnMessage],
+) -> Vec<engine_llm_core::ChatMessage> {
+    let mut chat_messages = Vec::new();
+    for msg in history {
+        match msg {
+            TurnMessage::User(text) => {
+                chat_messages.push(engine_llm_core::ChatMessage {
+                    role: "user".to_string(),
+                    content: text.clone(),
+                    timestamp: None,
+                });
+            }
+            TurnMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let mut content_str = content.clone().unwrap_or_default();
+                if !tool_calls.is_empty() {
+                    if !content_str.is_empty() {
+                        content_str.push('\n');
+                    }
+                    content_str.push_str(&format!(
+                        "[Tool Calls: {}]",
+                        serde_json::to_string(tool_calls).unwrap_or_default()
+                    ));
+                }
+                chat_messages.push(engine_llm_core::ChatMessage {
+                    role: "assistant".to_string(),
+                    content: content_str,
+                    timestamp: None,
+                });
+            }
+            TurnMessage::ToolResult {
+                tool_name,
+                call_id,
+                result,
+            } => {
+                chat_messages.push(engine_llm_core::ChatMessage {
+                    role: "tool".to_string(),
+                    content: format!(
+                        "[Tool Result for {} (id: {})]: {}",
+                        tool_name, call_id, result
+                    ),
+                    timestamp: None,
+                });
+            }
+        }
+    }
+
+    // Add RawUserIntent unmodified to the end of the history
+    chat_messages.push(engine_llm_core::ChatMessage {
+        role: "user".to_string(),
+        content: intent.text.clone(),
+        timestamp: None,
+    });
+
+    chat_messages
+}
+
 #[async_trait]
 impl LlmStepExecutor for LlmNativeDriver {
     fn last_usage(&self) -> Option<engine_llm_core::Usage> {
@@ -231,59 +293,7 @@ impl LlmStepExecutor for LlmNativeDriver {
         })?;
 
         // 1. Map history to ChatMessage
-        let mut chat_messages = Vec::new();
-        for msg in history {
-            match msg {
-                TurnMessage::User(text) => {
-                    chat_messages.push(engine_llm_core::ChatMessage {
-                        role: "user".to_string(),
-                        content: text.clone(),
-                        timestamp: None,
-                    });
-                }
-                TurnMessage::Assistant {
-                    content,
-                    tool_calls,
-                } => {
-                    let mut content_str = content.clone().unwrap_or_default();
-                    if !tool_calls.is_empty() {
-                        if !content_str.is_empty() {
-                            content_str.push('\n');
-                        }
-                        content_str.push_str(&format!(
-                            "[Tool Calls: {}]",
-                            serde_json::to_string(tool_calls).unwrap_or_default()
-                        ));
-                    }
-                    chat_messages.push(engine_llm_core::ChatMessage {
-                        role: "assistant".to_string(),
-                        content: content_str,
-                        timestamp: None,
-                    });
-                }
-                TurnMessage::ToolResult {
-                    tool_name,
-                    call_id,
-                    result,
-                } => {
-                    chat_messages.push(engine_llm_core::ChatMessage {
-                        role: "tool".to_string(),
-                        content: format!(
-                            "[Tool Result for {} (id: {})]: {}",
-                            tool_name, call_id, result
-                        ),
-                        timestamp: None,
-                    });
-                }
-            }
-        }
-
-        // Add RawUserIntent unmodified to the end of the history
-        chat_messages.push(engine_llm_core::ChatMessage {
-            role: "user".to_string(),
-            content: intent.text.clone(),
-            timestamp: None,
-        });
+        let chat_messages = build_chat_messages_for_step(intent, history);
 
         // 2. Map ModelVisibleToolSpec to ToolDefinition
         let tool_definitions: Vec<engine_llm_core::ToolDefinition> = tools
@@ -1210,5 +1220,64 @@ mod tests {
         assert!(outcome.success);
         assert_eq!(outcome.tool_calls_executed, 1); // 解析失败了，但作为 1 个 tool_call 记录降级结果
         assert_eq!(outcome.iterations, 2);
+    }
+
+    #[test]
+    fn test_build_chat_messages_adds_intent_when_history_has_no_user() {
+        let intent = RawUserIntent::from_text("list files", "session_123");
+        let history = vec![];
+        let chat_messages = build_chat_messages_for_step(&intent, &history);
+
+        assert_eq!(chat_messages.len(), 1);
+        assert_eq!(chat_messages[0].role, "user");
+        assert_eq!(chat_messages[0].content, "list files");
+    }
+
+    #[test]
+    fn test_build_chat_messages_does_not_duplicate_current_user_intent() {
+        let intent = RawUserIntent::from_text("list files", "session_123");
+        let history = vec![TurnMessage::User("list files".to_string())];
+        let chat_messages = build_chat_messages_for_step(&intent, &history);
+
+        // Day 1 EXPECTED RED LIGHT: The helper unconditionally appends the intent,
+        // so it will duplicate "list files" resulting in 2 messages.
+        // Once fixed in Day 2, it will only have 1 message.
+        assert_eq!(
+            chat_messages.len(),
+            1,
+            "Day 1 Expected Red: Should not duplicate current user intent"
+        );
+    }
+
+    #[test]
+    fn test_build_chat_messages_adds_current_intent_when_history_has_unrelated_user() {
+        let intent = RawUserIntent::from_text("current task", "session_123");
+        let history = vec![TurnMessage::User("old task".to_string())];
+        let chat_messages = build_chat_messages_for_step(&intent, &history);
+
+        // This should pass on Day 1 because it unconditionally appends,
+        // so we will have "old task" followed by "current task".
+        assert_eq!(chat_messages.len(), 2);
+        assert_eq!(chat_messages[0].content, "old task");
+        assert_eq!(chat_messages[1].content, "current task");
+    }
+
+    #[test]
+    fn test_build_chat_messages_preserves_tool_result_message() {
+        let intent = RawUserIntent::from_text("list files", "session_123");
+        let history = vec![TurnMessage::ToolResult {
+            tool_name: "list_directory".to_string(),
+            call_id: "call_123".to_string(),
+            result: "file1.txt".to_string(),
+        }];
+        let chat_messages = build_chat_messages_for_step(&intent, &history);
+
+        assert_eq!(chat_messages.len(), 2);
+        assert_eq!(chat_messages[0].role, "tool");
+        assert!(chat_messages[0].content.contains("list_directory"));
+        assert!(chat_messages[0].content.contains("call_123"));
+        assert!(chat_messages[0].content.contains("file1.txt"));
+        assert_eq!(chat_messages[1].role, "user");
+        assert_eq!(chat_messages[1].content, "list files");
     }
 }
