@@ -115,9 +115,19 @@ assert(
   branchCode.includes('智能体在执行动作时失败'),
   'ActFailed should still render as a failure message'
 );
+// The displayBody fallback must guard against thinking-only outcomes
 assert(
   branchCode.includes('智能体任务已成功完成，但没有返回可展示内容'),
   'Empty outcome branch must remain intact'
+);
+// The displayBody fallback must guard against thinking-only outcomes
+assert(
+  branchCode.includes('thinkingContent ?'),
+  'displayBody fallback must check thinkingContent to avoid re-leaking thinking tags'
+);
+assert(
+  branchCode.includes('模型仅返回了思考过程，未返回最终回答。'),
+  'displayBody fallback must show a friendly placeholder when only thinking is present'
 );
 
 console.log('Part 2 (app.js contract validation): PASS');
@@ -146,5 +156,36 @@ assert(shortForm.response.includes('actual answer'), 'Short form: response extra
 assert(!shortForm.response.includes('<think>'), 'Short form: no think tags in response');
 
 console.log('Part 3 (parser edge cases): PASS');
+
+// ---------- Part 4: displayBody fallback simulation ----------
+// Simulate the exact displayBody logic from app.js for each scenario
+
+function simulateDisplayBody(outcome) {
+  const parsed2 = parseThinkingStream(outcome);
+  const tc = (parsed2.thinking || '').trim();
+  const cr = (parsed2.response || '').trim();
+  return cr || (tc ? '模型仅返回了思考过程，未返回最终回答。' : outcome.trim());
+}
+
+// Scenario 1: thinking + response
+const s1 = simulateDisplayBody('<thinking>想法</thinking>最终答案');
+assert(s1.includes('最终答案'), 'S1: displayBody should contain final answer');
+assert(!s1.includes('<thinking>'), 'S1: displayBody must not contain <thinking>');
+assert(!s1.includes('</thinking>'), 'S1: displayBody must not contain </thinking>');
+
+// Scenario 2: pure response, no tags
+const s2 = simulateDisplayBody('纯最终答案');
+assert.strictEqual(s2, '纯最终答案', 'S2: displayBody should pass through unchanged');
+
+// Scenario 3: thinking only, no response
+const s3 = simulateDisplayBody('<thinking>只有思考</thinking>');
+assert.strictEqual(s3, '模型仅返回了思考过程，未返回最终回答。', 'S3: thinking-only should show placeholder');
+assert(!s3.includes('<thinking>'), 'S3: displayBody must not contain <thinking>');
+
+// Scenario 4: verify thinking panel for thinking-only
+const s3parsed = parseThinkingStream('<thinking>只有思考</thinking>');
+assert(s3parsed.thinking.includes('只有思考'), 'S3: thinking panel should contain the reasoning');
+
+console.log('Part 4 (displayBody fallback simulation): PASS');
 console.log('');
 console.log('agent_thinking_leak_smoke: ALL PASS');

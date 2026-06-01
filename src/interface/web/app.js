@@ -3200,8 +3200,11 @@ window.app = {
           this.updateTurnThinking(turn, { state: 'done', content: thinkingContent });
         }
 
-        // Use the cleaned response (free of <thinking> tags) as the result body
-        const displayBody = cleanResponse || outcome.trim();
+        // Use the cleaned response (free of <thinking> tags) as the result body.
+        // If cleanResponse is empty but thinking was extracted, show a placeholder
+        // instead of falling back to raw outcome which would re-leak <thinking> tags.
+        const displayBody = cleanResponse
+          || (thinkingContent ? '模型仅返回了思考过程，未返回最终回答。' : outcome.trim());
         friendlyOutcome = `✅ 智能体任务已成功完成！\n\n${displayBody}`;
         isSuccess = true;
       } else {
