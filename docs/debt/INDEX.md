@@ -1,6 +1,6 @@
 # Hajimi Debt Documentation Index
 
-> Updated: 2026-05-31
+> Updated: 2026-06-01
 > Current source of truth: `docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md`
 
 ## Active Summary
@@ -22,6 +22,8 @@ Use this file first:
 | `DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
 | `DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md` | **P0** — Code-level fixed; pending rebuilt real WebView smoke. `/agent` no longer has an unbounded approval wait in code, read-only tools are not promoted to Critical, and native tool/governance trace events are forwarded. |
 | `DEBT-AGENT-LLM-NATIVE-SUCCESS-RESULT-DROPPED.md` | **P1** — [CODE-LEVEL FIXED / PENDING-REAL-WEBVIEW-SMOKE] Real desktop `/agent` smoke proved DeepSeek and `list_directory` complete while the chat card only displayed `Success`; V1 now preserves `TurnOutcome.final_message` via `LoopOutcome::SuccessWithMessage`, desktop result output, and frontend rendering. |
+| `DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md` | **P1** — [OPEN / DIAGNOSED] Real desktop `/agent` smoke now shows final content, but raw `<thinking>...</thinking>` tags are rendered inline in the answer body because the `/agent` result branch skips the existing Thinking UI parser. |
+| `DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md` | **P1** — [FIXED-CANDIDATE / NEEDS-RECHECK] `/agent` reaches model/tool execution but repeats `list_directory`, crosses the 8192 token meltdown threshold (`8611` tokens observed), and returns `ActFailed` before producing the simple directory-list answer. |
 | `DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | `SHELL-FEATURE-DEBT-002.md` | Complex shell features remain intentionally downgraded by design. |
 | `DEBT-COMPLEXITY-DAY05-001.md` | `bootstrap_first_tool_call` method exceeds 80 lines due to async locks, rule-based safe fallback tool mapping, registry verification, and UX trace emission. |

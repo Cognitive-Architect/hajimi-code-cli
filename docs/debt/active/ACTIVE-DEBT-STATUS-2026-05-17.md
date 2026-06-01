@@ -1,8 +1,8 @@
 # Hajimi Active Debt Status - 2026-05-17 (Revised 2026-05-25 for DebtFix V5 Closure)
 
-> Revision Date: 2026-05-25
-> Branch: `codex/debtfix-v5-day11-closure`
-> HEAD: `21cfec9167764e21812784505a16493c8db40385`
+> Revision Date: 2026-06-01
+> Branch: `feature/toolfix-deepseek-schema`
+> HEAD: `54e47c21`
 > Scope: `docs/debt` debt triage after DebtFix V5 Day 1-11 milestones (P0 Security, Thinking UI, Long Context, Frontend modularization).
 > Archive target: `archive/05/debt-history`
 
@@ -56,6 +56,8 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-012 Agent Checkpoint Diff Preview UI | `EXPLORED/PARTIAL-UI` | P1 | `docs/debt/DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | AD-013 Agent Loop LLM No-Op | CLOSED (CODE-LEVEL AUTOMATION PASS / PENDING-UI-SMOKE) | **P0** | `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-MIGRATION.md` | CLOSED at code and automation level. Arc-Mutex ToolRegistry desktop main injection (Day 4) and LLM Bootstrap mechanism (Day 5) are 100% active and verified. Real Goal->Plan->ToolCall->LLM->Execution->Reflect chain is live. |
 | AD-015 Agent LLM-Native Approval Hang | `CODE-LEVEL FIXED + RELEASE PACKAGED / PENDING-REAL-WEBVIEW-SMOKE` | **P0** | `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md`; `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Code now classifies read-only tools such as `list_directory` as low-risk, forwards native tool/governance events to Agent Trace, removes the duplicate tool-executor approval wait, and times out stale WebView approval requests after 30s with pending cleanup. A Tauri release package has been rebuilt; full closure still requires a real WebView `/agent` smoke. |
+| AD-016 Agent LLM-Native Thinking Leak | `OPEN / DIAGNOSED` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md`; `docs/debt/DEBT-THINKING-UI.md` | Real WebView `/agent` smoke now displays final content, but raw `<thinking>...</thinking>` tags leak into the final answer body. The likely gap is the `/agent` result branch in `app.js` not reusing the existing Thinking UI parser before rendering successful result output. |
+| AD-017 Agent LLM-Native Budget Meltdown | `FIXED-CANDIDATE / PENDING-REAL-WEBVIEW-SMOKE` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md` | Code-level fixed via: 1) reordering final assistant answer detection before token warning meltdown checks; 2) deduplicating active user intent seeding to run exactly once; 3) introducing recursive sorting and pre-governance suppression for duplicate read-only tool calls. Only real WebView verification is pending. |
 
 ## 4. Manual Verification Debt
 
@@ -90,7 +92,9 @@ The root `docs/debt` directory intentionally keeps only active debt declarations
 ```text
 DEBT-AGENT-CHECKPOINT-DIFF-UI.md
 DEBT-AGENT-GOVERNANCE-UI-WAITING.md
+DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md
 DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md
+DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md
 DEBT-AGENT-LOOP-LLM-NO-OP.md
 DEBT-AGENT-SKILLS-V0.md
 DEBT-AGENT-UI-INTEGRATION.md
