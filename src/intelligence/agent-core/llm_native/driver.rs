@@ -214,14 +214,19 @@ impl Default for LlmNativeDriver {
 }
 
 /// Helper function to build ChatMessage list for a step.
-pub fn build_chat_messages_for_step(
+pub(crate) fn build_chat_messages_for_step(
     intent: &RawUserIntent,
     history: &[TurnMessage],
 ) -> Vec<engine_llm_core::ChatMessage> {
     let mut chat_messages = Vec::new();
+    let mut has_current_user_intent = false;
+
     for msg in history {
         match msg {
             TurnMessage::User(text) => {
+                if text == &intent.text {
+                    has_current_user_intent = true;
+                }
                 chat_messages.push(engine_llm_core::ChatMessage {
                     role: "user".to_string(),
                     content: text.clone(),
@@ -265,12 +270,14 @@ pub fn build_chat_messages_for_step(
         }
     }
 
-    // Add RawUserIntent unmodified to the end of the history
-    chat_messages.push(engine_llm_core::ChatMessage {
-        role: "user".to_string(),
-        content: intent.text.clone(),
-        timestamp: None,
-    });
+    // Add RawUserIntent unmodified to the end of the history if not already present
+    if !has_current_user_intent {
+        chat_messages.push(engine_llm_core::ChatMessage {
+            role: "user".to_string(),
+            content: intent.text.clone(),
+            timestamp: None,
+        });
+    }
 
     chat_messages
 }
@@ -1239,13 +1246,11 @@ mod tests {
         let history = vec![TurnMessage::User("list files".to_string())];
         let chat_messages = build_chat_messages_for_step(&intent, &history);
 
-        // Day 1 EXPECTED RED LIGHT: The helper unconditionally appends the intent,
-        // so it will duplicate "list files" resulting in 2 messages.
-        // Once fixed in Day 2, it will only have 1 message.
+        // Day 2 EXPECTED GREEN: Should not duplicate current user intent
         assert_eq!(
             chat_messages.len(),
             1,
-            "Day 1 Expected Red: Should not duplicate current user intent"
+            "Should not duplicate current user intent"
         );
     }
 

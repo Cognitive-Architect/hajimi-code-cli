@@ -15,6 +15,28 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+const TOKEN_MELTDOWN_THRESHOLD: u64 = 8192;
+
+fn final_assistant_content(msg: &TurnMessage) -> Option<String> {
+    match msg {
+        TurnMessage::Assistant {
+            content,
+            tool_calls,
+        } => {
+            if tool_calls.is_empty() {
+                if let Some(c) = content {
+                    let trimmed = c.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 #[async_trait]
 pub trait LlmStepExecutor: Send + Sync {
     /// Request the next message from the LLM based on conversation history.
@@ -236,6 +258,15 @@ pub async fn llm_native_turn_with_trace(
         intent.text
     );
 
+    // Seed current user intent if not already in history
+    let has_current_intent = history.iter().any(|msg| match msg {
+        TurnMessage::User(text) => text == &intent.text,
+        _ => false,
+    });
+    if !has_current_intent {
+        history.push(TurnMessage::User(intent.text.clone()));
+    }
+
     let token_tracker = TokenTracker::new();
     let mut file_modifications: Vec<String> = Vec::new();
 
@@ -312,34 +343,43 @@ pub async fn llm_native_turn_with_trace(
 
             tracing::trace!(
                 "[LLM-Native] Token budget usage rate: {:.2}%. prompt_tokens = {}, completion_tokens = {}, total = {}",
-                (token_tracker.total_tokens() as f64 / 8192.0) * 100.0,
+                (token_tracker.total_tokens() as f64 / TOKEN_MELTDOWN_THRESHOLD as f64) * 100.0,
                 token_tracker.prompt_tokens(),
                 token_tracker.completion_tokens(),
                 token_tracker.total_tokens()
             );
+        }
 
-            if token_tracker.total_tokens() >= 8192 {
-                eprintln!("=============================================================");
-                eprintln!(
-                    "⚠️⚠️⚠️ [MELTDOWN WARNING] BUDGET EXCEEDED: TOKEN MELTDOWN THRESHOLD REACHED!"
-                );
-                eprintln!(
-                    "⚠️⚠️⚠️ Total Tokens: {} >= 8192",
+        // Check if we have a terminal final answer first
+        if let Some(content) = final_assistant_content(&next_msg) {
+            tracing::trace!("[LLM-Native] Assistant provided final content. Ending loop.");
+            final_message = Some(content);
+            break;
+        }
+
+        // If no final answer, check if token limit was exceeded
+        if token_tracker.total_tokens() >= TOKEN_MELTDOWN_THRESHOLD {
+            eprintln!("=============================================================");
+            eprintln!(
+                "⚠️⚠️⚠️ [MELTDOWN WARNING] BUDGET EXCEEDED: TOKEN MELTDOWN THRESHOLD REACHED!"
+            );
+            eprintln!(
+                "⚠️⚠️⚠️ Total Tokens: {} >= {}",
+                token_tracker.total_tokens(),
+                TOKEN_MELTDOWN_THRESHOLD
+            );
+            eprintln!("⚠️⚠️⚠️ Preserving intermediate execution state and handing off...");
+            eprintln!("=============================================================");
+            return Ok(TurnOutcome {
+                success: false,
+                final_message: Some(format!(
+                    "Handoff: Budget Exceeded. Token/Iteration meltdown threshold reached. Preserving execution state. Total tokens: {}",
                     token_tracker.total_tokens()
-                );
-                eprintln!("⚠️⚠️⚠️ Preserving intermediate execution state and handing off...");
-                eprintln!("=============================================================");
-                return Ok(TurnOutcome {
-                    success: false,
-                    final_message: Some(format!(
-                        "Handoff: Budget Exceeded. Token/Iteration meltdown threshold reached. Preserving execution state. Total tokens: {}",
-                        token_tracker.total_tokens()
-                    )),
-                    tool_calls_executed,
-                    iterations,
-                    execution_history: Some(history.clone()),
-                });
-            }
+                )),
+                tool_calls_executed,
+                iterations,
+                execution_history: Some(history.clone()),
+            });
         }
 
         match next_msg {
@@ -1328,13 +1368,8 @@ mod tests {
         .await
         .expect("llm_native_turn failed");
 
-        // Day 1 EXPECTED RED LIGHT: This will fail in Day 1 baseline because the budget check
-        // happens first, returning TurnOutcome with success = false and Budget Exceeded message.
-        // Once fixed in Day 2, this will succeed and final_message will be Some("final answer").
-        assert!(
-            outcome.success,
-            "Day 1 Expected Red: final answer should be preserved"
-        );
+        // Day 2 EXPECTED GREEN: final answer should be preserved
+        assert!(outcome.success, "final answer should be preserved");
         assert_eq!(outcome.final_message.as_deref(), Some("final answer"));
     }
 
@@ -1412,9 +1447,7 @@ mod tests {
         assert!(outcome.success);
         let history = outcome.execution_history.expect("Expected history");
 
-        // Day 1 EXPECTED RED LIGHT: The current turn.rs does not seed history with User message,
-        // so history will not contain TurnMessage::User("Seed task").
-        // Once fixed in Day 2, it will seed history once.
+        // Day 2 EXPECTED GREEN: Current user intent should be seeded exactly once
         let user_msgs: Vec<_> = history
             .iter()
             .filter(|m| matches!(m, TurnMessage::User(t) if t == "Seed task"))
@@ -1422,7 +1455,7 @@ mod tests {
         assert_eq!(
             user_msgs.len(),
             1,
-            "Day 1 Expected Red: Current user intent should be seeded exactly once"
+            "Current user intent should be seeded exactly once"
         );
     }
 }
