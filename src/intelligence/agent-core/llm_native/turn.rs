@@ -384,12 +384,18 @@ pub async fn llm_native_turn_with_trace(
 
         match next_msg {
             TurnMessage::Assistant {
-                content,
+                content: _,
                 tool_calls,
             } => {
                 if tool_calls.is_empty() {
-                    tracing::trace!("[LLM-Native] Assistant provided final content. Ending loop.");
-                    final_message = content;
+                    tracing::warn!(
+                        "[LLM-Native] Assistant provided empty/whitespace content without tool calls. Treating as failure."
+                    );
+                    success = false;
+                    final_message = Some(
+                        "Handoff: Model returned empty or whitespace-only assistant message without tool calls."
+                            .to_string(),
+                    );
                     break;
                 } else {
                     tracing::trace!(
@@ -1457,5 +1463,67 @@ mod tests {
             1,
             "Current user intent should be seeded exactly once"
         );
+    }
+
+    #[tokio::test]
+    async fn empty_assistant_content_without_tool_calls_is_not_final_answer() {
+        let step = TurnMessage::Assistant {
+            content: None,
+            tool_calls: vec![],
+        };
+        let llm = MockLlmStepExecutor::new(vec![step]);
+        let tools = MockLlmToolExecutor::new(vec![]);
+
+        let intent = RawUserIntent::from_text("Seed task", "session_empty_content");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(final_msg.contains("Model returned empty or whitespace-only"));
+    }
+
+    #[tokio::test]
+    async fn whitespace_assistant_content_without_tool_calls_is_not_final_answer() {
+        let step = TurnMessage::Assistant {
+            content: Some("   \n\t  ".to_string()),
+            tool_calls: vec![],
+        };
+        let llm = MockLlmStepExecutor::new(vec![step]);
+        let tools = MockLlmToolExecutor::new(vec![]);
+
+        let intent = RawUserIntent::from_text("Seed task", "session_whitespace_content");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(final_msg.contains("Model returned empty or whitespace-only"));
     }
 }
