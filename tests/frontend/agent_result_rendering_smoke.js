@@ -16,8 +16,8 @@ assert(
   'non-empty result output should be detected'
 );
 assert(
-  resultBranch[0].includes('智能体任务已成功完成！\\n\\n${outcome}'),
-  'non-empty result output should render below the success header'
+  resultBranch[0].includes('智能体任务已成功完成！\\n\\n${displayBody}'),
+  'non-empty result output should render cleaned displayBody below the success header'
 );
 assert(
   resultBranch[0].includes('isSuccess = true'),

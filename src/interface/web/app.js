@@ -3187,7 +3187,22 @@ window.app = {
         const errorDetail = outcome.slice(10, -1) || '';
         friendlyOutcome = `❌ 智能体在执行动作时失败：${errorDetail} (ActFailed)`;
       } else if (outcome.trim()) {
-        friendlyOutcome = `✅ 智能体任务已成功完成！\n\n${outcome}`;
+        // --- DEBT-AGENT-LLM-NATIVE-THINKING-LEAK fix ---
+        // Strip <thinking> tags from the model's final answer so they never
+        // leak into the user-visible result card. Reuse the existing
+        // parseThinkingStream parser to separate thinking from response.
+        const parsed = this.parseThinkingStream(outcome);
+        const thinkingContent = (parsed.thinking || '').trim();
+        const cleanResponse = (parsed.response || '').trim();
+
+        // Route extracted thinking to the collapsible thinking panel
+        if (thinkingContent) {
+          this.updateTurnThinking(turn, { state: 'done', content: thinkingContent });
+        }
+
+        // Use the cleaned response (free of <thinking> tags) as the result body
+        const displayBody = cleanResponse || outcome.trim();
+        friendlyOutcome = `✅ 智能体任务已成功完成！\n\n${displayBody}`;
         isSuccess = true;
       } else {
         friendlyOutcome = '✅ 智能体任务已成功完成，但没有返回可展示内容。';
