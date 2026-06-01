@@ -130,6 +130,51 @@ fn is_read_only_tool(tool_name: &str) -> bool {
     )
 }
 
+fn is_duplicate_guarded_readonly_tool(tool_name: &str) -> bool {
+    is_read_only_tool(tool_name)
+}
+
+fn canonicalize_json_value(val: &serde_json::Value) -> serde_json::Value {
+    match val {
+        serde_json::Value::Object(map) => {
+            let mut sorted_map = serde_json::Map::new();
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            for key in keys {
+                if let Some(v) = map.get(key) {
+                    sorted_map.insert(key.clone(), canonicalize_json_value(v));
+                }
+            }
+            serde_json::Value::Object(sorted_map)
+        }
+        serde_json::Value::Array(arr) => {
+            let sorted_arr: Vec<serde_json::Value> =
+                arr.iter().map(canonicalize_json_value).collect();
+            serde_json::Value::Array(sorted_arr)
+        }
+        _ => val.clone(),
+    }
+}
+
+fn canonical_tool_call_key(tool_name: &str, arguments: &serde_json::Value) -> String {
+    let canonical_args = canonicalize_json_value(arguments);
+    format!(
+        "{}:{}",
+        tool_name,
+        serde_json::to_string(&canonical_args).unwrap_or_default()
+    )
+}
+
+fn compact_tool_result_for_history(result: &str) -> String {
+    let trimmed = result.trim();
+    if trimmed.chars().count() <= 200 {
+        trimmed.to_string()
+    } else {
+        let truncated: String = trimmed.chars().take(200).collect();
+        format!("{}... [truncated]", truncated)
+    }
+}
+
 fn is_existing_low_risk_shell_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
@@ -269,6 +314,10 @@ pub async fn llm_native_turn_with_trace(
 
     let token_tracker = TokenTracker::new();
     let mut file_modifications: Vec<String> = Vec::new();
+    let mut executed_readonly_tool_keys: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut readonly_tool_results: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     let mut iterations = 0;
     let mut tool_calls_executed = 0;
@@ -463,159 +512,208 @@ pub async fn llm_native_turn_with_trace(
                             }
                         }
 
-                        // 构造前置审查请求。只读导航/查看类工具不应走 Critical 弹窗等待。
-                        let profile = tool_governance_profile(&tool_name);
-                        let risk_score = profile.risk_score;
-                        let approval_level = profile.approval_level;
+                        let is_readonly = is_duplicate_guarded_readonly_tool(&tool_name);
+                        let canonical_key = canonical_tool_call_key(&tool_name, &arguments);
 
-                        let req = crate::governance::GovernanceRequest {
-                            requester: intent.session_id.clone(),
-                            action_type: tool_name.clone(),
-                            risk_score,
-                            description: format!(
-                                "LLM-Native turn execution of tool '{}' with arguments: {:?}",
-                                tool_name, arguments
-                            ),
-                            level: approval_level,
-                        };
+                        let mut is_suppressed = false;
+                        let mut suppressed_result_str = String::new();
 
-                        // FUNC-001: 在工具执行动作前，显式触发 governance.approve 审查拦截
-                        let ctx = crate::AgentContext::new();
-                        emit_native_trace(
-                            &trace_tx,
-                            "ToolCallInitiated",
-                            &format!(
-                                "Tool '{}' requested. Initiating governance approval gate.",
-                                tool_name
-                            ),
-                            iterations,
-                        );
-                        emit_native_trace(
-                            &trace_tx,
-                            "GovernanceWaiting",
-                            &format!(
-                                "Tool '{}' waiting for {:?} approval with risk score {:.2}.",
-                                tool_name, approval_level, risk_score
-                            ),
-                            iterations,
-                        );
-
-                        let tool_result_str = match governance.approve(&ctx, &req).await {
-                            Ok(crate::governance::Decision::Approved) => {
-                                emit_native_trace(
-                                    &trace_tx,
-                                    "GovernanceApproved",
-                                    &format!("Tool '{}' approval granted.", tool_name),
-                                    iterations,
-                                );
-                                emit_native_trace(
-                                    &trace_tx,
-                                    "ToolExecutionStarted",
-                                    &format!("Tool '{}' execution started.", tool_name),
-                                    iterations,
+                        if is_readonly {
+                            if executed_readonly_tool_keys.contains(&canonical_key) {
+                                is_suppressed = true;
+                                let previous_result = readonly_tool_results
+                                    .get(&canonical_key)
+                                    .cloned()
+                                    .unwrap_or_default();
+                                suppressed_result_str = format!(
+                                    "[Duplicate Suppression]: This duplicate read-only tool call was suppressed. Use the previous result: {}",
+                                    previous_result
                                 );
 
-                                // 执行工具
-                                match tool_executor
-                                    .execute_tool(
-                                        &tool_name,
-                                        &arguments,
-                                        &call_id,
-                                        governance.clone(),
-                                        &cancellation,
-                                    )
-                                    .await
-                                {
-                                    Ok(res) => {
-                                        emit_native_trace(
-                                            &trace_tx,
-                                            "ToolExecutionSuccess",
-                                            &format!("Tool '{}' executed successfully.", tool_name),
-                                            iterations,
-                                        );
-                                        res
-                                    }
-                                    Err(e) => {
-                                        emit_native_trace(
-                                            &trace_tx,
-                                            "ToolExecutionFailed",
-                                            &format!("Tool '{}' failed: {:?}", tool_name, e),
-                                            iterations,
-                                        );
-                                        format!("Error: {:?}", e)
+                                emit_native_trace(
+                                    &trace_tx,
+                                    "DuplicateToolCallSuppressed",
+                                    &format!(
+                                        "Duplicate read-only tool call '{}' with arguments {:?} was suppressed. Use the previous result.",
+                                        tool_name, arguments
+                                    ),
+                                    iterations,
+                                );
+                            }
+                        }
+
+                        let tool_result_str = if is_suppressed {
+                            suppressed_result_str
+                        } else {
+                            // 构造前置审查请求。只读导航/查看类工具不应走 Critical 弹窗等待。
+                            let profile = tool_governance_profile(&tool_name);
+                            let risk_score = profile.risk_score;
+                            let approval_level = profile.approval_level;
+
+                            let req = crate::governance::GovernanceRequest {
+                                requester: intent.session_id.clone(),
+                                action_type: tool_name.clone(),
+                                risk_score,
+                                description: format!(
+                                    "LLM-Native turn execution of tool '{}' with arguments: {:?}",
+                                    tool_name, arguments
+                                ),
+                                level: approval_level,
+                            };
+
+                            // FUNC-001: 在工具执行动作前，显式触发 governance.approve 审查拦截
+                            let ctx = crate::AgentContext::new();
+                            emit_native_trace(
+                                &trace_tx,
+                                "ToolCallInitiated",
+                                &format!(
+                                    "Tool '{}' requested. Initiating governance approval gate.",
+                                    tool_name
+                                ),
+                                iterations,
+                            );
+                            emit_native_trace(
+                                &trace_tx,
+                                "GovernanceWaiting",
+                                &format!(
+                                    "Tool '{}' waiting for {:?} approval with risk score {:.2}.",
+                                    tool_name, approval_level, risk_score
+                                ),
+                                iterations,
+                            );
+
+                            match governance.approve(&ctx, &req).await {
+                                Ok(crate::governance::Decision::Approved) => {
+                                    emit_native_trace(
+                                        &trace_tx,
+                                        "GovernanceApproved",
+                                        &format!("Tool '{}' approval granted.", tool_name),
+                                        iterations,
+                                    );
+                                    emit_native_trace(
+                                        &trace_tx,
+                                        "ToolExecutionStarted",
+                                        &format!("Tool '{}' execution started.", tool_name),
+                                        iterations,
+                                    );
+
+                                    // 执行工具
+                                    match tool_executor
+                                        .execute_tool(
+                                            &tool_name,
+                                            &arguments,
+                                            &call_id,
+                                            governance.clone(),
+                                            &cancellation,
+                                        )
+                                        .await
+                                    {
+                                        Ok(res) => {
+                                            emit_native_trace(
+                                                &trace_tx,
+                                                "ToolExecutionSuccess",
+                                                &format!(
+                                                    "Tool '{}' executed successfully.",
+                                                    tool_name
+                                                ),
+                                                iterations,
+                                            );
+                                            if is_readonly {
+                                                executed_readonly_tool_keys
+                                                    .insert(canonical_key.clone());
+                                                readonly_tool_results.insert(
+                                                    canonical_key.clone(),
+                                                    compact_tool_result_for_history(&res),
+                                                );
+                                            }
+                                            res
+                                        }
+                                        Err(e) => {
+                                            emit_native_trace(
+                                                &trace_tx,
+                                                "ToolExecutionFailed",
+                                                &format!("Tool '{}' failed: {:?}", tool_name, e),
+                                                iterations,
+                                            );
+                                            format!("Error: {:?}", e)
+                                        }
                                     }
                                 }
-                            }
-                            Ok(crate::governance::Decision::Rejected(reason)) => {
-                                // FUNC-002: 当 governance 拒绝通过时，流程立刻安全退避阻断
-                                // FUNC-004: 支持新 native_turn 鉴权被阻断时的专用告警码上报
-                                // UX-002: 权限被拒时的报错文案高度人性化
-                                let err_msg = format!(
-                                    "Security Gate Alert: Permission Denied! Action [execute_tool: {}] was rejected by the Governance policy. Reason: {}. Risk score evaluated: {}",
-                                    tool_name, reason, risk_score
-                                );
-                                emit_native_trace(
-                                    &trace_tx,
-                                    "GovernanceRejected",
-                                    &format!(
-                                        "Tool '{}' execution blocked. Details: {}",
-                                        tool_name, err_msg
-                                    ),
-                                    iterations,
-                                );
+                                Ok(crate::governance::Decision::Rejected(reason)) => {
+                                    // FUNC-002: 当 governance 拒绝通过时，流程立刻安全退避阻断
+                                    // FUNC-004: 支持新 native_turn 鉴权被阻断时的专用告警码上报
+                                    // UX-002: 权限被拒时的报错文案高度人性化
+                                    let err_msg = format!(
+                                        "Security Gate Alert: Permission Denied! Action [execute_tool: {}] was rejected by the Governance policy. Reason: {}. Risk score evaluated: {}",
+                                        tool_name, reason, risk_score
+                                    );
+                                    emit_native_trace(
+                                        &trace_tx,
+                                        "GovernanceRejected",
+                                        &format!(
+                                            "Tool '{}' execution blocked. Details: {}",
+                                            tool_name, err_msg
+                                        ),
+                                        iterations,
+                                    );
 
-                                // NEG-001: 循环能接住并转化为安全 outcome 返回
-                                return Ok(TurnOutcome {
-                                    success: false,
-                                    final_message: Some(err_msg),
-                                    tool_calls_executed,
-                                    iterations,
-                                    execution_history: Some(history.clone()),
-                                });
-                            }
-                            Ok(other_decision) => {
-                                let err_msg = format!(
-                                    "Security Blocked: Action [execute_tool: {}] did not receive Auto or Admin approval. Current decision status: {:?}",
-                                    tool_name, other_decision
-                                );
-                                emit_native_trace(
-                                    &trace_tx,
-                                    "GovernanceBlocked",
-                                    &format!(
-                                        "Tool '{}' execution was blocked: {:?}",
+                                    // NEG-001: 循环能接住并转化为安全 outcome 返回
+                                    return Ok(TurnOutcome {
+                                        success: false,
+                                        final_message: Some(err_msg),
+                                        tool_calls_executed,
+                                        iterations,
+                                        execution_history: Some(history.clone()),
+                                    });
+                                }
+                                Ok(other_decision) => {
+                                    let err_msg = format!(
+                                        "Security Blocked: Action [execute_tool: {}] did not receive Auto or Admin approval. Current decision status: {:?}",
                                         tool_name, other_decision
-                                    ),
-                                    iterations,
-                                );
+                                    );
+                                    emit_native_trace(
+                                        &trace_tx,
+                                        "GovernanceBlocked",
+                                        &format!(
+                                            "Tool '{}' execution was blocked: {:?}",
+                                            tool_name, other_decision
+                                        ),
+                                        iterations,
+                                    );
 
-                                return Ok(TurnOutcome {
-                                    success: false,
-                                    final_message: Some(err_msg),
-                                    tool_calls_executed,
-                                    iterations,
-                                    execution_history: Some(history.clone()),
-                                });
-                            }
-                            Err(e) => {
-                                let err_msg =
-                                    format!("Governance Internal Error during approval: {:?}", e);
-                                emit_native_trace(
-                                    &trace_tx,
-                                    "GovernanceError",
-                                    &err_msg,
-                                    iterations,
-                                );
-                                return Ok(TurnOutcome {
-                                    success: false,
-                                    final_message: Some(err_msg),
-                                    tool_calls_executed,
-                                    iterations,
-                                    execution_history: Some(history.clone()),
-                                });
+                                    return Ok(TurnOutcome {
+                                        success: false,
+                                        final_message: Some(err_msg),
+                                        tool_calls_executed,
+                                        iterations,
+                                        execution_history: Some(history.clone()),
+                                    });
+                                }
+                                Err(e) => {
+                                    let err_msg = format!(
+                                        "Governance Internal Error during approval: {:?}",
+                                        e
+                                    );
+                                    emit_native_trace(
+                                        &trace_tx,
+                                        "GovernanceError",
+                                        &err_msg,
+                                        iterations,
+                                    );
+                                    return Ok(TurnOutcome {
+                                        success: false,
+                                        final_message: Some(err_msg),
+                                        tool_calls_executed,
+                                        iterations,
+                                        execution_history: Some(history.clone()),
+                                    });
+                                }
                             }
                         };
 
-                        tool_calls_executed += 1;
+                        if !is_suppressed {
+                            tool_calls_executed += 1;
+                        }
 
                         let tool_msg = TurnMessage::ToolResult {
                             tool_name: tool_name.clone(),
@@ -1525,5 +1623,334 @@ mod tests {
         assert!(!outcome.success);
         let final_msg = outcome.final_message.unwrap();
         assert!(final_msg.contains("Model returned empty or whitespace-only"));
+    }
+
+    #[tokio::test]
+    async fn duplicate_readonly_tool_call_same_args_is_suppressed() {
+        // Step 1: Assistant requests list_directory with same args twice.
+        let step1 = TurnMessage::Assistant {
+            content: Some("First tool calls".to_string()),
+            tool_calls: vec![
+                serde_json::json!({
+                    "name": "list_dir",
+                    "id": "call_1",
+                    "arguments": {"path": "."}
+                }),
+                serde_json::json!({
+                    "name": "list_dir",
+                    "id": "call_2",
+                    "arguments": {"path": "."}
+                }),
+            ],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Task done".to_string()),
+            tool_calls: vec![],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2]);
+        let tools = MockLlmToolExecutor::new(vec![("list_dir", "Cargo.toml\nsrc")]);
+        let intent = RawUserIntent::from_text("List duplicate test", "session_dup_suppressed");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(outcome.success);
+        // Only 1 unique readonly tool call actually executed (other was suppressed)
+        assert_eq!(outcome.tool_calls_executed, 1);
+
+        let history = outcome.execution_history.expect("Expected history");
+        // Verify suppressed tool message content is present in history
+        let tool_results: Vec<_> = history
+            .iter()
+            .filter_map(|m| match m {
+                TurnMessage::ToolResult {
+                    tool_name, result, ..
+                } if tool_name == "list_dir" => Some(result),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_results.len(), 2);
+        assert_eq!(tool_results[0], "Cargo.toml\nsrc");
+        assert!(tool_results[1].contains("[Duplicate Suppression]"));
+        assert!(tool_results[1].contains("Use the previous result"));
+        assert!(tool_results[1].contains("Cargo.toml\nsrc"));
+    }
+
+    #[tokio::test]
+    async fn readonly_tool_same_name_different_args_is_not_suppressed() {
+        // Step 1: Assistant requests list_directory with different args.
+        let step1 = TurnMessage::Assistant {
+            content: Some("First tool calls".to_string()),
+            tool_calls: vec![
+                serde_json::json!({
+                    "name": "list_dir",
+                    "id": "call_1",
+                    "arguments": {"path": "."}
+                }),
+                serde_json::json!({
+                    "name": "list_dir",
+                    "id": "call_2",
+                    "arguments": {"path": "src"}
+                }),
+            ],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Task done".to_string()),
+            tool_calls: vec![],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2]);
+        let tools = MockLlmToolExecutor::new(vec![("list_dir", "Cargo.toml\nsrc")]);
+        let intent = RawUserIntent::from_text("List diff args", "session_dup_diff_args");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(outcome.success);
+        // Both tool calls are executed because arguments are different!
+        assert_eq!(outcome.tool_calls_executed, 2);
+    }
+
+    #[tokio::test]
+    async fn duplicate_write_tool_is_not_suppressed_by_readonly_guard() {
+        // Step 1: Assistant requests write_file with same args twice.
+        // (This triggers standard repeated write safety checks if executed >2 times,
+        // but here we check if duplicate readonly guard mistakenly suppresses it).
+        let step1 = TurnMessage::Assistant {
+            content: Some("Writing".to_string()),
+            tool_calls: vec![
+                serde_json::json!({
+                    "name": "write_file",
+                    "id": "call_1",
+                    "arguments": {"path": "a.txt", "content": "1"}
+                }),
+                serde_json::json!({
+                    "name": "write_file",
+                    "id": "call_2",
+                    "arguments": {"path": "a.txt", "content": "1"}
+                }),
+            ],
+        };
+        let step2 = TurnMessage::Assistant {
+            content: Some("Done".to_string()),
+            tool_calls: vec![],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2]);
+        let tools = MockLlmToolExecutor::new(vec![("write_file", "Written successfully")]);
+        let intent = RawUserIntent::from_text("Write duplicate test", "session_write_dup");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(outcome.success);
+        // Both write calls executed because write tools are NOT readonly!
+        assert_eq!(outcome.tool_calls_executed, 2);
+    }
+
+    #[tokio::test]
+    async fn repeated_write_safety_is_preserved() {
+        // Step 1: Assistant requests write_file 3 times (limit is 2 modifications).
+        let step1 = TurnMessage::Assistant {
+            content: Some("Writing too many times".to_string()),
+            tool_calls: vec![
+                serde_json::json!({
+                    "name": "write_file",
+                    "id": "call_1",
+                    "arguments": {"path": "infinite.txt", "content": "1"}
+                }),
+                serde_json::json!({
+                    "name": "write_file",
+                    "id": "call_2",
+                    "arguments": {"path": "infinite.txt", "content": "2"}
+                }),
+                serde_json::json!({
+                    "name": "write_file",
+                    "id": "call_3",
+                    "arguments": {"path": "infinite.txt", "content": "3"}
+                }),
+            ],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1]);
+        let tools = MockLlmToolExecutor::new(vec![("write_file", "Written successfully")]);
+        let intent = RawUserIntent::from_text("Write repeated test", "session_repeated_write");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        // Should trigger standard self-lock / repeated write gate meltdown
+        assert!(!outcome.success);
+        let final_msg = outcome.final_message.unwrap();
+        assert!(final_msg.contains("Security Gate Alert"));
+        assert!(final_msg.contains("Potential infinite file modification self-lock"));
+    }
+
+    #[test]
+    fn compact_tool_result_handles_multibyte_text_without_panic() {
+        // Multi-byte text with exactly 200 characters and more.
+        let mut text = String::new();
+        for _ in 0..300 {
+            text.push('🚀'); // Emoji is 4 bytes
+        }
+        let compacted = compact_tool_result_for_history(&text);
+        assert!(compacted.contains("... [truncated]"));
+        let prefix: String = compacted.chars().take(200).collect();
+        assert_eq!(prefix.chars().count(), 200);
+
+        let mut chinese_text = String::new();
+        for _ in 0..250 {
+            chinese_text.push('中'); // Chinese char is 3 bytes
+        }
+        let compacted_zh = compact_tool_result_for_history(&chinese_text);
+        assert!(compacted_zh.contains("... [truncated]"));
+        let prefix_zh: String = compacted_zh.chars().take(200).collect();
+        assert_eq!(prefix_zh.chars().count(), 200);
+    }
+
+    struct MockFlakyToolExecutor {
+        attempts: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl LlmToolExecutor for MockFlakyToolExecutor {
+        async fn execute_tool(
+            &self,
+            name: &str,
+            _arguments: &serde_json::Value,
+            _call_id: &str,
+            _governance: Arc<dyn AgentGovernance>,
+            _cancellation: &CancellationToken,
+        ) -> AgentResult<String> {
+            let attempt = self
+                .attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if attempt == 0 {
+                Err(crate::ports::AgentError::Internal(
+                    "Flaky network error".to_string(),
+                ))
+            } else {
+                Ok(format!(
+                    "Executed {} successfully on attempt {}",
+                    name,
+                    attempt + 1
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_readonly_tool_call_is_not_suppressed_on_subsequent_attempts() {
+        // Step 1: Assistant requests list_directory, which fails.
+        let step1 = TurnMessage::Assistant {
+            content: Some("First try".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "list_dir",
+                "id": "call_1",
+                "arguments": {"path": "."}
+            })],
+        };
+        // Step 2: Assistant requests list_directory again (same args). Since the first one failed,
+        // it should NOT be suppressed and instead run successfully.
+        let step2 = TurnMessage::Assistant {
+            content: Some("Second try".to_string()),
+            tool_calls: vec![serde_json::json!({
+                "name": "list_dir",
+                "id": "call_2",
+                "arguments": {"path": "."}
+            })],
+        };
+        let step3 = TurnMessage::Assistant {
+            content: Some("Done".to_string()),
+            tool_calls: vec![],
+        };
+
+        let llm = MockLlmStepExecutor::new(vec![step1, step2, step3]);
+        let tools = MockFlakyToolExecutor {
+            attempts: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let intent = RawUserIntent::from_text("Flaky tool test", "session_flaky");
+        let governance = Arc::new(MockApprovedGovernance);
+        let cancellation = CancellationToken::new();
+
+        let outcome = llm_native_turn(
+            &llm,
+            &tools,
+            intent,
+            vec![],
+            vec![],
+            governance,
+            cancellation,
+            5,
+        )
+        .await
+        .expect("llm_native_turn failed");
+
+        assert!(outcome.success);
+        // First execution failed, second execution succeeded, so total 2 attempts made.
+        assert_eq!(outcome.tool_calls_executed, 2);
+
+        let history = outcome.execution_history.expect("Expected history");
+        let tool_results: Vec<_> = history
+            .iter()
+            .filter_map(|m| match m {
+                TurnMessage::ToolResult {
+                    tool_name, result, ..
+                } if tool_name == "list_dir" => Some(result),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_results.len(), 2);
+        assert!(tool_results[0].contains("Error"));
+        assert!(tool_results[1].contains("successfully on attempt 2"));
     }
 }
