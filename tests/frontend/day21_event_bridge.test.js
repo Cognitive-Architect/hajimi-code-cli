@@ -57,48 +57,6 @@ function testGlobalTauriListen() {
   });
 }
 
-function testInternalsTauriListenDirect() {
-  let listenCalled = false;
-  const internalsMock = {
-    listen(eventName, handler) {
-      listenCalled = true;
-      assert.strictEqual(eventName, 'approval_request');
-      return Promise.resolve(() => {});
-    }
-  };
-
-  const ctx = createContext(null, internalsMock);
-  runBridge(ctx);
-
-  ctx.window.HajimiTauri.listen('approval_request', () => {})
-    .then(() => {
-      assert.ok(listenCalled, 'Internals direct listen should be called');
-      console.log('  testInternalsTauriListenDirect: PASS');
-    });
-}
-
-function testInternalsTauriListenNested() {
-  let listenCalled = false;
-  const internalsMock = {
-    event: {
-      listen(eventName, handler) {
-        listenCalled = true;
-        assert.strictEqual(eventName, 'approval_request');
-        return Promise.resolve(() => {});
-      }
-    }
-  };
-
-  const ctx = createContext(null, internalsMock);
-  runBridge(ctx);
-
-  ctx.window.HajimiTauri.listen('approval_request', () => {})
-    .then(() => {
-      assert.ok(listenCalled, 'Internals nested event listen should be called');
-      console.log('  testInternalsTauriListenNested: PASS');
-    });
-}
-
 function testTauriListenUnavailable() {
   const ctx = createContext(null, null);
   runBridge(ctx);
@@ -116,8 +74,6 @@ function testTauriListenUnavailable() {
 function main() {
   console.log('day21 tauri event bridge tests:');
   testGlobalTauriListen();
-  testInternalsTauriListenDirect();
-  testInternalsTauriListenNested();
   testTauriListenUnavailable();
   console.log('day21 tauri event bridge tests: ALL PASS');
 }

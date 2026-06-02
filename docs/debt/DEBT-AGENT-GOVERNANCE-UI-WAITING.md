@@ -267,17 +267,15 @@ The next fix should focus on the frontend event bridge and visible approval UX, 
 - `withGlobalTauri`: 保持为 `false` (未发生改变)。
 - `window.HajimiTauri`: 已创建并由 `tauri-bridge.js` 导出，提供统一 IPC 桥接能力。
 - `window.__TAURI__`: 打包后的 WebView 中为 `undefined`，导致传统的 `window.__TAURI__.event.listen` 路径彻底失效。
-- `window.__TAURI_INTERNALS__`: 存在，并用于内部 Channel 句柄转换，但其底层并不直接公开或保证提供符合标准的 `listen` 事件机制，且为了防止打破 Tauri Capabilities 安全屏障，我们拒绝使用猜测式的未证实 API。
+- `window.__TAURI_INTERNALS__`: 存在并用于内部 Channel 转换。但由于缺乏 packaged WebView 下的真实事件通道采样数据，为了防止打破 Tauri Capabilities 安全屏障并遵守安全红线，**我们完全移除了任何未经采样的猜测性 internals event/listen 封装代码**。事件监听通道目前处于不可达（Blocked）状态。
 
-### 10.2 桥接层防御性适配 (Defensive Adaptation)
-我们在 `src/interface/web/modules/tauri-bridge.js` 中新增了 `HajimiTauri.listen` 的防御性实现：
-1. 优先检测 `window.__TAURI__?.event?.listen`。
-2. 其次防御性尝试 `window.__TAURI_INTERNALS__?.listen` 和 `window.__TAURI_INTERNALS__?.event?.listen`。
-3. 若均不可用，显式抛出异常 `new Error('Tauri event listen unavailable')`，不再默默失败。
+### 10.2 桥接层防御性适配与可见诊断 (Defensive Adaptation & Diagnostics)
+我们在事件桥接层和前端订阅逻辑中实现了安全的防御性适配与显式诊断：
+1. **统一事件监听桥接接口**：在 `src/interface/web/modules/tauri-bridge.js` 中新增了 `HajimiTauri.listen(eventName, handler)` 方法。该方法仅在 `window.__TAURI__?.event?.listen` 合法存在时调用，否则直接抛出异常 `new Error('Tauri event listen unavailable')`。
+2. **幂等性与安装状态保护**：在 `src/interface/web/app.js` 的 `setupGovernance()` 中引入了 `this._governanceListenerInstalled` 与 `this._governanceListenerInstalling` 双重状态锁，强力防止异步多并发调用时的重复注册。
+3. **显式诊断提示**：当 `HajimiTauri.listen` 由于 API 不可达触发失败时，前端将捕获异常，并使用 `this.showErrorToast` 和 `console.warn` 直接呈递可视化的错误警告：`"Approval UI unavailable: cannot subscribe to approval_request events."`。这使得在打包好的桌面应用程序中，由于 Event Bridge 阻断导致的审批窗口无法渲染的故障不再是静默失败，避免了用户陷入 30 秒的无感等待。
 
-同时在 `src/interface/web/app.js` 的 `setupGovernance()` 中：
-- 引入了 `this._governanceListenerInstalled` 幂等性控制。
-- 在 `HajimiTauri.listen` 被拒绝或报错时，通过 `showErrorToast` 和 `console.warn` 向用户呈递显式诊断信息：`"Approval UI unavailable: cannot subscribe to approval_request events."`，让用户明确知悉由于 WebView Event 桥接问题无法进行弹窗审批，避免无感等待 30 秒超时。
+目前，高危操作审批事件桥接通道仍待未来在真实环境中采样事件接口，或者采用 Polling Fallback（状态轮询）进行彻底解决。
 
 ### 10.3 轮询降级机制 (Polling Fallback) 方案设计
 当 Event Bridge 被阻断时，为确保高风险写操作仍能正常被审批通过，可考虑如下 Polling Fallback 替代方案：

@@ -4758,28 +4758,32 @@ window.app = {
       this.invokeGovernance('update_plan', { plan });
     });
 
-    // Idempotency check: if already installed, do not register again
-    if (this._governanceListenerInstalled) {
+    // Idempotency check: if already installed or installing, do not register again
+    if (this._governanceListenerInstalled || this._governanceListenerInstalling) {
       return;
     }
+    this._governanceListenerInstalling = true;
 
     // Register Tauri event listener for agent approval request via HajimiTauri event bridge
     if (window.HajimiTauri && typeof window.HajimiTauri.listen === 'function') {
       window.HajimiTauri.listen('approval_request', (event) => {
-        const payload = event.payload;
+        const payload = event?.payload ?? event;
         if (payload && payload.request_id) {
           this.showApprovalModal(payload);
         }
       })
       .then((unlisten) => {
         this._governanceListenerInstalled = true;
+        this._governanceListenerInstalling = false;
         this._governanceUnlisten = unlisten;
       })
       .catch((err) => {
+        this._governanceListenerInstalling = false;
         console.warn('Approval UI unavailable:', err);
         this.showErrorToast('Approval UI unavailable: cannot subscribe to approval_request events.');
       });
     } else {
+      this._governanceListenerInstalling = false;
       console.warn('Approval UI unavailable: HajimiTauri.listen not defined');
       this.showErrorToast('Approval UI unavailable: cannot subscribe to approval_request events.');
     }
