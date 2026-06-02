@@ -4768,7 +4768,8 @@ window.app = {
     if (window.HajimiTauri && typeof window.HajimiTauri.listen === 'function') {
       window.HajimiTauri.listen('approval_request', (event) => {
         const payload = event?.payload ?? event;
-        if (payload && payload.request_id) {
+        const requestId = payload?.request_id || payload?.requestId;
+        if (payload && requestId) {
           this.showApprovalModal(payload);
         }
       })

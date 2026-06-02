@@ -368,6 +368,102 @@ async function testMissingApprovalListenerShowsDiagnostic() {
   console.log('  testMissingApprovalListenerShowsDiagnostic: PASS');
 }
 
+// 6. Verify camelCase payload accepts requestId in event handler
+async function testApprovalRequestPayloadAcceptsRequestId() {
+  const ctx = createContext();
+  
+  let eventHandler = null;
+  ctx.window.HajimiTauri = {
+    isAvailable: () => true,
+    listen(eventName, handler) {
+      eventHandler = handler;
+      return Promise.resolve(() => {});
+    }
+  };
+
+  loadApp(ctx);
+  const app = ctx.window.app;
+  app.escapeHtml = escapeHtml;
+
+  app.setupGovernance();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.ok(eventHandler, 'eventHandler should be captured');
+
+  // Emit fake approval request using camelCase parameters
+  eventHandler({
+    payload: {
+      requestId: 'req-camel-123',
+      actionType: 'write_file',
+      riskScore: 0.9,
+      description: 'Camel case description'
+    }
+  });
+
+  const overlay = ctx.document.bodyElements.find(el => el.id === 'approval-overlay-req-camel-123');
+  assert.ok(overlay, 'modal overlay should render successfully with camelCase requestId');
+  assert.ok(overlay.innerHTML.includes('90分'), 'risk score should render correctly');
+  assert.ok(overlay.innerHTML.includes('write_file'), 'action type should render correctly');
+
+  console.log('  testApprovalRequestPayloadAcceptsRequestId: PASS');
+}
+
+// 7. Verify resolve failure shows error toast
+async function testApprovalResolveFailureShowsErrorToast() {
+  const ctx = createContext();
+  
+  let eventHandler = null;
+  ctx.window.HajimiTauri = {
+    isAvailable: () => true,
+    listen(eventName, handler) {
+      eventHandler = handler;
+      return Promise.resolve(() => {});
+    }
+  };
+
+  loadApp(ctx);
+  const app = ctx.window.app;
+  app.escapeHtml = escapeHtml;
+  app.showToast = () => {};
+  
+  let toastErrorMsg = null;
+  app.showErrorToast = (msg) => {
+    toastErrorMsg = msg;
+  };
+
+  // Simulate reject from tauri command
+  app.invokeTauri = async (cmd, args) => {
+    return Promise.reject(new Error('IPC Connection Error'));
+  };
+
+  app.setupGovernance();
+  await new Promise(resolve => setImmediate(resolve));
+
+  // Emit fake approval request
+  eventHandler({
+    payload: {
+      request_id: 'req-fail',
+      action_type: 'write_file',
+      risk_score: 0.8,
+      description: 'Write dangerous file'
+    }
+  });
+
+  const overlay = ctx.document.bodyElements.find(el => el.id === 'approval-overlay-req-fail');
+  assert.ok(overlay, 'overlay must exist');
+
+  const approveBtn = overlay.querySelector('.approve-btn');
+  await approveBtn.click();
+
+  // Wait for promise rejection to propagate
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.ok(toastErrorMsg && toastErrorMsg.includes('回传操作失败'), 'toast error must contain "回传操作失败"');
+  assert.ok(toastErrorMsg.includes('IPC Connection Error'), 'toast error must contain actual command error');
+
+  console.log('  testApprovalResolveFailureShowsErrorToast: PASS');
+}
+
 async function main() {
   console.log('agent governance approval contract smoke:');
   await testSetupGovernanceSubscribesToApprovalRequest();
@@ -375,6 +471,8 @@ async function main() {
   await testApprovalApproveInvokesResolveAgentApprovalTrue();
   await testApprovalRejectInvokesResolveAgentApprovalFalse();
   await testMissingApprovalListenerShowsDiagnostic();
+  await testApprovalRequestPayloadAcceptsRequestId();
+  await testApprovalResolveFailureShowsErrorToast();
   console.log('agent governance approval contract smoke: ALL PASS');
 }
 
