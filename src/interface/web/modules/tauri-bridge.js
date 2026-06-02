@@ -61,9 +61,25 @@
     }
   }
 
+  async function listen(eventName, handler) {
+    const tauri = global.__TAURI__;
+    if (tauri && tauri.event && typeof tauri.event.listen === 'function') {
+      return tauri.event.listen(eventName, handler);
+    }
+    const internals = global.__TAURI_INTERNALS__;
+    if (internals && typeof internals.listen === 'function') {
+      return internals.listen(eventName, handler);
+    }
+    if (internals && internals.event && typeof internals.event.listen === 'function') {
+      return internals.event.listen(eventName, handler);
+    }
+    throw new Error('Tauri event listen unavailable');
+  }
+
   global.HajimiTauri = Object.freeze({
     invoke,
     isAvailable,
     Channel,
+    listen,
   });
 })(window);

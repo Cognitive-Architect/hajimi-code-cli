@@ -4758,15 +4758,30 @@ window.app = {
       this.invokeGovernance('update_plan', { plan });
     });
 
-    // Register Tauri event listener for agent approval request (Day 06)
-    const tauri = window.__TAURI__;
-    if (tauri && tauri.event && typeof tauri.event.listen === 'function') {
-      tauri.event.listen('approval_request', (event) => {
+    // Idempotency check: if already installed, do not register again
+    if (this._governanceListenerInstalled) {
+      return;
+    }
+
+    // Register Tauri event listener for agent approval request via HajimiTauri event bridge
+    if (window.HajimiTauri && typeof window.HajimiTauri.listen === 'function') {
+      window.HajimiTauri.listen('approval_request', (event) => {
         const payload = event.payload;
         if (payload && payload.request_id) {
           this.showApprovalModal(payload);
         }
+      })
+      .then((unlisten) => {
+        this._governanceListenerInstalled = true;
+        this._governanceUnlisten = unlisten;
+      })
+      .catch((err) => {
+        console.warn('Approval UI unavailable:', err);
+        this.showErrorToast('Approval UI unavailable: cannot subscribe to approval_request events.');
       });
+    } else {
+      console.warn('Approval UI unavailable: HajimiTauri.listen not defined');
+      this.showErrorToast('Approval UI unavailable: cannot subscribe to approval_request events.');
     }
   },
 
