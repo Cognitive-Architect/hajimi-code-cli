@@ -71,3 +71,16 @@
 本轮只建立 DOM 合约与冻结规则，不修改生产代码，不清债，不重构。
 
 下一步进入 Day 3：Verification & Closure。
+
+## 7. Day 3 Closure
+
+> 状态: DAY-3-VERIFICATION-CLOSURE-CAPTURED
+
+本轮完成 STONE-AUDIT-V1 三天体检收口。
+
+Closure 文档：
+- `docs/debt/STONE-AUDIT-V1-CLOSURE.md`
+
+下一步：
+- 若基础验证全部通过，进入 `STONE-AUDIT-V1.5` 低风险模块拆分。
+- 若存在 BLOCKED 项，先修 BLOCKED，不进入拆分。
