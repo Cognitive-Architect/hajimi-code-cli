@@ -1,0 +1,328 @@
+﻿# Stone Audit V1
+Generated at: 2026-06-03 13:33:16
+
+## Git
+Branch:
+feature/toolfix-deepseek-schema
+Commit:
+055618e23664486de844d6b488a359dbdd741082
+Status:
+ M docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md
+ M docs/debt/INDEX.md
+ M docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md
+ D "docs/roadmap/Hajimi Agent/debt/DEBT-DAY-07-CHECKPOINT-DIFF-UI.md"
+ D "docs/roadmap/Hajimi Agent/plan/AGENT-UI-INTEGRATION-SAMPLING-NOTES.md"
+ D "docs/roadmap/Hajimi LLM/plan/AGENT-LLM-NATIVE-DESIGN.md"
+ D "docs/roadmap/Hajimi LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-01/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-02/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-03/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-04/snapshot.md"
+?? docs/debt/DEBT-AGENT-CHINESE-I18N.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-DRIVER-INJECTION.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md
+?? docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md
+?? docs/debt/DEBT-AGENT-UI-INTEGRATION.md
+?? docs/debt/DEBT-TAURI-CHANNEL-ENVELOPE-REGRESSION.md
+?? docs/debt/stone-audit-v1-20260603-133316.txt
+?? "docs/roadmap/Hajimi AgentFix/"
+?? "docs/roadmap/Hajimi ToneFix/"
+?? "docs/roadmap/hajimi template/"
+?? src/interface/desktop/native-smoke.txt
+
+## High-risk file line counts
+5646	src/interface/web/app.js
+4610	src/interface/web/style.css
+640	src/interface/web/index.html
+5079	src/interface/desktop/src/main.rs
+361	src/engine/tool-system/src/shell.rs
+36	src/interface/desktop/tauri.conf.json
+364	src/interface/web/modules/inspector.js
+1136	src/intelligence/agent-core/context_budget.rs
+987	src/intelligence/agent-core/long_context_pack.rs
+716	src/intelligence/agent-core/context_receipt.rs
+
+## Risk keywords
+F:\hajimi-code-cli\src\interface\web\app.js:8: activeTab: null,
+F:\hajimi-code-cli\src\interface\web\app.js:15: activeProviderId: null,
+F:\hajimi-code-cli\src\interface\web\app.js:16: editingProviderId: null,
+F:\hajimi-code-cli\src\interface\web\app.js:17: currentWorkspace: null,
+F:\hajimi-code-cli\src\interface\web\app.js:18: fileTree: null,
+F:\hajimi-code-cli\src\interface\web\app.js:21: slashPalette: null,
+F:\hajimi-code-cli\src\interface\web\app.js:31: activeSessionId: null,
+F:\hajimi-code-cli\src\interface\web\app.js:40: traceChannel: null,
+F:\hajimi-code-cli\src\interface\web\app.js:196: if (result.exit_code != null && result.exit_code !== 0) {
+F:\hajimi-code-cli\src\interface\web\app.js:215: return this.chatSessions.find(s => s.id === this.activeSessionId) || null;
+F:\hajimi-code-cli\src\interface\web\app.js:289: statusEl.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:306: container.innerHTML = '<div class="sidebar-live-empty">加载文件中...</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:322: container.innerHTML = '<div class="sidebar-live-empty">当前工作区暂无可显示文件</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:335: container.innerHTML = rows.map(({ node, depth }) => {
+F:\hajimi-code-cli\src\interface\web\app.js:359: providerMetaEl.innerHTML = `${this.escapeHtml(meta)} <span class="online-dot"></span>`;
+F:\hajimi-code-cli\src\interface\web\app.js:376: summaryEl.innerHTML = `${this.mcpServers.length} 个服务已记录 · ${toolCount} 个工具 <span class="online-dot"></span>`;
+F:\hajimi-code-cli\src\interface\web\app.js:384: el.innerHTML = '<span style="color:var(--fg-dim);">暂无会话统计</span>';
+F:\hajimi-code-cli\src\interface\web\app.js:393: el.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:409: el.innerHTML = '<span style="color:var(--fg-dim);">未启动智能体任务</span>';
+F:\hajimi-code-cli\src\interface\web\app.js:438: el.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:523: openDiffPreview(file = null) {
+F:\hajimi-code-cli\src\interface\web\app.js:577: searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">搜索中...</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:580: searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);">Tauri 不可用</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:593: searchResults.innerHTML = `<div style="padding:12px;color:var(--fg-red);">搜索失败: ${this.escapeHtml(e.message || e)}</div>`;
+F:\hajimi-code-cli\src\interface\web\app.js:600: searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:613: col: match[3] ? parseInt(match[3]) : null,
+F:\hajimi-code-cli\src\interface\web\app.js:620: searchResults.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">未找到匹配</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:641: searchResults.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:648: // TODO: scroll to line when editor supports it
+F:\hajimi-code-cli\src\interface\web\app.js:694: fileList.innerHTML = '<div style="padding:12px;color:var(--fg-dim);font-size:12px;">没有更改</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:721: fileList.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:749: diffContent.innerHTML = colored;
+F:\hajimi-code-cli\src\interface\web\app.js:789: statusBranch.innerHTML = `🌿 ${this.escapeHtml(branch)}`;
+F:\hajimi-code-cli\src\interface\web\app.js:892: menu.innerHTML = items.map((item, i) =>
+F:\hajimi-code-cli\src\interface\web\app.js:959: menu.innerHTML = items.map(item =>
+F:\hajimi-code-cli\src\interface\web\app.js:1063: this.activeTab = this.tabs.length > 0 ? this.tabs[Math.min(idx, this.tabs.length - 1)].id : null;
+F:\hajimi-code-cli\src\interface\web\app.js:1078: tabBar.innerHTML = this.tabs.map(tab => `
+F:\hajimi-code-cli\src\interface\web\app.js:1098: editorArea.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:1119: bar.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:1134: bar.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:1144: // TODO: expand folder in file tree
+F:\hajimi-code-cli\src\interface\web\app.js:1151: container.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1206: container.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1244: let hoverTimeout = null;
+F:\hajimi-code-cli\src\interface\web\app.js:1266: lineNumbers.innerHTML = lines.map((_, i) => `<div>${i + 1}</div>`).join('');
+F:\hajimi-code-cli\src\interface\web\app.js:1268: editorContent.innerHTML = newHighlighted;
+F:\hajimi-code-cli\src\interface\web\app.js:1329: .replace(/\b(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|if|goto|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|null|true|false)\b/g, '<span class="syntax-keyword">$1</span>')
+F:\hajimi-code-cli\src\interface\web\app.js:1338: .replace(/\b(auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|restrict|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|volatile|while|class|public|private|protected|virtual|override|namespace|template|typename|new|delete|try|catch|throw|nullptr|true|false|bool)\b/g, '<span class="syntax-keyword">$1</span>')
+F:\hajimi-code-cli\src\interface\web\app.js:1356: .replace(/\b(true|false|null)\b/g, '<span class="syntax-keyword">$1</span>')
+F:\hajimi-code-cli\src\interface\web\app.js:1364: .replace(/\b(true|false|null|yes|no|on|off)\b/g, '<span class="syntax-keyword">$1</span>');
+F:\hajimi-code-cli\src\interface\web\app.js:1376: .replace(/\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|DISTINCT|CREATE|TABLE|DROP|ALTER|INDEX|VIEW|TRIGGER|PROCEDURE|FUNCTION|DATABASE|SCHEMA|USE|SHOW|DESCRIBE|EXPLAIN|AND|OR|NOT|IN|BETWEEN|LIKE|IS|NULL|TRUE|FALSE|AS|CASE|WHEN|THEN|ELSE|END|IF|ELSEIF|WHILE|FOR|LOOP|RETURN|BEGIN|COMMIT|ROLLBACK|TRANSACTION|PRIMARY|KEY|FOREIGN|REFERENCES|DEFAULT|AUTO_INCREMENT|UNIQUE|CHECK|CONSTRAINT|CASCADE|SET|VALUES|INTO|VALUES|COUNT|SUM|AVG|MIN|MAX)\b/gi, '<span class="syntax-keyword">$1</span>')
+F:\hajimi-code-cli\src\interface\web\app.js:1437: div.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1469: const oldLine = oldLines[i] !== undefined ? oldLines[i] : null;
+F:\hajimi-code-cli\src\interface\web\app.js:1470: const newLine = newLines[i] !== undefined ? newLines[i] : null;
+F:\hajimi-code-cli\src\interface\web\app.js:1471: if (oldLine === newLine && oldLine !== null) {
+F:\hajimi-code-cli\src\interface\web\app.js:1473: } else if (oldLine !== null && newLine === null) {
+F:\hajimi-code-cli\src\interface\web\app.js:1475: } else if (newLine !== null && oldLine === null) {
+F:\hajimi-code-cli\src\interface\web\app.js:1477: } else if (oldLine !== null && newLine !== null) {
+F:\hajimi-code-cli\src\interface\web\app.js:1483: div.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1532: div.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1555: div.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:1651: terminalContent.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:1703: line.innerHTML = '<span class="terminal-prompt">$ </span><span class="terminal-input" contenteditable="true"></span>';
+F:\hajimi-code-cli\src\interface\web\app.js:1733: cmdLine.innerHTML = `<span class="terminal-prompt">$ </span><span class="terminal-cmd">${this.escapeHtml(cmd)}</span>`;
+F:\hajimi-code-cli\src\interface\web\app.js:1782: problemsContent.innerHTML = '<div class="problems-empty">扫描中...</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:1785: problemsContent.innerHTML = '<div class="problems-empty">Tauri 不可用</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:1800: problemsContent.innerHTML = `<div class="problems-empty">扫描失败: ${this.escapeHtml(e.message || e)}</div>`;
+F:\hajimi-code-cli\src\interface\web\app.js:1840: problemsContent.innerHTML = '<div class="problems-empty">工作区中未检测到问题。</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:1856: problemsContent.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:1863: // TODO: scroll to line when editor supports it
+F:\hajimi-code-cli\src\interface\web\app.js:1877: clearBtn.innerHTML = '🗑';
+F:\hajimi-code-cli\src\interface\web\app.js:1927: if (outputContent) outputContent.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:2156: if (chatMsgContainer) chatMsgContainer.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:2172: list.innerHTML = this.chatContextFiles.map(path => {
+F:\hajimi-code-cli\src\interface\web\app.js:2274: if (!cfg) return null;
+F:\hajimi-code-cli\src\interface\web\app.js:2405: document.getElementById('editModeBtn').addEventListener('click', () => {
+F:\hajimi-code-cli\src\interface\web\app.js:2514: } : null;
+F:\hajimi-code-cli\src\interface\web\app.js:2648: const output = result.stdout || result.result || JSON.stringify(result, null, 2);
+F:\hajimi-code-cli\src\interface\web\app.js:2668: let config = null;
+F:\hajimi-code-cli\src\interface\web\app.js:2741: this.addChatMessage('ai', `**MCP 工具 \`${toolName}\` 执行结果：**\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``);
+F:\hajimi-code-cli\src\interface\web\app.js:2903: if (!container) return null;
+F:\hajimi-code-cli\src\interface\web\app.js:2950: startedAt: null,
+F:\hajimi-code-cli\src\interface\web\app.js:2951: completedAt: null,
+F:\hajimi-code-cli\src\interface\web\app.js:2954: height: null,
+F:\hajimi-code-cli\src\interface\web\app.js:2959: error: null,
+F:\hajimi-code-cli\src\interface\web\app.js:2973: if (!turn || !turn.state) return null;
+F:\hajimi-code-cli\src\interface\web\app.js:2981: responseError: response.error || null,
+F:\hajimi-code-cli\src\interface\web\app.js:2985: createAssistantSessionMessage(content, turn = null) {
+F:\hajimi-code-cli\src\interface\web\app.js:3030: error: msg.responseError || null,
+F:\hajimi-code-cli\src\interface\web\app.js:3072: turn.state.response.error = patch.error ? this.safeText(patch.error) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:3087: turn.responseEl.innerHTML = this.formatText(`**模型返回错误：** ${err}`);
+F:\hajimi-code-cli\src\interface\web\app.js:3091: turn.responseEl.innerHTML = this.formatText(turn.state.response.content);
+F:\hajimi-code-cli\src\interface\web\app.js:3098: this._lastAssistantTurn = null;
+F:\hajimi-code-cli\src\interface\web\app.js:3190: // --- DEBT-AGENT-LLM-NATIVE-THINKING-LEAK fix ---
+F:\hajimi-code-cli\src\interface\web\app.js:3277: this._lastAssistantTurn = null;
+F:\hajimi-code-cli\src\interface\web\app.js:3292: lastState: null,
+F:\hajimi-code-cli\src\interface\web\app.js:3299: model: config?.model || null,
+F:\hajimi-code-cli\src\interface\web\app.js:3300: baseUrl: config?.baseUrl || config?.base_url || null,
+F:\hajimi-code-cli\src\interface\web\app.js:3306: let streamError = null;
+F:\hajimi-code-cli\src\interface\web\app.js:3353: streamDiag.lastState = result.state || null;
+F:\hajimi-code-cli\src\interface\web\app.js:3390: if (event.promptTokens != null && event.completionTokens != null) {
+F:\hajimi-code-cli\src\interface\web\app.js:3492: div.innerHTML = `<div class="chat-message-avatar">${avatar}</div><div class="chat-message-body message-card">${this.formatText(text)}</div>`;
+F:\hajimi-code-cli\src\interface\web\app.js:3540: /// Returns null if all stats are zero (hides the bar when no ops performed).
+F:\hajimi-code-cli\src\interface\web\app.js:3660: body.innerHTML = '<div class="model-picker-empty">暂无配置模型，点击下方按钮添加。</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:3682: body.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:3726: list.innerHTML = `<div class="provider-item-empty">暂无自定义模型，点击上方按钮添加。${workspaceTag}</div>`;
+F:\hajimi-code-cli\src\interface\web\app.js:3730: list.innerHTML = this.providerConfigs.map(cfg => {
+F:\hajimi-code-cli\src\interface\web\app.js:4026: this.editingProviderId = config ? config.id : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4066: this.updateCapabilityStatusDisplay(config.model || '', null);
+F:\hajimi-code-cli\src\interface\web\app.js:4069: this.updateCapabilityStatusDisplay(config ? (config.model || '') : '', null);
+F:\hajimi-code-cli\src\interface\web\app.js:4153: this.editingProviderId = null;
+F:\hajimi-code-cli\src\interface\web\app.js:4171: this.backupMode = null;
+F:\hajimi-code-cli\src\interface\web\app.js:4233: const maxContextTokens = document.getElementById('providerMaxContext').value ? parseInt(document.getElementById('providerMaxContext').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4234: const maxOutputTokens = document.getElementById('providerMaxOutput').value ? parseInt(document.getElementById('providerMaxOutput').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4235: const reserveOutputTokens = document.getElementById('providerReserveOutput').value ? parseInt(document.getElementById('providerReserveOutput').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4236: const safetyMarginTokens = document.getElementById('providerSafetyMargin').value ? parseInt(document.getElementById('providerSafetyMargin').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4237: const retrievalBudgetTokens = document.getElementById('providerRetrievalBudget').value ? parseInt(document.getElementById('providerRetrievalBudget').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:4249: if (maxContextTokens !== null) config.maxContextTokens = maxContextTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:4250: if (maxOutputTokens !== null) config.maxOutputTokens = maxOutputTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:4251: if (reserveOutputTokens !== null) config.reserveOutputTokens = reserveOutputTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:4252: if (safetyMarginTokens !== null) config.safetyMarginTokens = safetyMarginTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:4253: if (retrievalBudgetTokens !== null) config.retrievalBudgetTokens = retrievalBudgetTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:4303: select.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\app.js:4316: const name = select.value || null;
+F:\hajimi-code-cli\src\interface\web\app.js:4374: if (select) select.innerHTML = opts;
+F:\hajimi-code-cli\src\interface\web\app.js:4378: list.innerHTML = '<div class="agent-provider-empty">暂无绑定</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:4381: list.innerHTML = entries.map(([agentId, providerId]) => {
+F:\hajimi-code-cli\src\interface\web\app.js:4399: const providerId = document.getElementById('agentBindProviderTab')?.value || null;
+F:\hajimi-code-cli\src\interface\web\app.js:4419: await this.invokeTauri('set_agent_provider', { agentId, providerId: null });
+F:\hajimi-code-cli\src\interface\web\app.js:4478: list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务器</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:4482: list.innerHTML = this.mcpServers.map((s, i) => `
+F:\hajimi-code-cli\src\interface\web\app.js:4539: list.innerHTML = this.extensions.map(ext => {
+F:\hajimi-code-cli\src\interface\web\app.js:4718: tbody.innerHTML = '<tr><td colspan="4" class="audit-empty">暂无记录</td></tr>';
+F:\hajimi-code-cli\src\interface\web\app.js:4721: tbody.innerHTML = logs.map(r => {
+F:\hajimi-code-cli\src\interface\web\app.js:4817: overlay.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:4898: if (!this.isTauriAvailable()) { list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">Tauri 不可用</div>'; return; }
+F:\hajimi-code-cli\src\interface\web\app.js:4903: list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">暂无检查点</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:4906: list.innerHTML = checkpoints.map((chk, idx) => {
+F:\hajimi-code-cli\src\interface\web\app.js:4942: list.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:12px;">加载失败</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:4987: target.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:5021: } : null,
+F:\hajimi-code-cli\src\interface\web\app.js:5109: if (!url) return null;
+F:\hajimi-code-cli\src\interface\web\app.js:5114: return null;
+F:\hajimi-code-cli\src\interface\web\app.js:5159: list.innerHTML = filtered.map((c, i) => `
+F:\hajimi-code-cli\src\interface\web\app.js:5278: this.currentEditPayload = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5286: this.currentDiffFile = edit.hunks && edit.hunks.length > 0 ? edit.hunks[0].file_path : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5300: hunksContainer.innerHTML = '';
+F:\hajimi-code-cli\src\interface\web\app.js:5304: hunksContainer.innerHTML = `<div style="padding:8px;color:var(--fg-dim);font-size:12px;">${hunks} 个 hunk (详细内容未提供)</div>`;
+F:\hajimi-code-cli\src\interface\web\app.js:5313: hunkEl.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\app.js:5334: this.currentEditPayload = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5417: panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">Tauri 不可用</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:5424: panel.innerHTML = '<div style="color:var(--fg-dim);text-align:center;padding:20px;">加载失败</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:5432: panel.innerHTML = '<div class="edit-history-empty" style="color:var(--fg-dim);text-align:center;padding:20px;">暂无编辑历史</div>';
+F:\hajimi-code-cli\src\interface\web\app.js:5436: panel.innerHTML = entries.slice().reverse().map((e, i) => {
+F:\hajimi-code-cli\src\interface\web\app.js:5445: ${e.confidence != null ? `<div style="font-size:10px;color:var(--fg-dim);margin-top:2px;">confidence: ${e.confidence.toFixed(2)}</div>` : ''}
+F:\hajimi-code-cli\src\interface\web\app.js:5507: setMetric('metricIterationTab', m.iteration_count != null ? m.iteration_count : 'N/A');
+F:\hajimi-code-cli\src\interface\web\app.js:5508: setMetric('metricBlackboardTab', m.blackboard_size != null ? m.blackboard_size : 'N/A');
+F:\hajimi-code-cli\src\interface\web\app.js:5509: setMetric('metricEditCountTab', m.edit_count != null ? m.edit_count : '0');
+F:\hajimi-code-cli\src\interface\web\app.js:5533: _spinnerInterval: null,
+F:\hajimi-code-cli\src\interface\web\app.js:5534: _spinnerEl: null,
+F:\hajimi-code-cli\src\interface\web\app.js:5550: this._spinnerInterval = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5552: this._spinnerEl = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5564: _statusIndicatorTimer: null,
+F:\hajimi-code-cli\src\interface\web\app.js:5565: _statusIndicatorStart: null,
+F:\hajimi-code-cli\src\interface\web\app.js:5570: this._statusIndicatorStart = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5573: this._statusIndicatorTimer = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5590: this._statusIndicatorTimer = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5592: this._statusIndicatorStart = null;
+F:\hajimi-code-cli\src\interface\web\app.js:5619: const maxContextTokens = document.getElementById('providerMaxContext').value ? parseInt(document.getElementById('providerMaxContext').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5620: const maxOutputTokens = document.getElementById('providerMaxOutput').value ? parseInt(document.getElementById('providerMaxOutput').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5621: const reserveOutputTokens = document.getElementById('providerReserveOutput').value ? parseInt(document.getElementById('providerReserveOutput').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5622: const safetyMarginTokens = document.getElementById('providerSafetyMargin').value ? parseInt(document.getElementById('providerSafetyMargin').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5623: const retrievalBudgetTokens = document.getElementById('providerRetrievalBudget').value ? parseInt(document.getElementById('providerRetrievalBudget').value) : null;
+F:\hajimi-code-cli\src\interface\web\app.js:5627: if (maxContextTokens !== null) config.maxContextTokens = maxContextTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:5628: if (maxOutputTokens !== null) config.maxOutputTokens = maxOutputTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:5629: if (reserveOutputTokens !== null) config.reserveOutputTokens = reserveOutputTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:5630: if (safetyMarginTokens !== null) config.safetyMarginTokens = safetyMarginTokens;
+F:\hajimi-code-cli\src\interface\web\app.js:5631: if (retrievalBudgetTokens !== null) config.retrievalBudgetTokens = retrievalBudgetTokens;
+F:\hajimi-code-cli\src\interface\web\index.html:353: <button class="composer-tool-btn icon-btn" id="editModeBtn" title="编辑模式">✎</button>
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:407: Err(_) => Ok(Value::Null),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:416: None => Ok(Value::Null),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:1021: serde_json::to_string(args).unwrap_or_else(|_| "null".to_string())
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3325: let re_assignment = regex::Regex::new(r#"(?i)(key|secret|password|token|auth|credential)\s*[:=]\s*['"]?[a-zA-Z0-9_\-\.]{8,}['"]?"#).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3328: let re_sk = regex::Regex::new(r#"(?i)sk-[a-zA-Z0-9_\-\.]{12,}"#).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3412: let app_level_str = state.approval_level.lock().unwrap().clone();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3541: *state.approval_level.lock().unwrap() = level_str.to_string();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3548: let level_str = state.approval_level.lock().unwrap().clone();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3837: result.unwrap(),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3853: assert_eq!(result.unwrap(), ToolAuthorization::Allow);
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:3934: assert_eq!(std::fs::read_to_string(&file).unwrap(), "world");
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4026: assert!(result.unwrap().contains("-hello"));
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4118: assert_eq!(result.unwrap().file_name().unwrap(), "newfile.txt");
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4128: assert_eq!(result.unwrap().file_name().unwrap(), "newdir");
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4188: let safe_path = resolve_workspace_path("created", &workspace, PathIntent::NewDir).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4202: resolve_workspace_path("old.txt", &workspace, PathIntent::AnyExisting).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4203: let safe_new = resolve_workspace_path("new.txt", &workspace, PathIntent::NewFile).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4209: std::fs::read_to_string(workspace.join("new.txt")).unwrap(),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4221: resolve_workspace_path("delete-me.txt", &workspace, PathIntent::AnyExisting).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4237: resolve_workspace_path("delete-dir", &workspace, PathIntent::AnyExisting).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4253: resolve_workspace_path("non-empty", &workspace, PathIntent::AnyExisting).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4375: let result = build_restore_plan(&checkpoint, &workspace, &temp.join("backup")).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4385: std::fs::write(workspace.join("target.txt"), "before").unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4398: let plan = build_restore_plan(&checkpoint, &workspace, &backup_dir).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4400: backup_restore_targets(&plan, &workspace, &backup_dir).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4401: apply_restore_plan(&checkpoint, &plan, &workspace).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4404: std::fs::read_to_string(workspace.join("target.txt")).unwrap(),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4408: std::fs::read_to_string(backup_dir.join("target.txt")).unwrap(),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4427: std::fs::write(workspace.join("ok.txt"), "before").unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4454: std::fs::read_to_string(workspace.join("ok.txt")).unwrap(),
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4467: assert_eq!(result.unwrap().unwrap(), workspace.canonicalize().unwrap());
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4479: assert_eq!(result.unwrap().unwrap(), workspace.canonicalize().unwrap());
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4627: let config: ProviderConfig = serde_json::from_value(json_data).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4645: let legacy_config: ProviderConfig = serde_json::from_value(legacy_json).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4956: let status_json = serde_json::to_string(&status_event).unwrap();
+F:\hajimi-code-cli\src\interface\desktop\src\main.rs:4961: let done_json = serde_json::to_string(&done_event).unwrap();
+F:\hajimi-code-cli\src\engine\tool-system\src\shell.rs:4: //! Replaces weak substring blacklist. See docs/debt/SHELL-FEATURE-DEBT-002.md for downgraded
+F:\hajimi-code-cli\src\engine\tool-system\src\shell.rs:87: "Command '{}' not in strict allow-list. Allowed: {}. See docs/debt/SHELL-FEATURE-DEBT-002.md",
+F:\hajimi-code-cli\src\engine\tool-system\src\shell.rs:102: // Sandbox note: For untrusted execution, wrap with `firejail --net=none` or nsjail (see DEBT-002)
+F:\hajimi-code-cli\src\engine\tool-system\src\shell.rs:149: "Command '{}' not in strict allow-list. Allowed: {}. See docs/debt/SHELL-FEATURE-DEBT-002.md",
+F:\hajimi-code-cli\src\engine\tool-system\src\shell.rs:232: "Execute commands with strict allow-list validation, parameterized Command, and metachar protection. Sandbox recommended (firejail/nsjail). See DEBT-002 for complex shell features."
+F:\hajimi-code-cli\src\interface\desktop\tauri.conf.json:13: "withGlobalTauri": false,
+F:\hajimi-code-cli\src\interface\desktop\tauri.conf.json:25: "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; connect-src 'self' http://127.0.0.1:* http://localhost:*"
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:65: function openDiffPreview(app, file = null) {
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:90: el.innerHTML = '<span style="color:var(--fg-dim);">无待处理修改</span>';
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:95: el.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:107: contextEl.innerHTML = '<span style="color:var(--fg-dim);">暂无上下文文件</span>';
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:109: contextEl.innerHTML = app.chatContextFiles.map(path => {
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:121: modelEl.innerHTML = '<span style="color:var(--fg-dim);">未选择模型</span>';
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:126: modelEl.innerHTML = `<div style="font-size:12px;color:var(--fg-default);">
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:142: container.innerHTML = `<div class="inspector-empty-state">
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:184: container.innerHTML = html;
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:196: container.innerHTML = '<div class="inspector-empty-state"><span>任务执行后显示 Trace</span></div>';
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:203: container.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:272: app.renderContextReceiptPanel(null);
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:281: panel.innerHTML = `
+F:\hajimi-code-cli\src\interface\web\modules\inspector.js:309: panel.innerHTML = `
+F:\hajimi-code-cli\src\intelligence\agent-core\context_budget.rs:950: res.save_to_file_sync().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_budget.rs:987: res.save_to_file_sync().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_budget.rs:1029: res.save_to_file_sync().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_budget.rs:1071: res.save_to_file_sync().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:707: fs::create_dir_all(&path).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:749: fs::write(&path, "trace contents").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:758: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:773: fs::write(&large_file_path, content).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:785: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:808: fs::write(&large_file_path, lines.join("\n")).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:820: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:836: fs::create_dir(root.join("src")).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:837: fs::create_dir(root.join(".git")).unwrap(); // should be excluded
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:838: fs::write(root.join("src").join("lib.rs"), "pub fn test() {}").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:839: fs::write(root.join("Cargo.toml"), "[package]").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:840: fs::write(root.join(".git").join("config"), "vcs").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:843: builder.add_repo_tree(root).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:844: builder.add_repo_manifest(root).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:854: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:866: fs::write(&f1, "hello").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:867: fs::write(&f2, "world ".repeat(10)).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:870: builder.add_related_file(&f1).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:873: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:876: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:883: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:896: let reason = p3_omitted.unwrap().omitted_reason.as_ref().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:909: fs::create_dir(&dir1).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:910: fs::create_dir(&dir2).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:914: fs::write(&f1, "content 1").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:915: fs::write(&f2, "content 2").unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:924: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:931: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:953: .unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\long_context_pack.rs:980: let reason = omitted_large.omitted_reason.as_ref().unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:485: let json = serde_json::to_string(&r).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:520: let json = serde_json::to_string(&r).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:565: let json = serde_json::to_string(&r).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:631: let u = r.actual_usage.unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:639: let json = serde_json::to_string_pretty(&r).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:640: let r2: ContextReceipt = serde_json::from_str(&json).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:678: let json = serde_json::to_string(&r).unwrap();
+F:\hajimi-code-cli\src\intelligence\agent-core\context_receipt.rs:698: let loaded = loaded.unwrap();
+
+## Suggested checks
+node --check src/interface/web/app.js
+npm run test:security-gate
+cargo check --workspace
