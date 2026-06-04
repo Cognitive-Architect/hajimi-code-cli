@@ -1,0 +1,419 @@
+STONE-AUDIT-V2-FULL-SCAN-READONLY raw log
+Generated: 2026-06-04
+Timestamp command: Get-Date -Format 'yyyyMMdd-HHmmss'
+Timestamp output: 20260604-173902
+
+Scope:
+- Read-only scan.
+- No production code edits.
+- No fixes applied.
+- No Provider / Keyring / Shell / Checkpoint / Agent streaming / CSP / withGlobalTauri changes.
+
+COMMAND: git branch --show-current
+OUTPUT:
+feature/toolfix-deepseek-schema
+
+COMMAND: git rev-parse HEAD
+OUTPUT:
+2b50333a5b76d559545d40c7cb7d91890f17fed8
+
+COMMAND: git status --short
+OUTPUT:
+ M docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md
+ M docs/debt/INDEX.md
+ M docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md
+ D "docs/roadmap/Hajimi Agent/debt/DEBT-DAY-07-CHECKPOINT-DIFF-UI.md"
+ D "docs/roadmap/Hajimi Agent/plan/AGENT-UI-INTEGRATION-SAMPLING-NOTES.md"
+ D "docs/roadmap/Hajimi LLM/plan/AGENT-LLM-NATIVE-DESIGN.md"
+ D "docs/roadmap/Hajimi LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-01/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-02/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-03/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-04/snapshot.md"
+?? docs/debt/DEBT-AGENT-CHINESE-I18N.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-DRIVER-INJECTION.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md
+?? docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md
+?? docs/debt/DEBT-AGENT-UI-INTEGRATION.md
+?? docs/debt/DEBT-TAURI-CHANNEL-ENVELOPE-REGRESSION.md
+?? docs/debt/STONE-AUDIT-V1.5-PACKAGE-SMOKE.md
+?? "docs/roadmap/Hajimi AgentFix/"
+?? "docs/roadmap/Hajimi ToneFix/"
+?? "docs/roadmap/hajimi template/"
+?? src/interface/desktop/native-smoke.txt
+
+COMMAND: Get-Command tokei,cloc,scc,radon -ErrorAction SilentlyContinue
+OUTPUT:
+No output. Tools unavailable. Complexity scan uses local Node heuristic and is not exact cyclomatic complexity.
+
+COMMAND: git ls-files size scan, top 30 current tracked files
+OUTPUT:
+Rank	KB	Bytes	Path
+1	88269.2	90387630	models/fast-all-MiniLM-L6-v2/model.onnx
+2	81230.6	83180180	models/all-MiniLM-L6-v2.tar.gz
+3	14000.4	14336376	src/intelligence/codex-twist/index.node
+4	695.0	711661	models/fast-all-MiniLM-L6-v2/tokenizer.json
+5	337.4	345541	src/patches/zstd-sys/zstd/lib/compress/zstd_compress.c
+6	256.3	262488	src/patches/zstd-sys/zstd/lib/common/xxhash.h
+7	229.6	235108	Cargo.lock
+8	227.7	233184	src/interface/web/app.js
+9	226.1	231508	models/fast-all-MiniLM-L6-v2/vocab.txt
+10	224.8	230204	docs/security/examples/SECURITY_REVIEW_SAMPLE.json
+11	179.3	183628	src/interface/desktop/src/main.rs
+12	177.9	182177	src/patches/zstd-sys/zstd/lib/legacy/zstd_v07.c
+13	177.5	181748	src/patches/zstd-sys/zstd/lib/zstd.h
+14	159.7	163487	src/patches/zstd-sys/zstd/lib/legacy/zstd_v06.c
+15	150.1	153712	src/patches/zstd-sys/zstd/lib/legacy/zstd_v05.c
+16	140.1	143417	src/interface/desktop/Cargo.lock
+17	129.4	132468	src/patches/zstd-sys/zstd/lib/legacy/zstd_v04.c
+18	122.3	125199	src/patches/zstd-sys/zstd/lib/legacy/zstd_v02.c
+19	109.3	111939	src/patches/zstd-sys/src/bindings_zstd_experimental.rs
+20	108.7	111309	src/patches/zstd-sys/zstd/lib/legacy/zstd_v03.c
+21	101.7	104126	src/patches/zstd-sys/src/bindings_zstd_std_experimental.rs
+22	101.4	103834	docs/security/examples/SECURITY_REVIEW_SAMPLE.md
+23	100.4	102821	src/patches/zstd-sys/zstd/lib/compress/zstd_lazy.c
+24	100.0	102400	src/patches/zstd-sys/zstd/lib/decompress/zstd_decompress.c
+25	99.1	101467	src/patches/zstd-sys/zstd/lib/decompress/zstd_decompress_block.c
+26	90.9	93127	src/interface/web/style.css
+27	82.1	84098	src/patches/zstd-sys/zstd/lib/compress/zstdmt_compress.c
+28	81.9	83899	src/interface/desktop/gen/schemas/desktop-schema.json
+29	81.9	83899	src/interface/desktop/gen/schemas/windows-schema.json
+30	76.4	78215	src/intelligence/agent-core/agent_loop.rs
+
+COMMAND: git ls-files total size
+OUTPUT:
+Count: 733
+Average: 270347.633015007
+Sum: 198164815
+Maximum: 90387630
+
+COMMAND: source line count scan, top 30 over src/tests/scripts excluding build/dependency dirs and src/patches
+OUTPUT:
+Rank	Lines	File
+1	5617	src/interface/web/app.js
+2	5094	src/interface/desktop/src/main.rs
+3	4611	src/interface/web/style.css
+4	2023	src/intelligence/agent-core/agent_loop.rs
+5	1957	src/intelligence/agent-core/llm_native/turn.rs
+6	1715	src/intelligence/memory/src/dream.rs
+7	1571	src/intelligence/agent-core/llm/bridge.rs
+8	1289	src/intelligence/agent-core/llm_native/driver.rs
+9	1173	src/engine/llm-core/src/openai.rs
+10	1148	src/intelligence/agent-core/agent_loop_tests.rs
+11	1137	src/intelligence/agent-core/context_budget.rs
+12	1054	src/intelligence/memory/src/graph.rs
+13	988	src/intelligence/agent-core/long_context_pack.rs
+14	898	src/intelligence/agent-core/context_probe.rs
+15	892	src/intelligence/agent-core/act_executor.rs
+16	870	src/interface/web/modules/thinking-ui.js
+17	856	src/intelligence/agent-core/edit_applier.rs
+18	799	src/intelligence/memory/src/hnsw.rs
+19	771	src/engine/tool-system/src/fs.rs
+20	734	src/intelligence/agent-core/planner.rs
+21	718	src/intelligence/agent-core/context_receipt.rs
+22	708	src/intelligence/agent-core/security_workflow.rs
+23	698	src/intelligence/codex-twist/src/ffi.rs
+24	690	src/engine/tool-system/src/lsp.rs
+25	664	src/engine/tool-system/src/mcp.rs
+26	645	src/interface/web/index.html
+27	639	src/intelligence/agent-core/orchestrator.rs
+28	638	src/intelligence/agent-core/tests/agent_core_e2e.rs
+29	580	src/intelligence/agent-core/tests/llm_native_e2e_tests.rs
+30	549	src/intelligence/agent-core/tests/editing_e2e.rs
+
+COMMAND: local Node heuristic complexity scan, project-owned scope
+OUTPUT:
+Rank	Score	Branches	Lines	Start	Function	File
+1	114	110	270	3759	setupProviderSettings	src/interface/web/app.js
+2	112	108	300	2572	handleChatCommand	src/interface/web/app.js
+3	94	92	118	1279	highlightCode	src/interface/web/app.js
+4	72	68	314	177	run	src/intelligence/agent-core/agent_loop.rs
+5	63	60	182	3273	streamChat	src/interface/web/app.js
+6	53	50	188	188	chat_and_collect	src/intelligence/agent-core/llm/bridge.rs
+7	53	50	188	506	chat_and_collect	src/intelligence/agent-core/llm/bridge.rs
+8	51	48	167	204	send_request	src/engine/tool-system/src/lsp.rs
+9	50	47	199	78	run_edit_workflow	src/intelligence/agent-core/workflow_orchestrator.rs
+10	49	46	184	1336	handle_plan_adjustment	src/intelligence/agent-core/agent_loop.rs
+11	47	46	59	4030	openProviderModal	src/interface/web/app.js
+12	46	42	245	853	stream_chat_with_tools	src/engine/llm-core/src/openai.rs
+13	45	42	229	35	parseGateJson	scripts/security-report.js
+14	45	42	186	624	parse_openai_sse_line	src/engine/llm-core/src/openai.rs
+15	39	36	225	52	createSlashPalette	src/interface/web/modules/slash-palette.js
+16	38	36	88	309	generate_smart_message	src/engine/tool-system/src/git.rs
+17	35	33	133	63	spawn_worker	src/intelligence/agent-core/worker_lifecycle_manager.rs
+18	33	32	36	298	insert_with_levels	src/intelligence/memory/src/hnsw.rs
+19	32	28	246	2017	stream_chat	src/interface/desktop/src/main.rs
+20	30	28	115	204	retrieve_with_ast	src/intelligence/agent-core/memory_retriever.rs
+21	29	26	165	639	legacy_act	src/intelligence/agent-core/agent_loop.rs
+22	29	27	102	3170	handleAgentEvent	src/interface/web/app.js
+23	28	26	122	812	bootstrap_first_tool_call	src/intelligence/agent-core/agent_loop.rs
+24	28	26	103	14	score_skill	src/intelligence/agent-core/skills/scoring.rs
+25	28	26	86	169	parseStreamEvent	src/interface/web/modules/thinking-ui.js
+26	28	27	79	56	resolve_dynamic_retrieval_budget	src/intelligence/agent-core/memory_retriever.rs
+27	28	27	53	5180	setupKeyboardShortcuts	src/interface/web/app.js
+28	28	27	35	99	insert	src/intelligence/memory/src/hnsw.rs
+29	27	25	148	200	parse_sse	src/engine/llm-core/src/anthropic.rs
+30	27	25	128	2443	sendChatMessage	src/interface/web/app.js
+
+COMMAND: local Node heuristic complexity scan, full repo including docs/reference source
+OUTPUT:
+Rank	Score	Branches	Lines	Start	Function	File
+1	773	735	3000	73	plugin_list_skips_invalid_marketplace_file_and_reports_error	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/plugin_list.rs
+2	718	680	3000	246	plugin_list_keeps_valid_marketplaces_when_another_marketplace_fails_to_load	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/plugin_list.rs
+3	350	335	1150	2820	turn_start_streams_apply_patch_change_updates_v2	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/turn_start.rs
+4	271	254	1286	731	run_main	docs/codex-twist-source/codex-rs/cloud-tasks/src/lib.rs
+5	246	236	745	268	hooks_list_shows_plugin_hook_load_warnings	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/hooks_list.rs
+6	237	212	1975	12	handle_event	docs/codex-twist-source/codex-rs/tui/src/app/event_dispatch.rs
+7	207	192	1132	96	role_block	docs/codex-twist-source/codex-rs/core/tests/suite/subagent_notifications.rs
+8	183	152	2454	410	mcp_tool_call_span_records_expected_fields	docs/codex-twist-source/codex-rs/core/src/mcp_tool_call_tests.rs
+9	170	162	614	830	cli_main	docs/codex-twist-source/codex-rs/cli/src/main.rs
+10	167	146	1642	501	contains_env_placeholder	docs/codex-twist-source/codex-rs/external-agent-migration/src/lib.rs
+11	163	150	1035	598	turn_and_completed_response_spans_record_token_usage	docs/codex-twist-source/codex-rs/core/tests/suite/otel.rs
+12	160	145	1161	2436	load_config_with_layer_stack	docs/codex-twist-source/codex-rs/core/src/config/mod.rs
+13	143	131	942	691	handle_responses_span_records_response_kind_and_tool_name	docs/codex-twist-source/codex-rs/core/tests/suite/otel.rs
+14	138	134	243	347	parse_git_apply_output	docs/codex-twist-source/codex-rs/git-utils/src/apply.rs
+15	131	120	864	769	record_responses_sets_span_fields_for_response_events	docs/codex-twist-source/codex-rs/core/tests/suite/otel.rs
+16	118	111	507	857	handle_initialized_client_request	docs/codex-twist-source/codex-rs/app-server/src/message_processor.rs
+17	114	110	270	3759	setupProviderSettings	src/interface/web/app.js
+18	112	108	300	2572	handleChatCommand	src/interface/web/app.js
+19	96	88	588	164	setup_configured_marketplace_with_malformed_manifest	docs/codex-twist-source/codex-rs/cli/tests/plugin_cli.rs
+20	94	92	118	1279	highlightCode	src/interface/web/app.js
+21	84	78	409	546	run_setup_full	docs/codex-twist-source/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs
+22	81	77	246	575	config_batch_write_updates_hook_trust_for_loaded_session	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/hooks_list.rs
+23	77	73	295	443	turn_start_shell_zsh_fork_subcommand_decline_marks_parent_declined_v2	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/turn_start_zsh_fork.rs
+24	75	68	488	339	mcp_tool_call_output_exceeds_limit_truncated_for_model	docs/codex-twist-source/codex-rs/core/tests/suite/truncation.rs
+25	72	68	314	177	run	src/intelligence/agent-core/agent_loop.rs
+26	72	69	179	3365	turn_start_file_change_approval_accept_for_session_persists_v2	docs/codex-twist-source/codex-rs/app-server/tests/suite/v2/turn_start.rs
+27	70	64	426	2074	summarize_main_tokens	docs/codex-twist-source/codex-rs/shell-command/src/parse_command.rs
+28	70	65	382	564	run_exec_session	docs/codex-twist-source/codex-rs/exec/src/lib.rs
+29	68	64	279	111	load_config_layers_state	docs/codex-twist-source/codex-rs/config/src/loader/mod.rs
+30	68	64	273	133	run_turn	docs/codex-twist-source/codex-rs/core/src/session/turn.rs
+
+COMMAND: keyword count scan
+OUTPUT:
+Keyword	AllMatches	SrcMatches	TestsMatches	DocsMatches	FilesWithMatch
+TODO	764	29	6	214	270
+FIXME	107	2	0	9	57
+DEBT	7767	146	28	454	1193
+innerHTML	828	109	53	452	83
+unsafe	1329	52	1	709	344
+unwrap	4116	930	57	2780	448
+panic	1566	24	3	1532	336
+expect	12507	397	100	11818	797
+
+COMMAND: keyword top files scan
+OUTPUT:
+TODO top files:
+67 docs/codex-twist-source/codex-rs/shell-command/src/parse_command.rs
+40 archive/05/05-01/task/task 07.md
+23 archive/05/05-01/task/task 09.md
+21 archive/05/05-01/task/task 08.md
+18 archive/02/tasks/task12.md
+
+FIXME top files:
+9 archive/05/05-01/task/task 07.md
+6 archive/04/04-28/Hajimi IDE v2/phase 5/PAYLOAD-PHASE5-AUDIT-FIXES.md
+4 archive/04/04-27/red team/HAJIMI-SECOND-REDTEAM-AUDIT-PAYLOAD.md
+4 docs/roadmap/Hajimi ToneFix/plan/stone_audit_v1_hajimi_code_cli.md
+
+DEBT top files:
+66 archive/03/docs-internal/index.md
+57 archive/02/tasks/task07.md
+49 archive/05/hajimi debtFix/debt/HAJIMI_DEBT_CURRENT_STATUS_2026-05-15.md
+48 archive/05/05-05/audit report/P1-05-05-AUDIT-REPORT.md
+
+innerHTML top files:
+216 docs/security/examples/SECURITY_REVIEW_SAMPLE.json
+108 docs/security/examples/SECURITY_REVIEW_SAMPLE.md
+88 docs/debt/stone-audit-v1-20260603-133316.txt
+74 src/interface/web/app.js
+13 src/interface/web/modules/thinking-ui.js
+12 src/interface/web/modules/inspector.js
+
+unsafe top files:
+40 docs/codex-twist-source/codex-rs/linux-sandbox/src/linux_run_main.rs
+28 docs/codex-twist-source/codex-rs/linux-sandbox/src/proxy_routing.rs
+26 docs/codex-twist-source/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
+
+unwrap top files:
+241 docs/codex-twist-source/codex-rs/core-plugins/src/manager_tests.rs
+202 docs/codex-twist-source/codex-rs/core-plugins/src/marketplace_tests.rs
+112 docs/codex-twist-source/codex-rs/apply-patch/src/lib.rs
+103 src/intelligence/memory/src/dream.rs
+64 src/intelligence/memory/src/graph.rs
+
+panic top files:
+67 docs/codex-twist-source/codex-rs/tui/src/bottom_pane/chat_composer.rs
+55 docs/codex-twist-source/codex-rs/state/src/runtime/memories.rs
+53 docs/codex-twist-source/codex-rs/linux-sandbox/src/linux_run_main.rs
+
+expect top files:
+416 docs/codex-twist-source/codex-rs/state/src/runtime/memories.rs
+324 docs/codex-twist-source/codex-rs/core/src/session/tests.rs
+287 docs/codex-twist-source/codex-rs/app-server/src/config/external_agent_config_tests.rs
+
+COMMAND: frontend module smoke coverage matrix scan
+OUTPUT:
+Module	DirectNamedSmoke	MentionedInTests	Evidence
+audit-log.js	YES	YES	day23_audit_log_smoke.js
+command-palette-catalog.js	YES	YES	day22_command_palette_catalog_smoke.js
+inspector.js	YES	YES	day18_inspector_smoke.js, day25_inspector_safety_smoke.js
+resource-dashboard.js	YES	YES	day24_resource_dashboard_smoke.js
+security-dom.js	NO	YES	day13_workspace_modules_smoke.js, day14_sessions_thinking_modules_smoke.js, day17_thinking_ui_v2_security_smoke.js, thinking_stream_parser.test.js
+sessions.js	YES	YES	day14_sessions_thinking_modules_smoke.js, day22_command_palette_catalog_smoke.js
+settings-panel.js	NO	YES	day19_settings_smoke.js
+slash-command-catalog.js	NO	YES	day21_slash_palette_app_integration_smoke.js
+slash-palette.js	YES	YES	day16_slash_palette_smoke.js, day21_slash_palette_app_integration_smoke.js
+tauri-bridge.js	NO	YES	day13_workspace_modules_smoke.js, day14_sessions_thinking_modules_smoke.js, day20_tauri_channel_envelope_regression.test.js, day21_event_bridge.test.js
+thinking-ui.js	YES	YES	day17_thinking_ui_v2_security_smoke.js, agent_thinking_leak_smoke.js, day14_sessions_thinking_modules_smoke.js, thinking_stream_parser.test.js
+workspace.js	YES	YES	day13_workspace_modules_smoke.js
+
+COMMAND: tests/frontend file list
+OUTPUT:
+agent_governance_approval_smoke.js
+agent_result_rendering_smoke.js
+agent_thinking_leak_smoke.js
+day13_workspace_modules_smoke.js
+day14_sessions_thinking_modules_smoke.js
+day16_slash_palette_smoke.js
+day17_thinking_ui_v2_security_smoke.js
+day18_inspector_smoke.js
+day19_settings_smoke.js
+day20_tauri_channel_envelope_regression.test.js
+day21_event_bridge.test.js
+day21_slash_palette_app_integration_smoke.js
+day22_command_palette_catalog_smoke.js
+day23_audit_log_smoke.js
+day24_resource_dashboard_smoke.js
+day25_inspector_safety_smoke.js
+static_web_server.js
+thinking_stream_parser.test.js
+
+COMMAND: package.json script scan
+OUTPUT:
+"test": "jest"
+"test:security-gate": "node tests/security/security_audit_gate.js"
+No coverage script found. No nyc/c8 coverage command found.
+
+COMMAND: git count-objects -vH
+OUTPUT:
+count: 5907
+size: 40.81 MiB
+in-pack: 25411
+packs: 2
+size-pack: 3.81 GiB
+prune-packable: 2910
+garbage: 0
+size-garbage: 0 bytes
+
+COMMAND: current root directory size scan
+OUTPUT:
+Directory	MB
+target	47911.8
+src	4389.5
+docs	171.8
+models	166.4
+node_modules	88.7
+archive	63.3
+data	2.2
+coverage	0.9
+audit report	0.7
+tests	0.4
+
+COMMAND: src directory size scan
+OUTPUT:
+Directory	MB
+F:\hajimi-code-cli\src\interface	4369.8
+F:\hajimi-code-cli\src\intelligence	15.4
+F:\hajimi-code-cli\src\patches	3.4
+F:\hajimi-code-cli\src\engine	0.5
+F:\hajimi-code-cli\src\foundation	0.2
+
+COMMAND: src/interface directory size scan
+OUTPUT:
+Directory	MB
+F:\hajimi-code-cli\src\interface\desktop	4367.0
+F:\hajimi-code-cli\src\interface\web	2.7
+F:\hajimi-code-cli\src\interface\mcp-server	0.1
+
+COMMAND: src/interface/desktop directory size scan
+OUTPUT:
+Directory	MB
+target	4366.5
+gen	0.2
+src	0.2
+capabilities	0.0
+icons	0.0
+
+COMMAND: current filesystem largest files, excluding .git
+OUTPUT:
+MB	FullName
+330.1	F:\hajimi-code-cli\target\debug\hajimi_desktop.pdb
+330.1	F:\hajimi-code-cli\target\debug\deps\hajimi_desktop.pdb
+324.4	F:\hajimi-code-cli\target\debug-channel-fix-diagnostics\debug\hajimi_desktop.pdb
+324.4	F:\hajimi-code-cli\target\debug-channel-fix-diagnostics\debug\deps\hajimi_desktop.pdb
+229.4	F:\hajimi-code-cli\target\debug\deps\hajimi_desktop-40c608050e294fff.pdb
+227.7	F:\hajimi-code-cli\target\debug\deps\hajimi_desktop-5636e735d37c00d1.pdb
+222.9	F:\hajimi-code-cli\target\debug\deps\hajimi_desktop-b9ac8f5e0c2218d7.pdb
+202.8	F:\hajimi-code-cli\target\debug\examples\minimal_agent.pdb
+
+COMMAND: git history largest objects
+OUTPUT:
+KB	Bytes	Path
+102407.8	104865616	src/foundation/tests/fixtures/100mb.bin
+88275.9	90394541	models/fast-all-MiniLM-L6-v2/model.onnx
+81236.9	83186541	models/all-MiniLM-L6-v2.tar.gz
+44515.5	45583835	target/debug/deps/libtokio-b00e9910bd6a0062.rlib
+44131.1	45190253	target/debug/deps/libtokio-8b0094535baebc5c.rlib
+36198.8	37067545	target/debug/deps/codex_twist-d94a163dccd8a90f.pdb
+32624.9	33407868	crates/hajimi-hnsw/target/debug/deps/libsyn-ee55c1d2e7d82129.rlib
+31979.6	32747074	crates/hajimi-hnsw/target/debug/deps/libwasm_bindgen_macro_support-e8e4c4ce0c806927.rlib
+31709.9	32470956	target/debug/deps/libsyn-c39e05a3aca33b05.rlib
+31326.4	32078236	target/debug/deps/codex_twist-c6e543ebc1067614.pdb
+
+COMMAND: git status --short after report creation
+OUTPUT:
+ M docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md
+ M docs/debt/INDEX.md
+ M docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md
+ D "docs/roadmap/Hajimi Agent/debt/DEBT-DAY-07-CHECKPOINT-DIFF-UI.md"
+ D "docs/roadmap/Hajimi Agent/plan/AGENT-UI-INTEGRATION-SAMPLING-NOTES.md"
+ D "docs/roadmap/Hajimi LLM/plan/AGENT-LLM-NATIVE-DESIGN.md"
+ D "docs/roadmap/Hajimi LLM/plan/LLM-NATIVE-AGENT-MIGRATION-ROADMAP.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-01/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-02/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-03/snapshot.md"
+ D "docs/roadmap/Hajimi RealAgent/evidence/day-04/snapshot.md"
+?? docs/debt/DEBT-AGENT-CHINESE-I18N.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-DRIVER-INJECTION.md
+?? docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md
+?? docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md
+?? docs/debt/DEBT-AGENT-UI-INTEGRATION.md
+?? docs/debt/DEBT-TAURI-CHANNEL-ENVELOPE-REGRESSION.md
+?? docs/debt/STONE-AUDIT-V1.5-PACKAGE-SMOKE.md
+?? docs/debt/STONE-AUDIT-V2-FULL-SCAN.md
+?? docs/debt/stone-audit-v2-full-scan-20260604-173902.txt
+?? "docs/roadmap/Hajimi AgentFix/"
+?? "docs/roadmap/Hajimi ToneFix/"
+?? "docs/roadmap/hajimi template/"
+?? src/interface/desktop/native-smoke.txt
+
+COMMAND: git rev-parse HEAD after report creation
+OUTPUT:
+2b50333a5b76d559545d40c7cb7d91890f17fed8
+
+COMMAND: git diff --check
+OUTPUT:
+warning: in the working copy of 'docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/debt/INDEX.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/debt/active/ACTIVE-DEBT-STATUS-2026-05-17.md', LF will be replaced by CRLF the next time Git touches it
+Exit code: 0
+
+COMMAND: git diff --cached --check
+OUTPUT:
+No output.
+Exit code: 0
+
+COMMAND: git diff --name-only -- src/interface/web/app.js src/interface/web/index.html src/interface/web/style.css src/interface/desktop/src/main.rs src/interface/desktop/src/shell.rs src/interface/desktop/tauri.conf.json src/engine/tool-system/src/shell.rs
+OUTPUT:
+No output. Production/high-risk files checked here have no diff from this task.
