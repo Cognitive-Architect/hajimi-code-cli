@@ -89,3 +89,14 @@
 - 未移动 `handleChatCommand()` 或任何 slash 命令执行分支。
 - 未修改 DOM ID、CSS、security gate allowlist、shell、CSP、`withGlobalTauri`、provider keyring、checkpoint restore、Agent streaming。
 - Tauri WebView slash 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
+
+## 10. V1.5-C 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-C: Extract Command Palette Catalog`：
+
+- 已将 command palette 的纯命令目录抽到 `src/interface/web/modules/command-palette-catalog.js`。
+- `app.js` 保留 inline fallback；新模块存在时优先通过 `window.HajimiCommandPaletteCatalog.createCommandPaletteCatalog(this)` 读取。
+- 新增 `tests/frontend/day22_command_palette_catalog_smoke.js` 覆盖 catalog 导出、核心命令 id、命令顺序、label/key/action 保留、低风险 action 调用、模块缺失 fallback。
+- 未移动 `setupCommandPalette()`、`showCommandPalette()`、`hideCommandPalette()` 或任何命令对应的实际函数。
+- 未修改 DOM ID、CSS、shell、CSP、`withGlobalTauri`、provider keyring、checkpoint restore、Agent streaming。
+- Tauri WebView command palette 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。

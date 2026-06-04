@@ -87,7 +87,8 @@ window.app = {
     this.updateGitBranch();
 
     // Build command list
-    this.commands = [
+    const commandCatalogFactory = window.HajimiCommandPaletteCatalog?.createCommandPaletteCatalog;
+    this.commands = commandCatalogFactory ? commandCatalogFactory(this) : [
       { id: 'file.open', label: '文件: 打开文件', key: 'Ctrl+O', action: () => this.openFilePrompt() },
       { id: 'file.openFolder', label: '文件: 打开文件夹', key: 'Ctrl+K Ctrl+O', action: () => this.openFolder() },
       { id: 'view.chat-sessions', label: '视图: 显示会话列表', key: 'Ctrl+Shift+C', action: () => this.showSidebar('chat-sessions') },
