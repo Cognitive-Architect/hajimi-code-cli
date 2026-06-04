@@ -4714,30 +4714,11 @@ window.app = {
   // Audit Log (B-05/03)
   // ============================================================
   async loadAuditLogs() {
-    if (!this.isTauriAvailable()) return;
-    try {
-      const logs = await this.invokeTauri('get_audit_logs', { limit: 100, offset: 0 });
-      const tbody = document.getElementById('auditLogBodyTab');
-      if (!tbody) return;
-      if (!logs || !logs.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="audit-empty">暂无记录</td></tr>';
-        return;
-      }
-      tbody.innerHTML = logs.map(r => {
-        const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : '-';
-        const statusCls = r.status === 'completed' ? 'audit-status-ok' : r.status === 'failed' ? 'audit-status-err' : 'audit-status-start';
-        return `<tr><td>${this.escapeHtml(r.providerName || r.provider_name || '-')}</td><td>${this.escapeHtml(r.model || '-')}</td><td>${this.escapeHtml(time)}</td><td><span class="audit-status ${statusCls}">${this.escapeHtml(r.status || '')}</span></td></tr>`;
-      }).join('');
-    } catch (e) {
-      console.error('loadAuditLogs error:', e);
-    }
+    return window.HajimiAuditLog.loadAuditLogs(this);
   },
 
   setupAuditLog() {
-    const refreshBtn = document.getElementById('refreshAuditBtnTab');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => this.loadAuditLogs());
-    }
+    return window.HajimiAuditLog.setupAuditLog(this);
   },
 
   setupGovernance() {

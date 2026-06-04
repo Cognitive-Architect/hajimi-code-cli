@@ -100,3 +100,14 @@
 - 未移动 `setupCommandPalette()`、`showCommandPalette()`、`hideCommandPalette()` 或任何命令对应的实际函数。
 - 未修改 DOM ID、CSS、shell、CSP、`withGlobalTauri`、provider keyring、checkpoint restore、Agent streaming。
 - Tauri WebView command palette 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
+
+## 11. V1.5-D 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-D: Extract Audit Log Readonly Module`：
+
+- 已将 audit log 的只读加载与渲染逻辑抽到 `src/interface/web/modules/audit-log.js`。
+- `app.js` 保留 `loadAuditLogs()` / `setupAuditLog()` wrapper，并通过 `window.HajimiAuditLog` 转调新模块。
+- 新增 `tests/frontend/day23_audit_log_smoke.js` 覆盖 refresh 绑定、Tauri 不可用安全返回、空日志、多日志、status class、恶意内容转义、`auditLogBodyTab` 缺失容错。
+- 未新增 audit 写入、删除、清空能力。
+- 未修改 `get_audit_logs` 后端命令、Tauri command、DOM ID、CSS、shell、CSP、`withGlobalTauri`、provider/keyring、checkpoint、Agent streaming。
+- Tauri WebView audit log 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
