@@ -2421,6 +2421,10 @@ window.app = {
   },
 
   getSlashCommands() {
+    if (window.HajimiSlashCommandCatalog?.createSlashCommandCatalog) {
+      return window.HajimiSlashCommandCatalog.createSlashCommandCatalog();
+    }
+
     return [
       { id: 'tools', trigger: '/tools', title: 'List tools', description: 'Show available backend tools', category: 'tool', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['list', 'backend', '工具', '列出'] },
       { id: 'providers', trigger: '/providers', title: 'List providers', description: 'Show configured model providers', category: 'model', riskLevel: 'low', enabled: true, executeMode: 'direct', keywords: ['models', '模型', '提供商'] },

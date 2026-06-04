@@ -388,3 +388,32 @@ Observed baseline:
   - `fb6d900f` Day 3 closure and verification.
   - `72d26203` closure commit-reference fix.
 - Working tree had unrelated existing changes before this report; only this report should be staged for the commit.
+
+## 11. V1.5-B Implementation Record
+
+> Date: 2026-06-04
+> Task: `STONE-AUDIT-V1.5-B: Extract Slash Command Catalog`
+
+Implemented scope:
+
+- Added `src/interface/web/modules/slash-command-catalog.js`.
+- Added `createSlashCommandCatalog()`.
+- Added Node/CommonJS export for smoke tests.
+- Added browser mount: `window.HajimiSlashCommandCatalog`.
+- Updated `src/interface/web/app.js` so `getSlashCommands()` reads the new module when present and keeps the inline fallback when absent.
+- Added `src/interface/web/index.html` script tag for the catalog module before `modules/slash-palette.js` and `app.js`.
+- Added `tests/frontend/day21_slash_palette_app_integration_smoke.js`.
+
+Preserved boundaries:
+
+- `handleChatCommand()` was not moved.
+- `/agent`, `/tool`, `/chat`, `/mcp`, `/git`, `/compact` execution branches were not moved.
+- DOM IDs were not changed.
+- CSS was not changed.
+- Security gate allowlist was not changed.
+- Shell, CSP, `withGlobalTauri`, provider keyring, checkpoint restore, and Agent streaming were not changed.
+
+Validation status:
+
+- Required validation commands are expected to be recorded in the final handoff and commit receipt.
+- Tauri WebView slash interaction remains `PENDING-MANUAL-SMOKE`; do not mark it `CLEARED` from this Node smoke.

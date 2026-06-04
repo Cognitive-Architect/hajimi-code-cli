@@ -78,3 +78,14 @@
 ## 8. 结论
 
 `STONE-AUDIT-V1 completed. 项目已具备进入 V1.5 低风险模块拆分的前置条件。`
+
+## 9. V1.5-B 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-B: Extract Slash Command Catalog`：
+
+- 已将 `getSlashCommands()` 的纯命令目录抽到 `src/interface/web/modules/slash-command-catalog.js`。
+- `app.js` 保留 inline fallback；新模块存在时优先通过 `window.HajimiSlashCommandCatalog.createSlashCommandCatalog()` 读取。
+- 新增 `tests/frontend/day21_slash_palette_app_integration_smoke.js` 覆盖 app 侧装配、feature flag、缺模块兜底、direct+low 自动发送、高风险只填充不自动发送、catalog trigger 等价。
+- 未移动 `handleChatCommand()` 或任何 slash 命令执行分支。
+- 未修改 DOM ID、CSS、security gate allowlist、shell、CSP、`withGlobalTauri`、provider keyring、checkpoint restore、Agent streaming。
+- Tauri WebView slash 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
