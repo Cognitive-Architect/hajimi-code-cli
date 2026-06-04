@@ -111,3 +111,14 @@
 - 未新增 audit 写入、删除、清空能力。
 - 未修改 `get_audit_logs` 后端命令、Tauri command、DOM ID、CSS、shell、CSP、`withGlobalTauri`、provider/keyring、checkpoint、Agent streaming。
 - Tauri WebView audit log 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
+
+## 12. V1.5-E 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-E: Extract Resource Dashboard Metrics Module`：
+
+- 已将 resource dashboard 的只读指标刷新逻辑抽到 `src/interface/web/modules/resource-dashboard.js`。
+- `app.js` 保留 `setupResourceDashboard()` / `updateMetrics()` wrapper，并通过 `window.HajimiResourceDashboard` 转调新模块。
+- 新增 `tests/frontend/day24_resource_dashboard_smoke.js` 覆盖立即刷新、3000ms interval、Tauri 不可用 N/A、`get_resource_metrics` 调用、三项指标更新、DOM 缺失容错、读取失败容错。
+- 未新增 resource dashboard 写入能力。
+- 未修改 `get_resource_metrics` 后端命令、Tauri command、DOM ID、CSS、checkpoint restore/export/compare/replay、provider/keyring、Agent streaming、shell、CSP、`withGlobalTauri`。
+- Tauri WebView resource dashboard 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。

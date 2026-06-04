@@ -5022,8 +5022,7 @@ window.app = {
   },
 
   setupResourceDashboard() {
-    this.updateMetrics();
-    this.metricsInterval = setInterval(() => this.updateMetrics(), 3000);
+    return window.HajimiResourceDashboard.setupResourceDashboard(this);
   },
 
   showErrorToast(message) {
@@ -5478,22 +5477,7 @@ window.app = {
   },
 
   async updateMetrics() {
-    const setMetric = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = value;
-    };
-    if (!this.isTauriAvailable()) {
-      setMetric('metricIterationTab', 'N/A');
-      setMetric('metricBlackboardTab', 'N/A');
-      setMetric('metricEditCountTab', 'N/A');
-      return;
-    }
-    try {
-      const m = await this.invokeTauri('get_resource_metrics');
-      setMetric('metricIterationTab', m.iteration_count != null ? m.iteration_count : 'N/A');
-      setMetric('metricBlackboardTab', m.blackboard_size != null ? m.blackboard_size : 'N/A');
-      setMetric('metricEditCountTab', m.edit_count != null ? m.edit_count : '0');
-    } catch (e) {}
+    return window.HajimiResourceDashboard.updateMetrics(this);
   },
 
   // ── Codex-style utilities ──
