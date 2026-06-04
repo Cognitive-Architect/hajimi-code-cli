@@ -137,5 +137,5 @@
 
 - 收集并执行了 Day 16, 21, 22, 23, 24 五项前端子模块自动化 Smoke 验证，结果全部 PASS。
 - 进行了 node 语法 check 与 `npm run test:security-gate` 安全门禁校验，结果 Failures = 0，Warnings = 109，全部通过。
-- 沉淀了 `V1.5-FRONTEND-AUTOMATED-CLOSURE.md` 自动化收口验收报告。
+- 沉淀了 `V1.5-FRONTEND-AUTOMATED-CLOSURE.md` 自动化收口验收报告（Verification Base Commit: 41ef988a5a107b69a6904c5a1ab18ce1c16f3b42, Closure Report Commit: 59a8794f81bb46d1ac91402b37a3c569e8632fff）。
 - 明确标注 Tauri WebView 包裹打包实机点击验证状态为 `PENDING-SEPARATE-PACKAGE-SMOKE`。
