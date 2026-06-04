@@ -122,3 +122,20 @@
 - 未新增 resource dashboard 写入能力。
 - 未修改 `get_resource_metrics` 后端命令、Tauri command、DOM ID、CSS、checkpoint restore/export/compare/replay、provider/keyring、Agent streaming、shell、CSP、`withGlobalTauri`。
 - Tauri WebView resource dashboard 真实点击验证仍为 `PENDING-MANUAL-SMOKE`，不得标记为 `CLEARED`。
+
+## 13. V1.5-F 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-F: Provider Config Readonly Slice Plan`：
+
+- 对 `provider-config` 的前端配置表单、容量探测进度、API Key 密码开关及备份加解密交互进行了详细的只读采样和耦合度审计。
+- 确认 `setupProviderSettings`（包含容量测试交互、确认 confirm、定时器与取消信号）与写逻辑高度耦合。只读展示无法在不伤及核心机制的情况下无损抽离。
+- 判定触发项目止损条件，本轮**停止该模块的实际抽离实施**，输出方案 `PROVIDER-CONFIG-V1.5-SLICE-PLAN.md`。
+
+## 14. V1.5-G 状态备注
+
+2026-06-04 执行 `STONE-AUDIT-V1.5-G: Frontend Low-risk Modules Automated Closure`：
+
+- 收集并执行了 Day 16, 21, 22, 23, 24 五项前端子模块自动化 Smoke 验证，结果全部 PASS。
+- 进行了 node 语法 check 与 `npm run test:security-gate` 安全门禁校验，结果 Failures = 0，Warnings = 109，全部通过。
+- 沉淀了 `V1.5-FRONTEND-AUTOMATED-CLOSURE.md` 自动化收口验收报告。
+- 明确标注 Tauri WebView 包裹打包实机点击验证状态为 `PENDING-SEPARATE-PACKAGE-SMOKE`。
