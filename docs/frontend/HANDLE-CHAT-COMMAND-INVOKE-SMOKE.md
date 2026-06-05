@@ -84,3 +84,34 @@ git diff --cached --check
 ## Next Recommended Step
 
 Open a separate fix task or a deeper isolated smoke task for `handleChatCommand(text)` `/chat`, `/search`, and `/compact` behavior. Do not combine that with Provider / Keyring, Shell, Checkpoint, CSP / withGlobalTauri, or Agent streaming work.
+
+## V2B-2 Fix Follow-Up
+
+Task: `STONE-AUDIT-V2B-2-HANDLE-CHAT-COMMAND-INVOKE-FIX`
+
+Date: 2026-06-05
+
+Fix summary:
+
+- Added a local invoke source at the start of `handleChatCommand(text)`:
+  - `const invoke = this.getTauriInvoke();`
+- Did not move `/chat`, `/search`, or `/compact` branches.
+- Did not modify `streamChat()`.
+- Did not modify `sendChatMessage()`.
+- Did not modify Provider / Keyring, Shell, Checkpoint, CSP / withGlobalTauri, or Agent streaming logic.
+
+Observed day27 smoke after fix:
+
+```text
+day27 handleChatCommand invoke smoke
+method: handleChatCommand(text) lines 2572-2876
+method has local invoke source: YES
+method has invoke parameter source: NO
+explicit closure invoke source before window.app object: NO
+/chat: PASS line=2663 usesInvoke=YES reason=branch uses invoke and handleChatCommand has an explicit invoke source
+/search: PASS line=2759 usesInvoke=YES reason=branch uses invoke and handleChatCommand has an explicit invoke source
+/compact: PASS line=2845 usesInvoke=YES reason=branch uses invoke and handleChatCommand has an explicit invoke source
+overall: PASS
+```
+
+Current follow-up result: PASS

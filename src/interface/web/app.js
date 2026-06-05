@@ -2570,6 +2570,8 @@ window.app = {
   },
 
   async handleChatCommand(text) {
+    const invoke = this.getTauriInvoke();
+
     // FIX-I18N-003: Map Chinese slash commands to English equivalents.
     const commandMap = {
       '/代理': '/agent', '/智能体': '/agent',
