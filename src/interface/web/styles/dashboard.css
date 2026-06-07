@@ -1,0 +1,39 @@
+/* Metrics grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.metric-card {
+  background: var(--bg-hover);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.metric-label {
+  font-size: 10px;
+  color: var(--fg-dim);
+  margin-bottom: 2px;
+}
+
+.metric-value {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.metric-value.green { color: var(--fg-green); }
+.metric-value.cyan { color: var(--fg-cyan); }
+.metric-value.red { color: var(--fg-red); }
+.metric-value.dim { color: var(--fg-dim); }
+.metric-value.magenta { color: var(--fg-magenta); }
+
+/* ── 32. Resource Dashboard ── */
+.resource-dashboard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}

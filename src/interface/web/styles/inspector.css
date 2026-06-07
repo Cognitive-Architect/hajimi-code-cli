@@ -1,0 +1,384 @@
+/* ── 28. Agent Trace ── */
+.trace-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.trace-tab {
+  padding: 6px var(--space-3);
+  cursor: pointer;
+  color: var(--fg-dim);
+  transition: color 100ms ease, background 150ms ease-out;
+  text-transform: lowercase;
+}
+
+.trace-tab:hover {
+  color: var(--fg-default);
+  background: var(--bg-hover);
+}
+
+.trace-tab.active {
+  color: var(--fg-default);
+  border-bottom: 2px solid var(--fg-magenta);
+  margin-bottom: -1px;
+}
+
+.trace-panel,
+.edit-history-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.trace-empty,
+.edit-history-empty {
+  color: var(--fg-dim);
+  text-align: center;
+  padding: var(--space-4);
+}
+
+/* ── 29. Session Replay Bar ── */
+#sessionReplayBar {
+  display: none;
+  padding: 6px var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg-dim);
+}
+
+/* ── 31. Governance Panel ── */
+.governance-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* ── Right Inspector ── */
+.right-inspector {
+  display: flex;
+  flex-direction: column;
+  width: var(--inspector-width);
+  flex-shrink: 0;
+  background: var(--bg-subtle);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  height: var(--tab-bar-height);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.inspector-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-default);
+  text-transform: lowercase;
+}
+
+.inspector-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.inspector-close-btn:hover {
+  color: var(--fg-default);
+  background: var(--bg-hover);
+}
+
+.inspector-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.inspector-tab {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 100ms ease, border-color 150ms ease;
+}
+
+.inspector-tab:hover {
+  color: var(--fg-default);
+}
+
+.inspector-tab.active {
+  color: var(--fg-default);
+  border-bottom-color: var(--accent-primary);
+}
+
+.inspector-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.inspector-panel {
+  display: none;
+}
+
+.inspector-panel.active {
+  display: block;
+}
+
+.inspector-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.inspector-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-2);
+}
+
+.inspector-card-body {
+  font-size: 13px;
+  color: var(--fg-default);
+  line-height: 1.5;
+}
+
+.inspector-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  color: var(--fg-dim);
+  font-size: 13px;
+  text-align: center;
+  padding: var(--space-4);
+}
+
+/* ── Agent Workspace / Feed (semantic wrappers) ── */
+.agent-workspace {
+  /* Inherits from .main-area — no additional styling needed for Day 2 */
+}
+
+.agent-feed {
+  /* Inherits from .chat-container — no additional styling needed for Day 2 */
+}
+
+/* ── Responsive: hide Inspector on narrow viewports ── */
+@media (max-width: 960px) {
+  .right-inspector {
+    display: none;
+  }
+}
+
+.right-inspector {
+  width: var(--inspector-width);
+  padding: 10px 10px calc(var(--status-bar-height) + 10px);
+  background: var(--bg-app);
+  border-left: 1px solid var(--border);
+}
+
+.inspector-header {
+  display: none;
+}
+
+.inspector-tabs {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--bg-subtle);
+}
+
+.inspector-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom-width: 2px;
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+.inspector-tab.active {
+  color: var(--fg-default);
+  border-bottom-color: var(--accent-secondary);
+}
+
+.inspector-content {
+  padding: 10px 0 0;
+  overflow-y: auto;
+}
+
+.inspector-card {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(22, 28, 39, 0.98), rgba(17, 23, 32, 0.98));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+.inspector-card-title {
+  margin-bottom: 14px;
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.inspector-card-body {
+  color: var(--fg-default);
+}
+
+.inspector-task-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.inspector-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.inspector-progress {
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: #0b1018;
+}
+
+.inspector-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #74d0ff, #7c5cff, #e78dff);
+}
+
+.inspector-key-values {
+  display: grid;
+  grid-template-columns: minmax(94px, auto) minmax(0, 1fr);
+  gap: 9px 12px;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.inspector-key-values strong {
+  overflow: hidden;
+  color: var(--fg-default);
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-file-row {
+  min-height: 26px;
+  overflow: hidden;
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-empty-state {
+  min-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+/* ── Day 07 Checkpoint Diff UI Premium Styles ── */
+.trace-checkpoint-badge {
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.trace-checkpoint-badge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, #ff007f, #7f00ff);
+  opacity: 0.8;
+}
+
+.trace-checkpoint-badge:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.trace-chk-btn {
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms ease;
+  font-family: inherit;
+}
+
+.trace-chk-btn.restore {
+  background: rgba(255, 69, 58, 0.1);
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.2);
+}
+
+.trace-chk-btn.restore:hover {
+  background: rgba(255, 69, 58, 0.18);
+  box-shadow: 0 0 8px rgba(255, 69, 58, 0.2);
+}
+
+.trace-chk-btn.compare {
+  background: rgba(10, 132, 255, 0.1);
+  color: #0a84ff;
+  border: 1px solid rgba(10, 132, 255, 0.2);
+}
+
+.trace-chk-btn.compare:hover {
+  background: rgba(10, 132, 255, 0.18);
+  box-shadow: 0 0 8px rgba(10, 132, 255, 0.2);
+}

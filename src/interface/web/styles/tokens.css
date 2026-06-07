@@ -1,0 +1,123 @@
+/* ── 2. CSS Variables ── */
+:root {
+  /* Fonts */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+
+  /* Spacing (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Layout */
+  --activity-bar-width: 48px;
+  --sidebar-width: 260px;
+  --inspector-width: 320px;
+  --status-bar-height: 24px;
+  --panel-header-height: 32px;
+  --tab-bar-height: 32px;
+}
+
+/* Dark theme (default) */
+[data-theme="dark"] {
+  --bg-default: #0D1117;
+  --bg-subtle: #161B22;
+  --bg-hover: #21262D;
+  --bg-app: #0D1117;
+  --bg-panel: #161B22;
+  --bg-card: #21262D;
+  --border: #30363D;
+  --fg-default: #E6EDF3;
+  --fg-dim: #8B949E;
+  --fg-cyan: #39D0D8;
+  --fg-green: #3FB950;
+  --fg-red: #F85149;
+  --fg-magenta: #D670D6;
+  --accent-primary: #D670D6;
+
+  --diff-add-bg: #213A2B;
+  --diff-del-bg: #4A221D;
+  --diff-add-num-bg: #2D4A38;
+  --diff-del-num-bg: #5A2E26;
+  --diff-add-gutter: #3FB950;
+  --diff-del-gutter: #F85149;
+
+  --bubble-bg: rgba(255, 255, 255, 0.08);
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-default: #FFFFFF;
+  --bg-subtle: #F6F8FA;
+  --bg-hover: #EFF2F5;
+  --bg-app: #FFFFFF;
+  --bg-panel: #F6F8FA;
+  --bg-card: #EFF2F5;
+  --border: #D0D7DE;
+  --fg-default: #1F2328;
+  --fg-dim: #656D76;
+  --fg-cyan: #0969DA;
+  --fg-green: #1A7F37;
+  --fg-red: #CF222E;
+  --fg-magenta: #8250DF;
+  --accent-primary: #8250DF;
+
+  --diff-add-bg: #DAFBE1;
+  --diff-del-bg: #FFEBE9;
+  --diff-add-num-bg: #ACEBBB;
+  --diff-del-num-bg: #FFCECB;
+  --diff-add-gutter: #1A7F37;
+  --diff-del-gutter: #CF222E;
+
+  --bubble-bg: rgba(0, 0, 0, 0.04);
+}
+
+/* ============================================================
+   UI Design Refresh — compact agent IDE layout
+   Target: docs/user ui_design.jpg, 2026-05-18
+   ============================================================ */
+:root {
+  --top-bar-height: 48px;
+  --activity-bar-width: 56px;
+  --sidebar-width: 240px;
+  --inspector-width: 360px;
+  --status-bar-height: 26px;
+  --panel-header-height: 44px;
+  --tab-bar-height: 42px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+}
+
+[data-theme="dark"] {
+  --bg-app: #070a10;
+  --bg-default: #090d15;
+  --bg-subtle: #0f141d;
+  --bg-panel: #111720;
+  --bg-card: #141a24;
+  --bg-hover: #1c2430;
+  --bg-muted: #171e29;
+  --bg-sidebar: #101620;
+  --border: #252d38;
+  --border-muted: #343d4a;
+  --fg-default: #f0f4fb;
+  --fg-dim: #8f9bad;
+  --fg-muted: #6f7a8b;
+  --fg-cyan: #74d0ff;
+  --fg-green: #3ddc84;
+  --fg-red: #ff6b7a;
+  --fg-magenta: #a782ff;
+  --accent-primary: #7c5cff;
+  --accent-secondary: #e78dff;
+  --shadow-soft: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+html,

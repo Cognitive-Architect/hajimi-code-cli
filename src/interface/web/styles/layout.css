@@ -1,0 +1,197 @@
+/* ── 4. Workspace Layout ── */
+.workspace {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  width: 100vw;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Chat-first layout: Activity Bar | Sidebar | Main Column | Right Inspector */
+.workspace.chat-first {
+  --sidebar-width: 260px;
+  --inspector-width: 320px;
+}
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.activity-bar {
+  width: var(--activity-bar-width);
+  flex-shrink: 0;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+}
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── 7. Main Area ── */
+.main-area {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── 8. Chat-First Layout Components ── */
+
+/* Chat Container: fills remaining space in main-area */
+.chat-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Main Column wraps main-area + app-footer */
+.main-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* App Footer: Status Indicator + Composer + Status Bar */
+.app-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+/* Status Indicator Row (Codex style) */
+.status-indicator-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-default);
+  border-bottom: 1px solid var(--border);
+}
+
+.status-indicator-row.hidden {
+  display: none;
+}
+
+.status-indicator-row .status-spinner {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+}
+
+/* ── 9. Status Bar → Status Indicator ── */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+
+.status-left,
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-item.clickable {
+  cursor: pointer;
+}
+
+.status-item.clickable:hover {
+  color: var(--fg-default);
+}
+
+/* Codex-style status indicator line */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-default);
+}
+
+.status-indicator .spinner {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+}
+
+.status-indicator .elapsed {
+  color: var(--fg-dim);
+}
+
+.status-indicator .key-hint {
+  color: var(--fg-dim);
+}
+
+.status-indicator .separator {
+  color: var(--fg-dim);
+}
+
+.status-indicator .context {
+  color: var(--fg-dim);
+}
+
+.workspace {
+  height: calc(100vh - var(--top-bar-height));
+  background: var(--bg-app);
+}
+
+.workspace.chat-first {
+  --sidebar-width: 240px;
+  --inspector-width: 360px;
+}
+
+.main-column {
+  min-width: 480px;
+  background: var(--bg-app);
+}
+
+.main-area {
+  padding: 0 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(124, 92, 255, 0.08), transparent 24%),
+    var(--bg-app);
+}
+
+.status-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 120;
+  min-height: var(--status-bar-height);
+  padding: 0 18px;
+  border-top: 1px solid var(--border);
+  background: #0b1018;
+  color: var(--fg-dim);
+}

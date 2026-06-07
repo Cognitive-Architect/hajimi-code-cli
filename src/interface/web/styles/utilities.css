@@ -1,0 +1,308 @@
+/* ── 24. LSP Tooltip ── */
+.lsp-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  max-width: 400px;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── 25. Shimmer Animation ── */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--fg-default) 0%,
+    var(--fg-default) 40%,
+    var(--fg-dim) 50%,
+    var(--fg-default) 60%,
+    var(--fg-default) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s infinite linear;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Fallback shimmer (no gradient support) */
+.shimmer-fallback {
+  animation: shimmer-pulse 2s infinite linear;
+}
+
+@keyframes shimmer-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* ── 26. Key Hint ── */
+.key-hint {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: transparent;
+}
+
+/* ── 33. Toast / Notifications ── */
+.toast-container {
+  position: fixed;
+  bottom: 40px;
+  right: var(--space-4);
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.toast {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  animation: toast-in 150ms ease-out;
+  max-width: 400px;
+}
+
+.toast.error {
+  border-color: var(--fg-red);
+}
+
+.toast.success {
+  border-color: var(--fg-green);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 34. Loading State ── */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ── 35. Selection List (list_selection_view) ── */
+.selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.selection-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg-default);
+  transition: background 150ms ease-out;
+}
+
+.selection-item:hover,
+.selection-item.active {
+  background: var(--bg-hover);
+}
+
+.selection-item-marker {
+  color: var(--fg-magenta);
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── 37. Misc Utilities ── */
+.text-cyan { color: var(--fg-cyan); }
+.text-green { color: var(--fg-green); }
+.text-red { color: var(--fg-red); }
+.text-magenta { color: var(--fg-magenta); }
+.text-dim { color: var(--fg-dim); }
+.text-default { color: var(--fg-default); }
+
+.bg-subtle { background: var(--bg-subtle); }
+.bg-hover { background: var(--bg-hover); }
+
+.font-mono { font-family: var(--font-mono); }
+
+/* Focus states */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid var(--fg-cyan);
+  outline-offset: 1px;
+}
+
+/* Disabled states */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+
+/* Error Toast */
+.error-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--fg-red);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  z-index: 3000;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  max-width: 80%;
+  text-align: center;
+}
+
+.error-toast.active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Button Hierarchy */
+.btn-primary {
+  background: var(--fg-cyan);
+  color: var(--bg-default);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--fg-default);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.danger-btn {
+  background: transparent;
+  color: var(--fg-red);
+  border: 1px solid var(--fg-red);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.danger-btn:hover {
+  background: var(--fg-red);
+  color: var(--bg-default);
+}
+
+.icon-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: none;
+  padding: 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.icon-btn:hover {
+  color: var(--fg-default);
+  background: var(--bg-hover);
+}
+
+.more-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.more-btn:hover {
+  color: var(--fg-default);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+@media (max-width: 1180px) {
+  :root {
+    --sidebar-width: 220px;
+    --inspector-width: 320px;
+  }
+
+  .top-bar-project {
+    max-width: 140px;
+  }
+
+}
+
+@media (max-width: 960px) {
+  body {
+    min-width: 0;
+  }
+
+  .window-top-bar {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 260px) auto;
+  }
+
+  .traffic-lights,
+  .top-bar-project {
+    display: none;
+  }
+
+  .sidebar {
+    width: min(42vw, var(--sidebar-width));
+  }
+
+  .right-inspector {
+    display: none;
+  }
+
+  .main-area {
+    padding: 0 14px;
+  }
+
+  .composer {
+    margin-inline: 14px;
+  }
+}

@@ -1,0 +1,70 @@
+/* ── 22. Command Palette ── */
+.command-palette {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.command-palette.active {
+  display: flex;
+}
+
+.command-palette-box {
+  width: 600px;
+  max-width: 90vw;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.command-input {
+  width: 100%;
+  background: var(--bg-default);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3);
+  color: var(--fg-default);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.command-input::placeholder {
+  color: var(--fg-dim);
+}
+
+.command-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.command-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg-default);
+  transition: background 150ms ease-out;
+}
+
+.command-item:hover,
+.command-item.active {
+  background: var(--bg-hover);
+}
+
+.command-item-key {
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+}

@@ -1,0 +1,38 @@
+/* ============================================================
+   Hajimi Code — Codex-inspired Terminal Aesthetic Theme
+   ============================================================
+   Design spec: docs/roadmap/Hajimi UI New/design-spec-tauri.md
+   Source ref:  codex-rs/tui/src/ (OpenAI Codex CLI)
+   ============================================================ */
+
+/* ── 1. Reset ── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ── 3. Base ── */
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--fg-default);
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+
+body {
+  background: var(--bg-app);
+}
+
+body {
+  min-width: 980px;
+}
