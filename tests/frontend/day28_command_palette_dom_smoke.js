@@ -6,6 +6,8 @@ const vm = require('vm');
 const repoRoot = path.resolve(__dirname, '..', '..');
 const appPath = path.join(repoRoot, 'src/interface/web/app.js');
 const htmlPath = path.join(repoRoot, 'src/interface/web/index.html');
+const viewPath = path.join(repoRoot, 'src/interface/web/views/command-palette-view.js');
+const ctrlPath = path.join(repoRoot, 'src/interface/web/controllers/command-controller.js');
 
 class ClassList {
   constructor(el) {
@@ -190,6 +192,12 @@ function loadAppHarness() {
   };
   context.globalThis = context;
   vm.createContext(context);
+
+  const viewSource = fs.readFileSync(viewPath, 'utf8');
+  vm.runInContext(viewSource, context, { filename: 'command-palette-view.js' });
+
+  const ctrlSource = fs.readFileSync(ctrlPath, 'utf8');
+  vm.runInContext(ctrlSource, context, { filename: 'command-controller.js' });
 
   const source = fs.readFileSync(appPath, 'utf8');
   const appOnlySource = source.slice(0, source.indexOf('\n// D3-MINIMAL-FIX'));

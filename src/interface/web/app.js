@@ -5111,77 +5111,27 @@ window.app = {
       this._commandPaletteView = viewFactory(this);
       this._commandController = ctrlFactory(this, this._commandPaletteView);
       this._commandController.setup();
-    } else {
-      // Inline fallback: identical to original implementation for environments without module loading
-      const palette = document.getElementById('commandPalette');
-      const input = document.getElementById('commandInput');
-      if (input) {
-        input.addEventListener('input', () => { this.renderCommandList(input.value); });
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') this.hideCommandPalette();
-          if (e.key === 'Enter') this.executeSelectedCommand();
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            this.navigateCommandList(e.key === 'ArrowDown' ? 1 : -1);
-          }
-        });
-      }
-      if (palette) {
-        palette.addEventListener('click', (e) => { if (e.target === palette) this.hideCommandPalette(); });
-      }
     }
   },
 
   showCommandPalette() {
     if (this._commandPaletteView) { this._commandPaletteView.show(); return; }
-    document.getElementById('commandPalette').classList.add('active');
-    document.getElementById('commandInput').value = '';
-    document.getElementById('commandInput').focus();
-    this.renderCommandList('');
   },
 
   hideCommandPalette() {
     if (this._commandPaletteView) { this._commandPaletteView.hide(); return; }
-    document.getElementById('commandPalette').classList.remove('active');
   },
 
   renderCommandList(query) {
     if (this._commandPaletteView) { this._commandPaletteView.renderList(query); return; }
-    const list = document.getElementById('commandList');
-    const q = query.toLowerCase();
-    const filtered = this.commands.filter(c => c.label.toLowerCase().includes(q));
-    list.innerHTML = filtered.map((c, i) => `
-      <div class="command-item${i === 0 ? ' selected' : ''}" data-index="${i}" data-id="${this.escapeAttr(c.id)}">
-        <span>${this.escapeHtml(c.label)}</span>
-        ${c.key ? `<span class="command-item-key">${this.escapeHtml(c.key)}</span>` : ''}
-      </div>
-    `).join('');
-    list.querySelectorAll('.command-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const cmd = this.commands.find(c => c.id === el.dataset.id);
-        if (cmd) { this.hideCommandPalette(); cmd.action(); }
-      });
-    });
   },
 
   navigateCommandList(dir) {
     if (this._commandPaletteView) { this._commandPaletteView.navigate(dir); return; }
-    const items = document.querySelectorAll('.command-item');
-    if (!items.length) return;
-    const current = document.querySelector('.command-item.selected');
-    let idx = current ? Array.from(items).indexOf(current) : -1;
-    idx = Math.max(0, Math.min(items.length - 1, idx + dir));
-    items.forEach(el => el.classList.remove('selected'));
-    items[idx].classList.add('selected');
-    items[idx].scrollIntoView({ block: 'nearest' });
   },
 
   executeSelectedCommand() {
     if (this._commandPaletteView) { this._commandPaletteView.executeSelected(); return; }
-    const selected = document.querySelector('.command-item.selected');
-    if (!selected) return;
-    const cmd = this.commands.find(c => c.id === selected.dataset.id);
-    if (cmd) { this.hideCommandPalette(); cmd.action(); }
   },
 
   // ============================================================
