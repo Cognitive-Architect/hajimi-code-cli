@@ -6,6 +6,7 @@ const vm = require('vm');
 const repoRoot = path.resolve(__dirname, '..', '..');
 const htmlPath = path.join(repoRoot, 'src/interface/web/index.html');
 const securityDomPath = path.join(repoRoot, 'src/interface/web/modules/security-dom.js');
+const sessionListViewPath = path.join(repoRoot, 'src/interface/web/views/session-list-view.js');
 const sessionsPath = path.join(repoRoot, 'src/interface/web/modules/sessions.js');
 
 class ClassList {
@@ -177,9 +178,12 @@ function loadHarness() {
   context.globalThis = context;
   vm.createContext(context);
 
-  for (const file of [securityDomPath, sessionsPath]) {
+  for (const file of [securityDomPath, sessionListViewPath, sessionsPath]) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
   }
+
+  assert.ok(context.HajimiSessionListView, 'HajimiSessionListView should be mounted for session list rendering');
+  assert.strictEqual(typeof context.HajimiSessionListView.renderSessionList, 'function', 'session list view renderSessionList should be a function');
 
   const app = {
     chatSessions: [],
