@@ -2021,110 +2021,30 @@ window.app = {
   },
 
   // ============================================================
-  // Settings Persistence
+  // Settings Persistence (V3X Day4-E: delegated to controllers/settings-controller.js + views/settings-view.js)
   // ============================================================
   loadSettings() {
-    try {
-      const raw = localStorage.getItem('hajimi.settings');
-      if (raw) {
-        const saved = JSON.parse(raw);
-        this.settings = { ...this.settings, ...saved };
-      }
-    } catch (e) {
-      console.error('loadSettings error:', e);
-    }
-    this.applySettings();
-    this.bindSettingsEvents();
+    return window.HajimiSettingsController.loadSettings(this);
   },
 
   saveSettings() {
-    try {
-      localStorage.setItem('hajimi.settings', JSON.stringify(this.settings));
-    } catch (e) {
-      console.error('saveSettings error:', e);
-    }
+    return window.HajimiSettingsController.saveSettings(this);
   },
 
   applySettings() {
-    const s = this.settings;
-
-    // Theme
-    const themeSelect = document.getElementById('settingTheme');
-    if (themeSelect) themeSelect.value = s.theme;
-    this.applyTheme(s.theme);
-
-    // Font size
-    const fontSizeInput = document.getElementById('settingFontSize');
-    if (fontSizeInput) fontSizeInput.value = s.fontSize;
-    document.documentElement.style.setProperty('--editor-font-size', s.fontSize + 'px');
-
-    // Word wrap
-    const wordWrapInput = document.getElementById('settingWordWrap');
-    if (wordWrapInput) wordWrapInput.checked = s.wordWrap;
-
-    // Auto save
-    const autoSaveSelect = document.getElementById('settingAutoSave');
-    if (autoSaveSelect) autoSaveSelect.value = s.autoSave;
+    return window.HajimiSettingsController.applySettings(this);
   },
 
   applyTheme(theme) {
-    const root = document.documentElement;
-    let effectiveTheme = theme;
-    if (theme === 'system') {
-      effectiveTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    } else if (theme === 'dark+' || theme === 'high-contrast') {
-      effectiveTheme = 'dark';
-    }
-    root.setAttribute('data-theme', effectiveTheme);
+    return window.HajimiSettingsController.applyTheme(theme);
   },
 
   setupSystemThemeListener() {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-    mediaQuery.addEventListener('change', () => {
-      if (this.settings.theme === 'system') {
-        this.applyTheme('system');
-      }
-    });
+    return window.HajimiSettingsController.setupSystemThemeListener(this);
   },
 
   bindSettingsEvents() {
-    const themeSelect = document.getElementById('settingTheme');
-    const fontSizeInput = document.getElementById('settingFontSize');
-    const wordWrapInput = document.getElementById('settingWordWrap');
-    const autoSaveSelect = document.getElementById('settingAutoSave');
-
-    if (themeSelect) {
-      themeSelect.addEventListener('change', () => {
-        this.settings.theme = themeSelect.value;
-        this.applyTheme(this.settings.theme);
-        this.saveSettings();
-      });
-    }
-
-    if (fontSizeInput) {
-      fontSizeInput.addEventListener('change', () => {
-        const val = parseInt(fontSizeInput.value);
-        if (val >= 8 && val <= 32) {
-          this.settings.fontSize = val;
-          document.documentElement.style.setProperty('--editor-font-size', val + 'px');
-          this.saveSettings();
-        }
-      });
-    }
-
-    if (wordWrapInput) {
-      wordWrapInput.addEventListener('change', () => {
-        this.settings.wordWrap = wordWrapInput.checked;
-        this.saveSettings();
-      });
-    }
-
-    if (autoSaveSelect) {
-      autoSaveSelect.addEventListener('change', () => {
-        this.settings.autoSave = autoSaveSelect.value;
-        this.saveSettings();
-      });
-    }
+    return window.HajimiSettingsController.bindSettingsEvents(this);
   },
 
   // ============================================================
