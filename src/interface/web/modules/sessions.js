@@ -69,18 +69,31 @@
     app.renderLiveShellState?.('就绪');
   }
 
+  function ensureStorageService() {
+    if (global.HajimiStorageService) {
+      return global.HajimiStorageService;
+    }
+    return null;
+  }
+
   function loadChatSessions(app) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
+      var store = ensureStorageService();
+      var sessions = null;
+      if (store) {
+        sessions = store.getSessions();
+      } else {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          sessions = JSON.parse(raw);
+        }
+      }
+
+      if (!sessions || sessions.length === 0) {
         app.newChatSession();
         return;
       }
-      app.chatSessions = JSON.parse(raw);
-      if (app.chatSessions.length === 0) {
-        app.newChatSession();
-        return;
-      }
+      app.chatSessions = sessions;
 
       const latest = app.chatSessions[0];
       app.activeSessionId = latest.id;
@@ -97,7 +110,12 @@
   function saveChatSessions(app) {
     try {
       syncActiveSession(app);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(app.chatSessions));
+      var store = ensureStorageService();
+      if (store) {
+        store.setSessions(app.chatSessions);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(app.chatSessions));
+      }
     } catch (e) {
       console.error('saveChatSessions error:', e);
     }

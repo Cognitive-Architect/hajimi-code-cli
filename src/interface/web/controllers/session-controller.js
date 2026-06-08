@@ -1,8 +1,32 @@
-'use strict';
+(function (global) {
+  'use strict';
 
-// V3X Day 3-A skeleton only. No production wiring yet.
-const sessionControllerSkeleton = Object.freeze({ phase: 'v3x-day3a', domain: 'session-controller' });
+  // V3X Day4-H: Session Button Wiring Minimal Controller
+  // Binds session buttons to their respective actions in the app context.
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = sessionControllerSkeleton;
-}
+  function setupSessionButtons(app) {
+    const newChatBtn = document.getElementById('newChatBtn');
+    if (newChatBtn) {
+      newChatBtn.addEventListener('click', () => {
+        app.newChatSession();
+      });
+    }
+
+    const newSessionBtn = document.getElementById('newSessionBtn');
+    if (newSessionBtn) {
+      newSessionBtn.addEventListener('click', () => {
+        app.newChatSession();
+      });
+    }
+  }
+
+  const api = {
+    setupSessionButtons,
+  };
+
+  global.HajimiSessionController = api;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis);

@@ -8,6 +8,7 @@ const securityDomPath = path.join(repoRoot, 'src/interface/web/modules/security-
 const tauriBridgePath = path.join(repoRoot, 'src/interface/web/modules/tauri-bridge.js');
 const sessionsPath = path.join(repoRoot, 'src/interface/web/modules/sessions.js');
 const thinkingUiPath = path.join(repoRoot, 'src/interface/web/modules/thinking-ui.js');
+const storageServicePath = path.join(repoRoot, 'src/interface/web/services/storage-service.js');
 
 class ClassList {
   constructor(el) {
@@ -267,7 +268,7 @@ context.window = context;
 context.globalThis = context;
 vm.createContext(context);
 
-for (const file of [securityDomPath, tauriBridgePath, sessionsPath, thinkingUiPath]) {
+for (const file of [securityDomPath, tauriBridgePath, storageServicePath, sessionsPath, thinkingUiPath]) {
   vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
 }
 
@@ -378,16 +379,35 @@ function createApp() {
   return app;
 }
 
+assert(context.HajimiStorageService, 'HajimiStorageService should be mounted');
 assert(context.HajimiSessions, 'HajimiSessions should be mounted');
 assert(context.HajimiThinkingUI, 'HajimiThinkingUI should be mounted');
+
+// Spy on HajimiStorageService
+let getSessionsCalls = 0;
+let setSessionsCalls = 0;
+const originalGet = context.HajimiStorageService.getSessions;
+const originalSet = context.HajimiStorageService.setSessions;
+context.HajimiStorageService.getSessions = function () {
+  getSessionsCalls++;
+  return originalGet.apply(this, arguments);
+};
+context.HajimiStorageService.setSessions = function () {
+  setSessionsCalls++;
+  return originalSet.apply(this, arguments);
+};
 
 const app = createApp();
 context.HajimiSessions.newChatSession(app);
 const firstSessionId = app.activeSessionId;
 assert(firstSessionId, 'newChatSession should create an active session');
+assert(setSessionsCalls > 0, 'newChatSession should save sessions through storage service');
 
 app.chatMessages = [{ role: 'user', content: 'A prompt for reload' }];
+const preSaveCalls = setSessionsCalls;
 context.HajimiSessions.saveChatSessions(app);
+assert(setSessionsCalls > preSaveCalls, 'saveChatSessions should call StorageService.setSessions');
+
 context.HajimiSessions.newChatSession(app);
 const secondSessionId = app.activeSessionId;
 assert.notStrictEqual(firstSessionId, secondSessionId, 'A/B sessions should have different ids');
@@ -397,7 +417,9 @@ assert.strictEqual(app.activeSessionId, firstSessionId, 'switchSession should re
 assert.strictEqual(app.chatMessages[0].content, 'A prompt for reload');
 
 const restored = createApp();
+const preLoadCalls = getSessionsCalls;
 context.HajimiSessions.loadChatSessions(restored);
+assert(getSessionsCalls > preLoadCalls, 'loadChatSessions should retrieve sessions through storage service');
 assert(restored.activeSessionId, 'loadChatSessions should restore an active session');
 assert(localStorage.getItem('hajimi_chat_sessions'), 'legacy localStorage key should be used');
 

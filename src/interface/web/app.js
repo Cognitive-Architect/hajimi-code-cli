@@ -2327,15 +2327,19 @@ window.app = {
       this.addChatMessage('ai', '**编辑模式已激活。** 当您要求修改文件时，我将以 diff 格式建议代码更改。');
     });
 
-    document.getElementById('newChatBtn').addEventListener('click', () => {
-      this.newChatSession();
-    });
-
-    const newSessionBtn = document.getElementById('newSessionBtn');
-    if (newSessionBtn) {
-      newSessionBtn.addEventListener('click', () => {
+    if (window.HajimiSessionController?.setupSessionButtons) {
+      window.HajimiSessionController.setupSessionButtons(this);
+    } else {
+      document.getElementById('newChatBtn').addEventListener('click', () => {
         this.newChatSession();
       });
+
+      const newSessionBtn = document.getElementById('newSessionBtn');
+      if (newSessionBtn) {
+        newSessionBtn.addEventListener('click', () => {
+          this.newChatSession();
+        });
+      }
     }
 
     this.updateTokenDisplay();
