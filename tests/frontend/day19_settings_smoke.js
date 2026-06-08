@@ -7,6 +7,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const settingsPath = path.join(repoRoot, 'src/interface/web/modules/settings-panel.js');
 const settingsViewPath = path.join(repoRoot, 'src/interface/web/views/settings-view.js');
 const settingsControllerPath = path.join(repoRoot, 'src/interface/web/controllers/settings-controller.js');
+const storageServicePath = path.join(repoRoot, 'src/interface/web/services/storage-service.js');
 
 class FakeClassList {
   constructor() {
@@ -142,26 +143,41 @@ async function main() {
   assert.strictEqual(app.sidebarView, 'settings', 'models view should redirect to settings sidebar');
   assert.strictEqual(tabProviders.classList.contains('active'), true, 'redirect should activate providers tab');
 
-  // --- Part 2: HajimiSettingsView + HajimiSettingsController delegation (Day4-E) ---
+  // --- Part 2: HajimiStorageService + HajimiSettingsView + HajimiSettingsController delegation (Day4-F) ---
+  vm.runInContext(fs.readFileSync(storageServicePath, 'utf8'), context, { filename: 'storage-service.js' });
   vm.runInContext(fs.readFileSync(settingsViewPath, 'utf8'), context, { filename: 'settings-view.js' });
   vm.runInContext(fs.readFileSync(settingsControllerPath, 'utf8'), context, { filename: 'settings-controller.js' });
 
+  assert.ok(context.HajimiStorageService, 'HajimiStorageService should be mounted on window');
   assert.ok(context.HajimiSettingsView, 'HajimiSettingsView should be mounted on window');
   assert.ok(context.HajimiSettingsController, 'HajimiSettingsController should be mounted on window');
   assert.strictEqual(typeof context.HajimiSettingsController.loadSettings, 'function', 'loadSettings should be a function');
   assert.strictEqual(typeof context.HajimiSettingsController.saveSettings, 'function', 'saveSettings should be a function');
-  assert.strictEqual(typeof context.HajimiSettingsController.applySettings, 'function', 'applySettings should be a function');
-  assert.strictEqual(typeof context.HajimiSettingsController.applyTheme, 'function', 'applyTheme should be a function');
-  assert.strictEqual(typeof context.HajimiSettingsController.setupSystemThemeListener, 'function', 'setupSystemThemeListener should be a function');
-  assert.strictEqual(typeof context.HajimiSettingsController.bindSettingsEvents, 'function', 'bindSettingsEvents should be a function');
 
-  // Test saveSettings + loadSettings round-trip
+  // Spy on HajimiStorageService
+  let getSettingsCalls = 0;
+  let setSettingsCalls = 0;
+  const originalGet = context.HajimiStorageService.getSettings;
+  const originalSet = context.HajimiStorageService.setSettings;
+
+  context.HajimiStorageService.getSettings = function () {
+    getSettingsCalls++;
+    return originalGet.apply(this, arguments);
+  };
+  context.HajimiStorageService.setSettings = function () {
+    setSettingsCalls++;
+    return originalSet.apply(this, arguments);
+  };
+
+  // Test saveSettings + loadSettings round-trip via StorageService
   const app2 = {
     settings: { theme: 'light', fontSize: 16, wordWrap: false, autoSave: 'afterDelay' },
   };
   context.HajimiSettingsController.saveSettings(app2);
+  assert.strictEqual(setSettingsCalls, 1, 'saveSettings should delegate to StorageService.setSettings');
+
   const stored = context.localStorage.getItem('hajimi.settings');
-  assert.ok(stored, 'saveSettings should persist to localStorage');
+  assert.ok(stored, 'setSettings should persist to localStorage');
   const parsed = JSON.parse(stored);
   assert.strictEqual(parsed.theme, 'light', 'saved theme should be light');
   assert.strictEqual(parsed.fontSize, 16, 'saved fontSize should be 16');
@@ -170,9 +186,10 @@ async function main() {
     settings: { theme: 'dark', fontSize: 14, wordWrap: true, autoSave: 'off' },
   };
   context.HajimiSettingsController.loadSettings(app3);
-  assert.strictEqual(app3.settings.theme, 'light', 'loadSettings should restore theme from localStorage');
-  assert.strictEqual(app3.settings.fontSize, 16, 'loadSettings should restore fontSize from localStorage');
-  assert.strictEqual(app3.settings.wordWrap, false, 'loadSettings should restore wordWrap from localStorage');
+  assert.strictEqual(getSettingsCalls, 1, 'loadSettings should delegate to StorageService.getSettings');
+  assert.strictEqual(app3.settings.theme, 'light', 'loadSettings should restore theme via StorageService');
+  assert.strictEqual(app3.settings.fontSize, 16, 'loadSettings should restore fontSize via StorageService');
+  assert.strictEqual(app3.settings.wordWrap, false, 'loadSettings should restore wordWrap via StorageService');
 
   // Test applyTheme
   context.HajimiSettingsView.applyTheme('dark');

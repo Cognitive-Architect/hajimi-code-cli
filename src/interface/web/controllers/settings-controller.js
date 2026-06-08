@@ -16,12 +16,27 @@
     return null;
   }
 
+  function ensureStorageService() {
+    if (global.HajimiStorageService) {
+      return global.HajimiStorageService;
+    }
+    return null;
+  }
+
   function loadSettings(app) {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        var saved = JSON.parse(raw);
-        app.settings = Object.assign({}, app.settings, saved);
+      var store = ensureStorageService();
+      if (store) {
+        var saved = store.getSettings();
+        if (saved) {
+          app.settings = Object.assign({}, app.settings, saved);
+        }
+      } else {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          var savedFallback = JSON.parse(raw);
+          app.settings = Object.assign({}, app.settings, savedFallback);
+        }
       }
     } catch (e) {
       console.error('loadSettings error:', e);
@@ -32,7 +47,12 @@
 
   function saveSettings(app) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(app.settings));
+      var store = ensureStorageService();
+      if (store) {
+        store.setSettings(app.settings);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(app.settings));
+      }
     } catch (e) {
       console.error('saveSettings error:', e);
     }
