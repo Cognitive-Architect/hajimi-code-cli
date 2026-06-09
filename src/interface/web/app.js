@@ -2836,6 +2836,9 @@ window.app = {
   },
 
   createAssistantTurn() {
+    if (window.HajimiChatView && typeof window.HajimiChatView.createAssistantTurn === 'function') {
+      return window.HajimiChatView.createAssistantTurn(this);
+    }
     const container = document.getElementById('aiChatMessages');
     if (!container) return null;
     const id = 'turn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -2900,6 +2903,9 @@ window.app = {
   },
 
   hasSessionThinking(msg) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.hasSessionThinking === 'function') {
+      return window.HajimiChatView.hasSessionThinking(msg);
+    }
     if (!msg || (msg.role !== 'assistant' && msg.role !== 'ai')) return false;
     return Object.prototype.hasOwnProperty.call(msg, 'thinkingContent')
       || Object.prototype.hasOwnProperty.call(msg, 'thinkingState')
@@ -2907,6 +2913,9 @@ window.app = {
   },
 
   snapshotAssistantTurn(turn) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.snapshotAssistantTurn === 'function') {
+      return window.HajimiChatView.snapshotAssistantTurn(this, turn);
+    }
     if (!turn || !turn.state) return null;
     const thinking = turn.state.thinking || {};
     const response = turn.state.response || {};
@@ -2920,6 +2929,9 @@ window.app = {
   },
 
   createAssistantSessionMessage(content, turn = null) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.createAssistantSessionMessage === 'function') {
+      return window.HajimiChatView.createAssistantSessionMessage(this, content, turn);
+    }
     const snapshot = this.snapshotAssistantTurn(turn || this._lastAssistantTurn);
     const message = {
       role: 'assistant',
@@ -2938,6 +2950,9 @@ window.app = {
   },
 
   renderChatMessageFromSession(msg) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.renderChatMessageFromSession === 'function') {
+      return window.HajimiChatView.renderChatMessageFromSession(this, msg);
+    }
     if (!this.hasSessionThinking(msg)) {
       this.addChatMessage(msg.role, msg.content, false);
       return;
@@ -2969,6 +2984,9 @@ window.app = {
   },
 
   updateTurnThinking(turn, patch = {}) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.updateTurnThinking === 'function') {
+      return window.HajimiChatView.updateTurnThinking(this, turn, patch);
+    }
     if (!turn || !turn.thinkingPanelHandle) return;
     const thinking = turn.state.thinking;
     const now = Date.now();
@@ -2999,6 +3017,9 @@ window.app = {
   },
 
   updateTurnResponse(turn, patch = {}) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.updateTurnResponse === 'function') {
+      return window.HajimiChatView.updateTurnResponse(this, turn, patch);
+    }
     if (!turn || !turn.responseEl) return;
     const nextState = patch.state || turn.state.response.state;
     const hasContent = Object.prototype.hasOwnProperty.call(patch, 'content');
@@ -3421,6 +3442,9 @@ window.app = {
   },
 
   addChatMessage(role, text) {
+    if (window.HajimiChatView && typeof window.HajimiChatView.addChatMessage === 'function') {
+      return window.HajimiChatView.addChatMessage(this, role, text);
+    }
     const container = document.getElementById('aiChatMessages');
     if (!container) return;
     const div = document.createElement('div');
