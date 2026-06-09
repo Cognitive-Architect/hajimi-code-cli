@@ -2265,6 +2265,9 @@ window.app = {
   // Chat
   // ============================================================
   setupChat() {
+    if (window.HajimiChatController && typeof window.HajimiChatController.init === 'function') {
+      return window.HajimiChatController.init(this);
+    }
     const chatInput = document.getElementById('aiChatInput');
     const chatSendBtn = document.getElementById('aiChatSendBtn');
     const slashPaletteContainer = document.getElementById('slashPalette');
