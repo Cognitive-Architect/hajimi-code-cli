@@ -224,6 +224,9 @@ window.app = {
   },
 
   renderLiveShellState(statusText) {
+    if (window.HajimiTopbarView && typeof window.HajimiTopbarView.renderLiveShellState === 'function') {
+      return window.HajimiTopbarView.renderLiveShellState(this, statusText);
+    }
     this.renderTopBarWorkspace();
     this.renderChatShellStatus(statusText);
     this.renderSidebarFileSummary();
@@ -234,6 +237,9 @@ window.app = {
   },
 
   renderTopBarWorkspace() {
+    if (window.HajimiTopbarView && typeof window.HajimiTopbarView.renderTopBarWorkspace === 'function') {
+      return window.HajimiTopbarView.renderTopBarWorkspace(this);
+    }
     const projectEl = document.getElementById('topBarProject');
     if (!projectEl) return;
     if (!this.currentWorkspace) {
@@ -778,9 +784,9 @@ window.app = {
   },
 
   updateGitBranch(gitStatusOutput) {
-    // Try to extract branch name from git status output
-    // Format usually includes "On branch xxx" or is part of porcelain output
-    // Fallback: query current branch through the governed shell tool.
+    if (window.HajimiTopbarView && typeof window.HajimiTopbarView.updateGitBranch === 'function') {
+      return window.HajimiTopbarView.updateGitBranch(this, gitStatusOutput);
+    }
     if (!this.isTauriAvailable()) return;
     this.runShellCommand('git', ['branch', '--show-current'])
       .then(result => {
@@ -4952,6 +4958,9 @@ window.app = {
   },
 
   showErrorToast(message) {
+    if (window.HajimiFeedbackView && typeof window.HajimiFeedbackView.showErrorToast === 'function') {
+      return window.HajimiFeedbackView.showErrorToast(message);
+    }
     let toast = document.getElementById('errorToast');
     if (!toast) {
       toast = document.createElement('div');
@@ -4965,11 +4974,17 @@ window.app = {
   },
 
   hideErrorToast() {
+    if (window.HajimiFeedbackView && typeof window.HajimiFeedbackView.hideErrorToast === 'function') {
+      return window.HajimiFeedbackView.hideErrorToast();
+    }
     const toast = document.getElementById('errorToast');
     if (toast) toast.classList.remove('active');
   },
 
   formatText(text) {
+    if (window.HajimiMarkdownService && typeof window.HajimiMarkdownService.formatText === 'function') {
+      return window.HajimiMarkdownService.formatText(text);
+    }
     let html = this.safeText(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -4983,6 +4998,9 @@ window.app = {
 
   /// Render Markdown to HTML with XSS-safe URL sanitization (B-08/12).
   renderMarkdown(text) {
+    if (window.HajimiMarkdownService && typeof window.HajimiMarkdownService.renderMarkdown === 'function') {
+      return window.HajimiMarkdownService.renderMarkdown(text);
+    }
     let html = this.safeText(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -5017,6 +5035,9 @@ window.app = {
 
   /// Sanitize URL to prevent javascript: XSS (B-08/12).
   sanitizeUrl(url) {
+    if (window.HajimiMarkdownService && typeof window.HajimiMarkdownService.sanitizeUrl === 'function') {
+      return window.HajimiMarkdownService.sanitizeUrl(url);
+    }
     if (!url) return null;
     const trimmed = url.trim().toLowerCase();
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
