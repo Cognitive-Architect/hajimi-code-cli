@@ -3581,6 +3581,9 @@ window.app = {
   },
 
   renderModelButton() {
+    if (window.HajimiModelPickerView && typeof window.HajimiModelPickerView.renderModelButton === 'function') {
+      return window.HajimiModelPickerView.renderModelButton(this);
+    }
     const btn = document.getElementById('modelSelectBtn');
     if (!btn) return;
     const active = this.providerConfigs.find(c => c.id === this.activeProviderId);
@@ -3592,6 +3595,9 @@ window.app = {
   // Model Picker Modal
   // ============================================================
   setupModelPicker() {
+    if (window.HajimiModelPickerController && typeof window.HajimiModelPickerController.setupModelPicker === 'function') {
+      return window.HajimiModelPickerController.setupModelPicker(this);
+    }
     const btn = document.getElementById('modelSelectBtn');
     const closeBtn = document.getElementById('modelPickerClose');
     const addBtn = document.getElementById('modelPickerAddBtn');
@@ -3608,15 +3614,24 @@ window.app = {
   },
 
   openModelPicker() {
+    if (window.HajimiModelPickerController && typeof window.HajimiModelPickerController.openModelPicker === 'function') {
+      return window.HajimiModelPickerController.openModelPicker(this);
+    }
     this.renderModelPicker();
     document.getElementById('modelPickerModal')?.classList.add('active');
   },
 
   closeModelPicker() {
+    if (window.HajimiModelPickerController && typeof window.HajimiModelPickerController.closeModelPicker === 'function') {
+      return window.HajimiModelPickerController.closeModelPicker(this);
+    }
     document.getElementById('modelPickerModal')?.classList.remove('active');
   },
 
   renderModelPicker() {
+    if (window.HajimiModelPickerView && typeof window.HajimiModelPickerView.renderModelPicker === 'function') {
+      return window.HajimiModelPickerView.renderModelPicker(this);
+    }
     const body = document.getElementById('modelPickerBody');
     if (!body) return;
 
