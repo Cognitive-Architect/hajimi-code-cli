@@ -1,0 +1,145 @@
+{
+  "target": {
+    "title": "Hajimi Code",
+    "url": "http://localhost:3456/",
+    "ws": "ws://127.0.0.1:9222/devtools/page/627F403EE58D0EBA8371FDBB80AED9A0"
+  },
+  "baseline": {
+    "title": "Hajimi Code",
+    "url": "http://localhost:3456/",
+    "bodyTextLength": 1015,
+    "hasApp": true,
+    "hasFeedbackView": true,
+    "hasMarkdownService": true,
+    "hasTopbarView": true,
+    "hasChatView": true,
+    "hasChatController": true,
+    "hasModelPickerView": true,
+    "hasModelPickerController": true,
+    "hasSessionList": true,
+    "hasSettings": true,
+    "bodySample": "⌘\nhajimi-workspace\n...\n⌕ 搜索 (⌘K)\n♧\n⚙\n⟳\n▣\n□\n⌕\n⑂\n⌁\n◇\n⚙\n会话\n+\n⋯\n⌕\n/compact\n/compact\n6月7日\n/agent 请在当前工作区根目录创建一个名为 agent-\n/agent 请在当前工作区根目录创建一个名为 agent-smoke-check.txt 的文件，内容写入 Agent\n6月7日\n新会话\n有什么可以帮您的？\n6月1日\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列\n/agent 查"
+  },
+  "appLaunch": "PASS",
+  "whiteScreen": "NO",
+  "crash": "NO",
+  "consoleDay5ScriptError": "NO",
+  "feedback": "PASS",
+  "markdown": "PASS",
+  "topbar": "PASS",
+  "chatView": "PASS",
+  "chatControllerShell": "PASS",
+  "modelPicker": "PASS",
+  "sessionList": "FAIL",
+  "settings": "PASS",
+  "details": {
+    "feedback": {
+      "exists": true,
+      "active": true,
+      "text": "Day5-F feedback receipt toast"
+    },
+    "markdown": {
+      "html": "<strong>bold</strong><br><br><code>code</code><br><br><span>bad</span>)<br><br><a href=\"https://example.com\" target=\"_blank\" rel=\"noopener\">good</a>",
+      "hasStrong": true,
+      "hasCode": true,
+      "links": [
+        {
+          "href": "https://example.com",
+          "text": "good"
+        }
+      ],
+      "hasJavascriptHref": false,
+      "text": "boldcodebad)good"
+    },
+    "topbar": {
+      "found": [
+        {
+          "id": "currentWorkspace",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "workspacePath",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "workspaceName",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "gitBranch",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "currentBranch",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "statusTag",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "agentStatus",
+          "exists": false,
+          "text": ""
+        },
+        {
+          "id": "sidebarModelName",
+          "exists": true,
+          "text": "选择模型"
+        }
+      ],
+      "topbarText": "",
+      "visible": true
+    },
+    "chat": {
+      "inputExists": true,
+      "sendExists": true,
+      "sendClicked": true,
+      "inputValueAfterClick": "",
+      "messagesExists": true,
+      "messagesTextLengthBefore": 40,
+      "sendDisabled": false
+    },
+    "chatAfter": {
+      "messagesTextLengthAfter": 99,
+      "bodyLength": 1061
+    },
+    "modelPicker": {
+      "btnExists": true,
+      "modalExists": true,
+      "bodyExists": true,
+      "open": true,
+      "renderText": "deepseek\ndeepseek-v4-pro · openai-compatible\n使用\n编辑\n删除",
+      "closed": true
+    },
+    "sessionList": {
+      "exists": true,
+      "visible": true,
+      "text": "/compact\n/compact\n17:37\n/agent 请在当前工作区根目录创建一个名为 agent-\n/agent 请在当前工作区根目录创建一个名为 agent-smoke-check.txt 的文件，内容写入 Agent\n6月7日\n新会话\n有什么可以帮您的？\n6月1日\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。\n6月1日\n/agent 查看当前目录下有什么文件\n/agent 查看当前目录下有什么文件\n6月1日",
+      "itemExists": true,
+      "clicked": true,
+      "beforeActive": null,
+      "afterActive": null,
+      "switchedOrNoItem": false
+    },
+    "settings": {
+      "panelExists": true,
+      "bodyHasSettings": true,
+      "textSample": "设置\n...\n通用\n模型\nMCP\n治理\n审计\n当前 Profile\ndefault\n+\n🗑\n主题\n暗色\n亮色\n跟随系统\n字体大小\n自动换行"
+    }
+  },
+  "console": {
+    "total": 5,
+    "errors": [],
+    "day5ConsoleErrors": [],
+    "exceptionTexts": [],
+    "day5Exceptions": []
+  },
+  "screenshotPath": "F:/hajimi-code-cli/docs/frontend/day5-f-webview-visual-receipt-v3x-20260609-1735.png"
+}

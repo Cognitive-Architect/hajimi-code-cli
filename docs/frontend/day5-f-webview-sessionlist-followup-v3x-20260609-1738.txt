@@ -1,0 +1,63 @@
+{
+  "before": {
+    "appKeys": [
+      "activeSessionId",
+      "chatSessions",
+      "closeSessionReplay",
+      "createAssistantSessionMessage",
+      "getActiveSession",
+      "getDisplaySessionTitle",
+      "hasSessionThinking",
+      "loadChatSessions",
+      "newChatSession",
+      "renderChatMessageFromSession",
+      "renderInspectorSessionStats",
+      "renderSessionList",
+      "saveChatSessions",
+      "setupSessionBrowser",
+      "setupSessionReplay",
+      "startSessionReplay",
+      "switchSession"
+    ],
+    "currentSessionId": null,
+    "activeSessionId": "session-1780650251369-b9kim",
+    "sessionCount": 5,
+    "itemCount": 5,
+    "activeData": "session-1780650251369-b9kim",
+    "firstData": "session-1780650251369-b9kim",
+    "secondData": "session-1780318915050-sefjm",
+    "text": "/compact\n/compact\n17:37\n/agent 请在当前工作区根目录创建一个名为 agent-\n/agent 请在当前工作区根目录创建一个名为 agent-smoke-check.txt 的文件，内容写入 Agent\n6月7日\n新会话\n有什么可以帮您的？\n6月1日\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。\n6月1日\n/agent 查看当前目录下有什么文件\n/agent 查看当前目录下有什么文件\n6月1日"
+  },
+  "after": {
+    "appKeys": [
+      "activeSessionId",
+      "chatSessions",
+      "closeSessionReplay",
+      "createAssistantSessionMessage",
+      "getActiveSession",
+      "getDisplaySessionTitle",
+      "hasSessionThinking",
+      "loadChatSessions",
+      "newChatSession",
+      "renderChatMessageFromSession",
+      "renderInspectorSessionStats",
+      "renderSessionList",
+      "saveChatSessions",
+      "setupSessionBrowser",
+      "setupSessionReplay",
+      "startSessionReplay",
+      "switchSession"
+    ],
+    "currentSessionId": null,
+    "activeSessionId": "session-1780318915050-sefjm",
+    "sessionCount": 5,
+    "itemCount": 5,
+    "activeData": "session-1780318915050-sefjm",
+    "firstData": "session-1780650251369-b9kim",
+    "secondData": "session-1780318915050-sefjm",
+    "text": "/compact\n/compact\n17:38\n/agent 请在当前工作区根目录创建一个名为 agent-\n/agent 请在当前工作区根目录创建一个名为 agent-smoke-check.txt 的文件，内容写入 Agent\n6月7日\n新会话\n有什么可以帮您的？\n6月1日\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列\n/agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。\n6月1日\n/agent 查看当前目录下有什么文件\n/agent 查看当前目录下有什么文件\n6月1日"
+  },
+  "clicked": true,
+  "targetData": "session-1780318915050-sefjm",
+  "messagesText": "You\n/agent 请在当前工作区根目录创建一个名为 agent-smoke-check.txt 的文件，内容写入 Agent smoke OK。\nYou\n/chat dummy"
+}
