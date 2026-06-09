@@ -143,7 +143,7 @@ async function main() {
   // wait for microtask queue
   await new Promise(resolve => setTimeout(resolve, 10));
 
-  assert.ok(statusBranch.innerHTML.includes('main'), 'branch name should update on statusBranch');
+  assert.ok(statusBranch.textContent.includes('main'), 'branch name should update on statusBranch');
   assert.strictEqual(topBarBranch.textContent, 'main', 'branch name should update on topBarBranch');
   assert.strictEqual(sidebarGitBranch.textContent, 'main', 'branch name should update on sidebarGitBranch');
   assert.strictEqual(app.liveShellStateCalled, true, 'renderLiveShellState should be triggered');
