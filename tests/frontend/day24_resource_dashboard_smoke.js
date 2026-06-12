@@ -5,6 +5,8 @@ const vm = require('vm');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const dashboardPath = path.join(repoRoot, 'src/interface/web/modules/resource-dashboard.js');
+const dashboardViewPath = path.join(repoRoot, 'src/interface/web/views/dashboard-view.js');
+const dashboardControllerPath = path.join(repoRoot, 'src/interface/web/controllers/dashboard-controller.js');
 
 class Element {
   constructor(id) {
@@ -32,7 +34,7 @@ function createDocument(ids = ['metricIterationTab', 'metricBlackboardTab', 'met
   };
 }
 
-function loadDashboardModule(document) {
+function loadDashboardModule(document, options = {}) {
   const intervals = [];
   const fakeSetInterval = (callback, delay) => {
     const handle = { callback, delay };
@@ -49,6 +51,20 @@ function loadDashboardModule(document) {
   };
   context.globalThis = context;
   vm.createContext(context);
+  if (options.withViewController) {
+    vm.runInContext(fs.readFileSync(dashboardViewPath, 'utf8'), context, { filename: 'dashboard-view.js' });
+    vm.runInContext(fs.readFileSync(dashboardControllerPath, 'utf8'), context, { filename: 'dashboard-controller.js' });
+    assert.strictEqual(
+      typeof context.window.HajimiDashboardView?.renderMetrics,
+      'function',
+      'dashboard view should expose renderMetrics'
+    );
+    assert.strictEqual(
+      typeof context.window.HajimiDashboardController?.updateMetrics,
+      'function',
+      'dashboard controller should expose updateMetrics'
+    );
+  }
   vm.runInContext(fs.readFileSync(dashboardPath, 'utf8'), context, { filename: 'resource-dashboard.js' });
   assert.strictEqual(
     context.window.HajimiResourceDashboard?.setupResourceDashboard,
@@ -98,7 +114,7 @@ function metricText(document, id) {
 async function main() {
   {
     const document = createDocument();
-    const { module, intervals } = loadDashboardModule(document);
+    const { module, intervals } = loadDashboardModule(document, { withViewController: true });
     const app = createApp();
     module.setupResourceDashboard(app);
     assert.deepStrictEqual(app.calls, [['updateMetrics']], 'setupResourceDashboard should refresh immediately');
@@ -111,7 +127,7 @@ async function main() {
 
   {
     const document = createDocument();
-    const { module } = loadDashboardModule(document);
+    const { module } = loadDashboardModule(document, { withViewController: true });
     const app = createApp({ tauri: false });
     await module.updateMetrics(app);
     assert.deepStrictEqual(app.calls, [], 'Tauri unavailable should not invoke backend');
@@ -122,7 +138,7 @@ async function main() {
 
   {
     const document = createDocument();
-    const { module } = loadDashboardModule(document);
+    const { module } = loadDashboardModule(document, { withViewController: true });
     const app = createApp({
       metrics: { iteration_count: 7, blackboard_size: 12, edit_count: 3 },
     });
@@ -136,7 +152,7 @@ async function main() {
 
   {
     const document = createDocument(['metricIterationTab']);
-    const { module } = loadDashboardModule(document);
+    const { module } = loadDashboardModule(document, { withViewController: true });
     await assert.doesNotReject(
       () => module.updateMetrics(createApp({ metrics: { iteration_count: 4, blackboard_size: 2, edit_count: 1 } })),
       'missing metric DOM nodes should not throw'
@@ -146,7 +162,7 @@ async function main() {
 
   {
     const document = createDocument();
-    const { module } = loadDashboardModule(document);
+    const { module } = loadDashboardModule(document, { withViewController: true });
     await assert.doesNotReject(
       () => module.updateMetrics(createApp({ throwInvoke: true })),
       'get_resource_metrics failure should not throw'
@@ -155,14 +171,25 @@ async function main() {
 
   {
     const document = createDocument();
-    const { module } = loadDashboardModule(document);
+    const { module } = loadDashboardModule(document, { withViewController: true });
     const app = createApp({ metrics: { iteration_count: 1, blackboard_size: 2, edit_count: 3 } });
     await module.updateMetrics(app);
     assert.strictEqual(app.calls.length, 1, 'resource dashboard should only perform one readonly metrics call');
     assert.strictEqual(app.calls[0][1], 'get_resource_metrics', 'resource dashboard must not touch checkpoint/provider/agent/shell commands');
   }
 
-  console.log('day24 resource dashboard smoke: PASS (8 scenarios)');
+  {
+    const document = createDocument();
+    const { module } = loadDashboardModule(document);
+    await module.updateMetrics(createApp({
+      metrics: { iteration_count: 9, blackboard_size: 8, edit_count: 7 },
+    }));
+    assert.strictEqual(metricText(document, 'metricIterationTab'), '9', 'compat path should still update iteration metric');
+    assert.strictEqual(metricText(document, 'metricBlackboardTab'), '8', 'compat path should still update blackboard metric');
+    assert.strictEqual(metricText(document, 'metricEditCountTab'), '7', 'compat path should still update edit count metric');
+  }
+
+  console.log('day24 resource dashboard smoke: PASS (9 scenarios)');
 }
 
 main().catch((error) => {
