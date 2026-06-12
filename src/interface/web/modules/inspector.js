@@ -1,86 +1,144 @@
 (function (global) {
   'use strict';
 
-  function init(app) {
-    const tabs = document.querySelectorAll('.inspector-tab');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const tabId = tab.dataset.inspectorTab;
-        app.showInspectorTab(tabId);
-      });
-    });
+  function getDocument() {
+    return global.document || (typeof document !== 'undefined' ? document : null);
+  }
 
-    const closeBtn = document.getElementById('inspectorCloseBtn');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        const inspector = document.getElementById('rightInspector');
-        if (inspector) inspector.style.display = 'none';
+  const compatInspectorView = {
+    bindTabs(onTabSelected) {
+      const doc = getDocument();
+      if (!doc) return;
+      doc.querySelectorAll('.inspector-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          onTabSelected(tab.dataset.inspectorTab);
+        });
       });
-    }
+    },
+    bindClose(onClose) {
+      const closeBtn = getDocument()?.getElementById('inspectorCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', onClose);
+    },
+    setVisible(visible) {
+      const inspector = getDocument()?.getElementById('rightInspector');
+      if (inspector) inspector.style.display = visible ? '' : 'none';
+    },
+    setActiveTab(tabId, onActivePanel) {
+      const doc = getDocument();
+      if (!doc) return;
+
+      doc.querySelectorAll('.inspector-tab').forEach(el => {
+        el.classList.toggle('active', el.dataset.inspectorTab === tabId);
+      });
+
+      doc.querySelectorAll('.inspector-panel').forEach(el => {
+        const isActive = el.dataset.inspectorPanel === tabId;
+        el.classList.toggle('active', isActive);
+        if (isActive && typeof onActivePanel === 'function') {
+          onActivePanel(tabId);
+        }
+      });
+    },
+  };
+
+  const compatInspectorController = {
+    init(app) {
+      compatInspectorView.bindTabs((tabId) => app.showInspectorTab(tabId));
+      compatInspectorView.bindClose(() => compatInspectorView.setVisible(false));
+    },
+    showInspectorTab(app, tabId) {
+      compatInspectorView.setActiveTab(tabId, (activeTabId) => {
+        if (activeTabId === 'diff-preview') app.safeRenderInspectorDiffPreview();
+        if (activeTabId === 'agent-trace') app.safeRenderTraceInspector();
+      });
+    },
+    withInspectorGuard(app, label, renderFn) {
+      try {
+        renderFn();
+      } catch (e) {
+        console.warn(`Inspector render skipped (${label}):`, e);
+      }
+    },
+    safeUpdateTaskDetails(app, statusText) {
+      app.withInspectorGuard('task details', () => app.updateTaskDetails(statusText));
+    },
+    safeRenderContextFiles(app) {
+      app.withInspectorGuard('context files', () => app.renderContextFiles());
+    },
+    safeRenderModelInfo(app) {
+      app.withInspectorGuard('model info', () => app.renderModelInfo());
+    },
+    safeRenderInspectorDiffPreview(app) {
+      app.withInspectorGuard('diff preview', () => app.renderInspectorDiffPreview());
+    },
+    safeRenderTraceInspector(app) {
+      app.withInspectorGuard('trace summary', () => app.renderTraceInspector());
+    },
+    openDiffPreview(app, file = null) {
+      if (file) app.currentDiffFile = file;
+      compatInspectorView.setVisible(true);
+      app.showInspectorTab('diff-preview');
+    },
+    updateTaskDetails(app, statusText) {
+      const text = statusText || (app.isProcessing ? '处理中...' : '就绪');
+      app.renderInspectorTaskStatus(text);
+      app.renderChatShellStatus(text);
+      app.renderInspectorSessionStats();
+      if (typeof app.renderInspectorOperationSummary === 'function') {
+        app.renderInspectorOperationSummary();
+      }
+    },
+    renderTaskSteps(app) {
+      app.renderInspectorSessionStats();
+    },
+  };
+
+  function getInspectorController() {
+    return global.HajimiInspectorController || compatInspectorController;
+  }
+
+  function init(app) {
+    return getInspectorController().init(app);
   }
 
   function showInspectorTab(app, tabId) {
-    document.querySelectorAll('.inspector-tab').forEach(el => {
-      el.classList.toggle('active', el.dataset.inspectorTab === tabId);
-    });
-
-    document.querySelectorAll('.inspector-panel').forEach(el => {
-      const isActive = el.dataset.inspectorPanel === tabId;
-      el.classList.toggle('active', isActive);
-      if (isActive) {
-        if (tabId === 'diff-preview') app.safeRenderInspectorDiffPreview();
-        if (tabId === 'agent-trace') app.safeRenderTraceInspector();
-      }
-    });
+    return getInspectorController().showInspectorTab(app, tabId);
   }
 
   function withInspectorGuard(app, label, renderFn) {
-    try {
-      renderFn();
-    } catch (e) {
-      console.warn(`Inspector render skipped (${label}):`, e);
-    }
+    return getInspectorController().withInspectorGuard(app, label, renderFn);
   }
 
   function safeUpdateTaskDetails(app, statusText) {
-    app.withInspectorGuard('task details', () => app.updateTaskDetails(statusText));
+    return getInspectorController().safeUpdateTaskDetails(app, statusText);
   }
 
   function safeRenderContextFiles(app) {
-    app.withInspectorGuard('context files', () => app.renderContextFiles());
+    return getInspectorController().safeRenderContextFiles(app);
   }
 
   function safeRenderModelInfo(app) {
-    app.withInspectorGuard('model info', () => app.renderModelInfo());
+    return getInspectorController().safeRenderModelInfo(app);
   }
 
   function safeRenderInspectorDiffPreview(app) {
-    app.withInspectorGuard('diff preview', () => app.renderInspectorDiffPreview());
+    return getInspectorController().safeRenderInspectorDiffPreview(app);
   }
 
   function safeRenderTraceInspector(app) {
-    app.withInspectorGuard('trace summary', () => app.renderTraceInspector());
+    return getInspectorController().safeRenderTraceInspector(app);
   }
 
   function openDiffPreview(app, file = null) {
-    if (file) app.currentDiffFile = file;
-    const inspector = document.getElementById('rightInspector');
-    if (inspector) inspector.style.display = '';
-    app.showInspectorTab('diff-preview');
+    return getInspectorController().openDiffPreview(app, file);
   }
 
   function updateTaskDetails(app, statusText) {
-    const text = statusText || (app.isProcessing ? '处理中...' : '就绪');
-    app.renderInspectorTaskStatus(text);
-    app.renderChatShellStatus(text);
-    app.renderInspectorSessionStats();
-    if (typeof app.renderInspectorOperationSummary === 'function') {
-      app.renderInspectorOperationSummary();
-    }
+    return getInspectorController().updateTaskDetails(app, statusText);
   }
 
   function renderTaskSteps(app) {
-    app.renderInspectorSessionStats();
+    return getInspectorController().renderTaskSteps(app);
   }
 
   function renderEditSummary(app) {

@@ -5,6 +5,8 @@ const vm = require('vm');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const inspectorPath = path.join(repoRoot, 'src/interface/web/modules/inspector.js');
+const inspectorViewPath = path.join(repoRoot, 'src/interface/web/views/inspector-view.js');
+const inspectorControllerPath = path.join(repoRoot, 'src/interface/web/controllers/inspector-controller.js');
 
 class FakeClassList {
   constructor() {
@@ -108,7 +110,11 @@ async function main() {
   context.window = context;
   context.globalThis = context;
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(inspectorViewPath, 'utf8'), context, { filename: 'inspector-view.js' });
+  vm.runInContext(fs.readFileSync(inspectorControllerPath, 'utf8'), context, { filename: 'inspector-controller.js' });
   vm.runInContext(fs.readFileSync(inspectorPath, 'utf8'), context, { filename: 'inspector.js' });
+  assert.strictEqual(typeof context.HajimiInspectorView?.setActiveTab, 'function', 'inspector view should expose setActiveTab');
+  assert.strictEqual(typeof context.HajimiInspectorController?.showInspectorTab, 'function', 'inspector controller should expose showInspectorTab');
 
   let diffRenderCount = 0;
   let receiptCalls = 0;
