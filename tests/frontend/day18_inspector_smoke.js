@@ -9,8 +9,8 @@ const inspectorViewPath = path.join(repoRoot, 'src/interface/web/views/inspector
 const inspectorControllerPath = path.join(repoRoot, 'src/interface/web/controllers/inspector-controller.js');
 
 class FakeClassList {
-  constructor() {
-    this.values = new Set();
+  constructor(initial = []) {
+    this.values = new Set(initial);
   }
 
   toggle(name, active) {
@@ -21,39 +21,128 @@ class FakeClassList {
   contains(name) {
     return this.values.has(name);
   }
+
+  toString() {
+    return Array.from(this.values).join(' ');
+  }
 }
 
 class FakeElement {
   constructor(document, id = null, attrs = {}) {
     this.document = document;
+    this.tagName = attrs.tagName || 'div';
     this.id = id;
     this.dataset = attrs.dataset || {};
-    this.style = {};
+    this.style = { cssText: '' };
     this.listeners = {};
-    this.classList = new FakeClassList();
+    this.children = [];
+    this.parentNode = null;
+    this.classList = new FakeClassList(attrs.classes || []);
+    this._className = this.classList.toString();
     this._innerHTML = '';
+    this._textContent = '';
+    if (attrs.className) this.className = attrs.className;
   }
 
   addEventListener(type, handler) {
-    this.listeners[type] = handler;
+    this.listeners[type] = this.listeners[type] || [];
+    this.listeners[type].push(handler);
   }
 
   async click() {
-    if (this.listeners.click) {
-      return this.listeners.click();
+    let result;
+    for (const handler of this.listeners.click || []) {
+      result = handler({ type: 'click', target: this, stopPropagation() {} });
     }
-    return undefined;
+    return result;
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    child.parentNode = this;
+    this.document.registerTree(child);
+    return child;
+  }
+
+  replaceChildren(...children) {
+    this.children = [];
+    this._innerHTML = '';
+    this._textContent = '';
+    children.forEach(child => this.appendChild(child));
+  }
+
+  removeChild(child) {
+    this.children = this.children.filter(item => item !== child);
+    child.parentNode = null;
+    return child;
+  }
+
+  get firstChild() {
+    return this.children[0] || null;
+  }
+
+  set className(value) {
+    this._className = String(value || '');
+    this.classList = new FakeClassList(this._className.split(/\s+/).filter(Boolean));
+  }
+
+  get className() {
+    return this._className || this.classList.toString();
+  }
+
+  set textContent(value) {
+    this._textContent = String(value ?? '');
+    this._innerHTML = '';
+    this.children = [];
+  }
+
+  get textContent() {
+    if (this.children.length) return this.children.map(child => child.textContent).join('');
+    return this._textContent;
   }
 
   set innerHTML(value) {
     this._innerHTML = String(value);
+    this._textContent = '';
+    this.children = [];
     if (this._innerHTML.includes('id="inspectorOldDiffBtn"')) {
       this.document.register('inspectorOldDiffBtn', new FakeElement(this.document, 'inspectorOldDiffBtn'));
     }
   }
 
   get innerHTML() {
-    return this._innerHTML;
+    if (this._innerHTML) return this._innerHTML;
+    if (this.children.length) return this.children.map(child => child.serialize()).join('');
+    return escapeHtml(this._textContent);
+  }
+
+  serialize() {
+    const attrs = [];
+    if (this.id) attrs.push(`id="${escapeHtml(this.id)}"`);
+    if (this.className) attrs.push(`class="${escapeHtml(this.className)}"`);
+    if (this.style.cssText) attrs.push(`style="${escapeHtml(this.style.cssText)}"`);
+    Object.keys(this.dataset || {}).forEach(key => {
+      attrs.push(`data-${key}="${escapeHtml(this.dataset[key])}"`);
+    });
+    const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
+    return `<${this.tagName}${attrText}>${this.innerHTML}</${this.tagName}>`;
+  }
+
+  querySelectorAll(selector) {
+    const matches = [];
+    const classNames = selector.startsWith('.')
+      ? selector.slice(1).split('.').filter(Boolean)
+      : [];
+
+    function visit(node) {
+      if (classNames.length && classNames.every(name => node.classList.contains(name))) {
+        matches.push(node);
+      }
+      node.children.forEach(visit);
+    }
+
+    this.children.forEach(visit);
+    return matches;
   }
 }
 
@@ -74,6 +163,15 @@ class FakeDocument {
 
   getElementById(id) {
     return this.byId.get(id) || null;
+  }
+
+  createElement(tagName) {
+    return new FakeElement(this, null, { tagName });
+  }
+
+  registerTree(el) {
+    if (el.id) this.register(el.id, el);
+    el.children.forEach(child => this.registerTree(child));
   }
 
   querySelectorAll(selector) {
