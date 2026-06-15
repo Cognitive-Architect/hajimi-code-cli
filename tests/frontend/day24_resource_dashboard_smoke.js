@@ -181,15 +181,21 @@ async function main() {
   {
     const document = createDocument();
     const { module } = loadDashboardModule(document);
-    await module.updateMetrics(createApp({
+    const app = createApp({
       metrics: { iteration_count: 9, blackboard_size: 8, edit_count: 7 },
-    }));
-    assert.strictEqual(metricText(document, 'metricIterationTab'), '9', 'compat path should still update iteration metric');
-    assert.strictEqual(metricText(document, 'metricBlackboardTab'), '8', 'compat path should still update blackboard metric');
-    assert.strictEqual(metricText(document, 'metricEditCountTab'), '7', 'compat path should still update edit count metric');
+    });
+    await assert.doesNotReject(
+      () => module.updateMetrics(app),
+      'missing dashboard controller should no-op without throwing'
+    );
+    module.setupResourceDashboard(app);
+    assert.deepStrictEqual(app.calls, [], 'missing dashboard controller should not invoke backend');
+    assert.strictEqual(metricText(document, 'metricIterationTab'), '', 'missing controller should not render old fallback metric');
+    assert.strictEqual(metricText(document, 'metricBlackboardTab'), '', 'missing controller should not render old fallback metric');
+    assert.strictEqual(metricText(document, 'metricEditCountTab'), '', 'missing controller should not render old fallback metric');
   }
 
-  console.log('day24 resource dashboard smoke: PASS (9 scenarios)');
+  console.log('day24 resource dashboard smoke: PASS (controller path + missing-controller guard)');
 }
 
 main().catch((error) => {
