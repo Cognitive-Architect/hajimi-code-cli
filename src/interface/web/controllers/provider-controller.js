@@ -1,8 +1,21 @@
 'use strict';
 
-// V3X Day 3-A skeleton only. No production wiring yet.
-const providerControllerSkeleton = Object.freeze({ phase: 'v3x-day3a', domain: 'provider-controller' });
+(function (global) {
+  function renderProviderListReadOnly(app, options) {
+    return global.HajimiProviderView?.renderProviderListReadOnly?.(app, options) || {
+      rendered: false,
+      count: 0,
+      readonly: true,
+    };
+  }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = providerControllerSkeleton;
-}
+  const api = {
+    renderProviderListReadOnly,
+  };
+
+  global.HajimiProviderController = api;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+  }
+})(typeof window !== 'undefined' ? window : globalThis);
