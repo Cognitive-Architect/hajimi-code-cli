@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use async_trait::async_trait;
 use std::sync::Arc;
 
 use aes_gcm::aead::{Aead, KeyInit};
@@ -16,16 +15,7 @@ use engine_llm_core::{
 };
 use engine_tool_system::lsp_integration::ASTContextProvider;
 use engine_tool_system::PermissionLevel;
-use engine_tool_system::{
-    AnalyzeTool, BenchmarkTool, CargoBuildTool, CmakeTool, CoverageReportTool, DeleteFileTool,
-    EditFileTool, FetchUrlTool, FindTool, GenerateDocsTool, GeneratePrDescriptionTool,
-    GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool, GlobTool, GraphTool, GrepTool,
-    JsBundleAnalyzerTool, ListDirectoryTool, LsTool, LspDefinitionTool, LspHoverTool, LspInitTool,
-    LspReferencesTool, MakeTool, McpInitTool, McpInvokeTool, NpmRunTool, PowerShellTool,
-    ReadFileTool, RefactorCodeTool, RunTestsTool, RustDocGeneratorTool, SecurityAuditTool,
-    SmartCommitTool, ToolOutput, ToolPermissions, ToolRegistry, UpdateReadmeTool, ViewImageTool,
-    WebSearchTool, WriteFileTool,
-};
+use engine_tool_system::{ToolOutput, ToolPermissions, ToolRegistry};
 use keyring::Entry;
 use memory::memory_gateway::MemoryGateway as AgentMemoryGateway;
 use pbkdf2::pbkdf2_hmac;
@@ -40,227 +30,19 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 mod audit;
 
-// ------------------------------------------------------------------
-// App State
-// ------------------------------------------------------------------
-/// Phase 4 Day 5: Edit history entry for timeline visualization.
-#[derive(Clone, serde::Serialize)]
-struct EditHistoryEntry {
-    id: String,
-    timestamp: String,
-    step_type: String,
-    summary: String,
-    confidence: Option<f32>,
-    token_before: Option<usize>,
-    token_after: Option<usize>,
-    checkpoint_id: Option<String>,
-}
+mod commands;
+mod error;
+mod registry;
+mod startup;
+mod state;
 
-/// Day 08 checkpoint file reference for export/compare contracts.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct CheckpointFileRef {
-    path: String,
-    status: String,
-    before_hash: Option<String>,
-    after_hash: Option<String>,
-    content: Option<String>,
-    after_content: Option<String>,
-}
-
-/// Day 08 checkpoint diff summary. Detailed hunks are deferred to Day 09.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct CheckpointDiffSummary {
-    files_changed: usize,
-    hunks: Option<usize>,
-    additions: Option<usize>,
-    deletions: Option<usize>,
-    summary: String,
-}
-
-/// Day 08 checkpoint metadata for trace linkage and schema evolution.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct CheckpointMetadata {
-    source: String,
-    agent_id: Option<String>,
-    iteration: usize,
-    step_type: String,
-    confidence: Option<f32>,
-    schema_version: u32,
-}
-
-/// Minimal desktop-local checkpoint DTO for Day 09 export/compare.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct CheckpointRecord {
-    id: String,
-    timestamp: String,
-    label: String,
-    files: Vec<CheckpointFileRef>,
-    diff_summary: CheckpointDiffSummary,
-    trace_event_ids: Vec<String>,
-    metadata: CheckpointMetadata,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct CheckpointExportBundle {
-    schema_version: u32,
-    exported_at: String,
-    workspace: String,
-    checkpoints: Vec<CheckpointRecord>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-struct CheckpointFileChange {
-    path: String,
-    before_status: Option<String>,
-    after_status: Option<String>,
-    before_hash: Option<String>,
-    after_hash: Option<String>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-struct CheckpointCompareResult {
-    id_a: String,
-    id_b: String,
-    same: bool,
-    files_added: Vec<CheckpointFileChange>,
-    files_removed: Vec<CheckpointFileChange>,
-    files_modified: Vec<CheckpointFileChange>,
-    summary: String,
-    data_source: String,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct RestoreFilePlan {
-    path: String,
-    action: String,
-    target_exists: bool,
-    backup_path: Option<String>,
-    reason: String,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct RestoreResult {
-    checkpoint_id: String,
-    restored_at: String,
-    dry_run: bool,
-    backup_dir: String,
-    files: Vec<RestoreFilePlan>,
-    warnings: Vec<String>,
-}
-
-struct AppState {
-    registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
-    active_profile: std::sync::Mutex<Option<String>>,
-    agent_providers: std::sync::Mutex<HashMap<String, String>>,
-    trace_tx: std::sync::Mutex<Option<tokio::sync::broadcast::Sender<TraceEvent>>>,
-    paused: std::sync::Mutex<bool>,
-    approval_level: std::sync::Mutex<String>,
-    edit_history: Arc<tokio::sync::Mutex<Vec<EditHistoryEntry>>>,
-    memory_gateway: Arc<MemoryGateway>,
-    token_tracker: Arc<TokenUsageTracker>,
-    pending_approvals: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
-    /// Shared LLM client slot for DesktopAgentTurnDriver.
-    /// Updated by run_agent_task before each agent execution with the user's current provider.
-    /// SAFETY: Arc<RwLock<>> ensures thread-safe concurrent access across Tauri commands.
-    agent_llm_client: Arc<tokio::sync::RwLock<Option<Arc<dyn engine_llm_core::LlmClient>>>>,
-}
-
-const APPROVAL_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-type PendingApprovalMap =
-    Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>;
-
-async fn await_ui_approval_response(
-    pending_approvals: PendingApprovalMap,
-    request_id: String,
-    action_type: String,
-    rx: tokio::sync::oneshot::Receiver<bool>,
-    timeout: std::time::Duration,
-) -> agent_core::governance::Decision {
-    let decision = match tokio::time::timeout(timeout, rx).await {
-        Ok(Ok(true)) => agent_core::governance::Decision::Approved,
-        Ok(Ok(false)) => {
-            agent_core::governance::Decision::Rejected("User denied approval".to_string())
-        }
-        Ok(Err(_)) => {
-            agent_core::governance::Decision::Rejected("Approval channel closed".to_string())
-        }
-        Err(_) => agent_core::governance::Decision::Rejected(format!(
-            "Approval timed out while waiting for user response for tool '{}' after {}s",
-            action_type,
-            timeout.as_secs()
-        )),
-    };
-
-    let mut map = pending_approvals.lock().await;
-    map.remove(&request_id);
-    decision
-}
-
-impl AppState {
-    /// Inject the AgentLoop broadcast sender to enable trace event streaming.
-    /// Call this after `AgentLoop::from_components()` creates the broadcast channel.
-    pub fn set_trace_tx(&self, tx: tokio::sync::broadcast::Sender<TraceEvent>) {
-        // SAFETY: trace_tx is thread-safe via Mutex; poison recovery via into_inner()
-        *self.trace_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    }
-}
-
-fn build_registry(workspace_root: &Path) -> ToolRegistry {
-    let mut r = ToolRegistry::new();
-    let workspace_paths = vec![workspace_root.to_path_buf()];
-    r.register(Arc::new(AnalyzeTool::new()));
-    r.register(Arc::new(PowerShellTool::with_paths(Some(
-        workspace_paths.clone(),
-    ))));
-    r.register(Arc::new(CargoBuildTool::new()));
-    r.register(Arc::new(CmakeTool::new()));
-    r.register(Arc::new(DeleteFileTool::with_allowed_paths(
-        workspace_paths.clone(),
-    )));
-    r.register(Arc::new(EditFileTool::with_allowed_paths(
-        workspace_paths.clone(),
-    )));
-    r.register(Arc::new(FetchUrlTool::new()));
-    r.register(Arc::new(FindTool::new()));
-    r.register(Arc::new(GenerateDocsTool::new()));
-    r.register(Arc::new(GitCommitTool::new()));
-    r.register(Arc::new(GitDiffTool::new()));
-    r.register(Arc::new(GitLogTool::new()));
-    r.register(Arc::new(GitStatusTool::new()));
-    r.register(Arc::new(SmartCommitTool::new()));
-    r.register(Arc::new(GeneratePrDescriptionTool::new()));
-    r.register(Arc::new(GlobTool::new()));
-    r.register(Arc::new(GraphTool::new()));
-    r.register(Arc::new(GrepTool::new()));
-    r.register(Arc::new(JsBundleAnalyzerTool::new()));
-    r.register(Arc::new(ListDirectoryTool::new()));
-    r.register(Arc::new(LspDefinitionTool::new()));
-    r.register(Arc::new(LspHoverTool::new()));
-    r.register(Arc::new(LspInitTool::new()));
-    r.register(Arc::new(LspReferencesTool::new()));
-    r.register(Arc::new(LsTool::with_allowed_paths(
-        workspace_paths.clone(),
-    )));
-    r.register(Arc::new(MakeTool::new()));
-    r.register(Arc::new(McpInitTool::new()));
-    r.register(Arc::new(McpInvokeTool::new()));
-    r.register(Arc::new(CoverageReportTool::new()));
-    r.register(Arc::new(BenchmarkTool::new()));
-    r.register(Arc::new(NpmRunTool::new()));
-    r.register(Arc::new(ReadFileTool::with_allowed_paths(
-        workspace_paths.clone(),
-    )));
-    r.register(Arc::new(RefactorCodeTool::new()));
-    r.register(Arc::new(RunTestsTool::new()));
-    r.register(Arc::new(RustDocGeneratorTool::new()));
-    r.register(Arc::new(SecurityAuditTool::new()));
-    r.register(Arc::new(UpdateReadmeTool::new()));
-    r.register(Arc::new(ViewImageTool::new()));
-    r.register(Arc::new(WebSearchTool::new()));
-    r.register(Arc::new(WriteFileTool::with_allowed_paths(workspace_paths)));
-    r
-}
+use registry::build_registry;
+use startup::{DesktopAgentTurnDriver, UiBridgeGovernance};
+use state::{
+    AppState, CheckpointCompareResult, CheckpointDiffSummary, CheckpointExportBundle,
+    CheckpointFileChange, CheckpointFileRef, CheckpointMetadata, CheckpointRecord,
+    EditHistoryEntry, RestoreFilePlan, RestoreResult,
+};
 
 // ------------------------------------------------------------------
 // Security constants (B-01/04, B-02/04)
@@ -270,10 +52,7 @@ const PREVIEW_EDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 // ------------------------------------------------------------------
 // Legacy commands
 // ------------------------------------------------------------------
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust.", name)
-}
+// greet moved to commands::info
 
 #[tauri::command]
 async fn probe_provider_context_capacity(
@@ -408,14 +187,7 @@ async fn get_probe_result(provider_id: String, model: String) -> Result<Value, S
     }
 }
 
-/// Day 13: Return the most recent context receipt from ~/.hajimi/context_receipts/.
-#[tauri::command]
-fn get_latest_receipt() -> Result<Value, String> {
-    match agent_core::context_receipt::ContextReceipt::load_latest_sync() {
-        Some(receipt) => serde_json::to_value(&receipt).map_err(|e| e.to_string()),
-        None => Ok(Value::Null),
-    }
-}
+// get_latest_receipt moved to commands::info
 
 /// 获取应用工作目录沙箱根路径
 fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -3321,244 +3093,7 @@ async fn get_cumulative_stats(
     }))
 }
 
-fn sanitize_description(s: &str) -> String {
-    let re_assignment = regex::Regex::new(r#"(?i)(key|secret|password|token|auth|credential)\s*[:=]\s*['"]?[a-zA-Z0-9_\-\.]{8,}['"]?"#).unwrap();
-    let redacted = re_assignment.replace_all(s, "$1=[REDACTED]");
-
-    let re_sk = regex::Regex::new(r#"(?i)sk-[a-zA-Z0-9_\-\.]{12,}"#).unwrap();
-    let redacted_sk = re_sk.replace_all(&redacted, "[REDACTED_KEY]");
-
-    redacted_sk.to_string()
-}
-
-// ------------------------------------------------------------------
-// Desktop LLM-Native Agent Driver (P0-DRIVER-INJECTION-2026-05-30)
-// ------------------------------------------------------------------
-
-/// Desktop LLM-Native Agent Turn Driver with dynamic late-binding.
-///
-/// Resolves the current LlmClient from a shared slot at `run_turn` time,
-/// solving the singleton AgentLoop vs dynamic Provider selection contradiction.
-/// The shared `agent_llm_client` slot is populated by `run_agent_task` before
-/// each agent execution with the user's currently selected provider.
-///
-/// SAFETY: Arc<RwLock<>> guarantees thread-safe concurrent access across Tauri async commands.
-struct DesktopAgentTurnDriver {
-    agent_llm_client: Arc<tokio::sync::RwLock<Option<Arc<dyn engine_llm_core::LlmClient>>>>,
-    tool_registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
-}
-
-#[async_trait]
-impl agent_core::llm_native::AgentTurnDriver for DesktopAgentTurnDriver {
-    async fn run_turn(
-        &self,
-        intent: agent_core::llm_native::RawUserIntent,
-        tools: Vec<agent_core::llm_native::ModelVisibleToolSpec>,
-        history: Vec<agent_core::llm_native::TurnMessage>,
-        governance: Arc<dyn agent_core::governance::AgentGovernance>,
-        cancellation: agent_core::llm_native::CancellationToken,
-    ) -> agent_core::AgentResult<agent_core::llm_native::TurnOutcome> {
-        let client = self.agent_llm_client.read().await.clone().ok_or_else(|| {
-            agent_core::AgentError::Session(
-                "LLM provider not configured. Please select a provider and configure API key before using /agent.".to_string()
-            )
-        })?;
-
-        let driver = agent_core::llm_native::LlmNativeDriver::with_client(client)
-            .with_registry(self.tool_registry.clone());
-
-        driver
-            .run_turn(intent, tools, history, governance, cancellation)
-            .await
-    }
-
-    async fn run_turn_with_trace(
-        &self,
-        intent: agent_core::llm_native::RawUserIntent,
-        tools: Vec<agent_core::llm_native::ModelVisibleToolSpec>,
-        history: Vec<agent_core::llm_native::TurnMessage>,
-        governance: Arc<dyn agent_core::governance::AgentGovernance>,
-        cancellation: agent_core::llm_native::CancellationToken,
-        trace_tx: Option<tokio::sync::broadcast::Sender<TraceEvent>>,
-    ) -> agent_core::AgentResult<agent_core::llm_native::TurnOutcome> {
-        let client = self.agent_llm_client.read().await.clone().ok_or_else(|| {
-            agent_core::AgentError::Session(
-                "LLM provider not configured. Please select a provider and configure API key before using /agent.".to_string()
-            )
-        })?;
-
-        let driver = agent_core::llm_native::LlmNativeDriver::with_client(client)
-            .with_registry(self.tool_registry.clone());
-
-        driver
-            .run_turn_with_trace(intent, tools, history, governance, cancellation, trace_tx)
-            .await
-    }
-}
-
-struct UiBridgeGovernance {
-    inner: Arc<agent_core::governance::DefaultGovernance>,
-    app_handle: tauri::AppHandle,
-}
-
-#[async_trait]
-impl agent_core::governance::AgentGovernance for UiBridgeGovernance {
-    async fn policy(
-        &self,
-        ctx: &agent_core::AgentContext,
-        req: &agent_core::governance::GovernanceRequest,
-    ) -> agent_core::governance::ApprovalLevel {
-        if let Some(state) = self.app_handle.try_state::<AppState>() {
-            let app_level_str = state.approval_level.lock().unwrap().clone();
-            let app_level = match app_level_str.as_str() {
-                "Auto" => agent_core::governance::ApprovalLevel::Auto,
-                "Advisory" => agent_core::governance::ApprovalLevel::Advisory,
-                "Required" => agent_core::governance::ApprovalLevel::Required,
-                "Critical" => agent_core::governance::ApprovalLevel::Critical,
-                "Override" => agent_core::governance::ApprovalLevel::Override,
-                _ => agent_core::governance::ApprovalLevel::Auto,
-            };
-
-            fn level_val(l: agent_core::governance::ApprovalLevel) -> u32 {
-                match l {
-                    agent_core::governance::ApprovalLevel::Auto => 0,
-                    agent_core::governance::ApprovalLevel::Advisory => 1,
-                    agent_core::governance::ApprovalLevel::Required => 2,
-                    agent_core::governance::ApprovalLevel::Critical => 3,
-                    agent_core::governance::ApprovalLevel::Override => 4,
-                }
-            }
-            if level_val(app_level) > level_val(req.level) {
-                return app_level;
-            }
-        }
-        self.inner.policy(ctx, req).await
-    }
-
-    async fn approve(
-        &self,
-        ctx: &agent_core::AgentContext,
-        req: &agent_core::governance::GovernanceRequest,
-    ) -> chimera_repl::traits::ReplResult<agent_core::governance::Decision> {
-        let level = self.policy(ctx, req).await;
-        if level == agent_core::governance::ApprovalLevel::Required
-            || level == agent_core::governance::ApprovalLevel::Critical
-        {
-            if let Some(state) = self.app_handle.try_state::<AppState>() {
-                let request_id = uuid::Uuid::new_v4().to_string();
-                let (tx, rx) = tokio::sync::oneshot::channel();
-
-                {
-                    let mut map = state.pending_approvals.lock().await;
-                    map.insert(request_id.clone(), tx);
-                }
-
-                let redacted_description = sanitize_description(&req.description);
-                let redacted_action = sanitize_description(&req.action_type);
-
-                #[derive(serde::Serialize, Clone)]
-                struct ApprovalRequestPayload {
-                    request_id: String,
-                    action_type: String,
-                    risk_score: f32,
-                    description: String,
-                    timeout_ms: u64,
-                }
-
-                let payload = ApprovalRequestPayload {
-                    request_id: request_id.clone(),
-                    action_type: redacted_action,
-                    risk_score: req.risk_score,
-                    description: redacted_description,
-                    timeout_ms: APPROVAL_REQUEST_TIMEOUT.as_millis() as u64,
-                };
-
-                let _ = self.app_handle.emit("approval_request", payload);
-
-                Ok(await_ui_approval_response(
-                    state.pending_approvals.clone(),
-                    request_id,
-                    req.action_type.clone(),
-                    rx,
-                    APPROVAL_REQUEST_TIMEOUT,
-                )
-                .await)
-            } else {
-                self.inner.approve(ctx, req).await
-            }
-        } else {
-            self.inner.approve(ctx, req).await
-        }
-    }
-
-    async fn vote(
-        &self,
-        voter_id: &str,
-        proposal_id: &str,
-        vote: agent_core::governance::Vote,
-    ) -> chimera_repl::traits::ReplResult<()> {
-        self.inner.vote(voter_id, proposal_id, vote).await
-    }
-
-    async fn escalate(
-        &self,
-        req: &agent_core::governance::GovernanceRequest,
-        to_level: agent_core::governance::ApprovalLevel,
-    ) -> chimera_repl::traits::ReplResult<agent_core::governance::GovernanceRequest> {
-        self.inner.escalate(req, to_level).await
-    }
-
-    async fn register_policy(
-        &mut self,
-        _name: &str,
-        _policy: Arc<dyn agent_core::governance::GovernancePolicy>,
-        _caller: &str,
-        _required_level: agent_core::governance::PermissionLevel,
-    ) -> chimera_repl::traits::ReplResult<()> {
-        Ok(())
-    }
-
-    async fn record_feedback(
-        &self,
-        ctx: &agent_core::AgentContext,
-        feedback: &agent_core::governance::UserFeedback,
-    ) -> chimera_repl::traits::ReplResult<()> {
-        self.inner.record_feedback(ctx, feedback).await
-    }
-
-    async fn set_approval_level(
-        &mut self,
-        level: agent_core::governance::ApprovalLevel,
-    ) -> chimera_repl::traits::ReplResult<()> {
-        if let Some(state) = self.app_handle.try_state::<AppState>() {
-            let level_str = match level {
-                agent_core::governance::ApprovalLevel::Auto => "Auto",
-                agent_core::governance::ApprovalLevel::Advisory => "Advisory",
-                agent_core::governance::ApprovalLevel::Required => "Required",
-                agent_core::governance::ApprovalLevel::Critical => "Critical",
-                agent_core::governance::ApprovalLevel::Override => "Override",
-            };
-            *state.approval_level.lock().unwrap() = level_str.to_string();
-        }
-        Ok(())
-    }
-
-    async fn current_approval_level(&self) -> agent_core::governance::ApprovalLevel {
-        if let Some(state) = self.app_handle.try_state::<AppState>() {
-            let level_str = state.approval_level.lock().unwrap().clone();
-            match level_str.as_str() {
-                "Auto" => agent_core::governance::ApprovalLevel::Auto,
-                "Advisory" => agent_core::governance::ApprovalLevel::Advisory,
-                "Required" => agent_core::governance::ApprovalLevel::Required,
-                "Critical" => agent_core::governance::ApprovalLevel::Critical,
-                "Override" => agent_core::governance::ApprovalLevel::Override,
-                _ => agent_core::governance::ApprovalLevel::Auto,
-            }
-        } else {
-            agent_core::governance::ApprovalLevel::Auto
-        }
-    }
-}
+// sanitize_description, DesktopAgentTurnDriver, UiBridgeGovernance moved to startup.rs
 
 #[tauri::command]
 async fn resolve_agent_approval(
@@ -3665,7 +3200,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
+            commands::info::greet,
             read_file,
             write_file,
             list_dir,
@@ -3729,7 +3264,7 @@ fn main() {
             // Day 12: Context capacity probe
             probe_provider_context_capacity,
             get_probe_result,
-            get_latest_receipt,
+            commands::info::get_latest_receipt,
             resolve_agent_approval,
         ])
         .run(tauri::generate_context!())
