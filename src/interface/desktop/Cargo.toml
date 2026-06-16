@@ -24,6 +24,7 @@ intelligence-agent-core = { path = "../../intelligence/agent-core" }
 memory = { path = "../../intelligence/memory" }
 chimera-repl = { path = "../../intelligence/chimera/chimera-repl" }
 async-trait = "0.1"
+futures = { workspace = true }
 tokio = { version = "1.37", features = ["full"] }
 keyring = { version = "3", features = ["windows-native", "linux-native", "apple-native"] }
 secrecy = "0.10"

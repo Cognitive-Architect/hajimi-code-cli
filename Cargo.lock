@@ -2817,6 +2817,7 @@ dependencies = [
  "codex-twist",
  "engine-llm-core",
  "engine-tool-system",
+ "futures",
  "intelligence-agent-core",
  "keyring",
  "log",

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
+use async_trait::async_trait;
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -27,6 +28,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use crate::commands::fs::{
+    resolve_workspace_path, PathIntent, create_workspace_dir, rename_workspace_path, remove_workspace_path
+};
 
 mod audit;
 
@@ -54,138 +58,7 @@ const PREVIEW_EDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 // ------------------------------------------------------------------
 // greet moved to commands::info
 
-#[tauri::command]
-async fn probe_provider_context_capacity(
-    provider_id: String,
-    model: String,
-    level: String,
-    declared_max: usize,
-    confirmed: Option<bool>,
-    cancelled: Option<bool>,
-) -> Result<Value, String> {
-    use agent_core::context_probe::{ContextProbeRunner, ProbeLevel};
-
-    let probe_level = match level.as_str() {
-        "256K" => {
-            if !confirmed.unwrap_or(false) {
-                return Err(
-                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
-                );
-            }
-            ProbeLevel::Level256K
-        }
-        "512K" => {
-            if !confirmed.unwrap_or(false) {
-                return Err(
-                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
-                );
-            }
-            ProbeLevel::Level512K
-        }
-        "900K" => {
-            if !confirmed.unwrap_or(false) {
-                return Err(
-                    "High-cost probe of 256K+ requires explicit user confirmation".to_string(),
-                );
-            }
-            ProbeLevel::Level900K
-        }
-        _ => ProbeLevel::Level128K,
-    };
-
-    // If cancelled argument is true, save and return immediately without running the mock probe.
-    if cancelled.unwrap_or(false) {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let result = agent_core::context_probe::ProbeResult {
-            provider_id: provider_id.clone(),
-            model: model.clone(),
-            declared_max,
-            tested_input_tokens: probe_level.tokens(),
-            success: false,
-            usage: None,
-            latency_ms: 0,
-            error: Some("cancelled".to_string()),
-            timestamp,
-            ttl_seconds: 86400,
-            cancelled: true,
-        };
-        if let Err(e) = result.save_to_file().await {
-            eprintln!("Failed to save cancelled probe result: {:?}", e);
-        }
-        return Ok(serde_json::to_value(&result).unwrap_or(json!({})));
-    }
-
-    let runner = ContextProbeRunner::new();
-    let result = runner
-        .run_mock_probe(
-            provider_id,
-            model.clone(),
-            probe_level,
-            declared_max,
-            86400, // 24 hours TTL
-            |tokens| {
-                if model.contains("fail") {
-                    Err("Rate limit exceeded".to_string())
-                } else if model.contains("cancel") {
-                    Err("cancelled".to_string())
-                } else if model.contains("timeout") {
-                    Err("Request timeout".to_string())
-                } else {
-                    use agent_core::context_probe::ProbeUsage;
-                    Ok(ProbeUsage {
-                        prompt_tokens: tokens,
-                        completion_tokens: 12,
-                    })
-                }
-            },
-        )
-        .await;
-
-    // Option A: Save to local file persistence only if it's cancelled or failed.
-    // Real success must not be persisted from mock so it doesn't drive verified budget in production.
-    if result.cancelled || !result.success {
-        if let Err(e) = result.save_to_file().await {
-            eprintln!("Failed to save probe result: {:?}", e);
-        }
-    }
-
-    let mut returned_val = serde_json::to_value(&result).unwrap_or(json!({}));
-    if result.success && !result.cancelled {
-        if let Some(obj) = returned_val.as_object_mut() {
-            obj.insert("status".to_string(), json!("MockOnly"));
-        }
-    }
-
-    Ok(returned_val)
-}
-
-#[tauri::command]
-async fn get_probe_result(provider_id: String, model: String) -> Result<Value, String> {
-    use agent_core::context_probe::ProbeResult;
-    match ProbeResult::load_from_file(&provider_id, &model).await {
-        Ok(probe) => {
-            let expired = probe.is_expired();
-            Ok(json!({
-                "providerId": probe.provider_id,
-                "model": probe.model,
-                "declaredMax": probe.declared_max,
-                "testedInputTokens": probe.tested_input_tokens,
-                "success": probe.success,
-                "usage": probe.usage,
-                "latencyMs": probe.latency_ms,
-                "error": probe.error,
-                "timestamp": probe.timestamp,
-                "ttlSeconds": probe.ttl_seconds,
-                "cancelled": probe.cancelled,
-                "expired": expired,
-            }))
-        }
-        Err(_) => Ok(Value::Null),
-    }
-}
+// probe_provider_context_capacity and get_probe_result moved to commands::tool
 
 // get_latest_receipt moved to commands::info
 
@@ -200,7 +73,7 @@ fn get_workspace_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(workspace)
 }
 
-fn checkpoint_store_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn checkpoint_store_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = get_workspace_dir(app_handle)?
         .join(".hajimi")
         .join("checkpoints");
@@ -217,7 +90,7 @@ fn trace_event_id(event: &TraceEvent) -> String {
     )
 }
 
-fn checkpoint_record_from_trace(event: &TraceEvent) -> CheckpointRecord {
+pub(crate) fn checkpoint_record_from_trace(event: &TraceEvent) -> CheckpointRecord {
     let trace_id = trace_event_id(event);
     let operation = event.operation_summary.as_ref();
     let files_changed = operation
@@ -261,11 +134,11 @@ fn checkpoint_detail_mentions_checkpoint(details: &str) -> bool {
     details.to_ascii_lowercase().contains("checkpoint")
 }
 
-fn is_checkpoint_store_trace(event: &TraceEvent) -> bool {
+pub(crate) fn is_checkpoint_store_trace(event: &TraceEvent) -> bool {
     event.step_type == TraceStepType::Store && checkpoint_detail_mentions_checkpoint(&event.details)
 }
 
-fn write_checkpoint_record(
+pub(crate) fn write_checkpoint_record(
     app_handle: &tauri::AppHandle,
     record: &CheckpointRecord,
 ) -> Result<(), String> {
@@ -598,181 +471,23 @@ fn apply_restore_plan(
     Ok(())
 }
 
-/// 路径意图类型，决定 canonicalize 策略
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PathIntent {
-    /// 目标必须已存在且为文件
-    ExistingFile,
-    /// 目标必须已存在且为目录
-    ExistingDir,
-    /// 目标是新文件，只需父目录存在
-    NewFile,
-    /// 目标是新目录，只需父目录存在
-    NewDir,
-    /// 目标可存在可不存在（任意类型）
-    AnyExisting,
-}
+// PathIntent, resolve_workspace_path, and fs commands moved to commands::fs
 
-/// 安全解析 workspace 内路径，防止 symlink 逃逸和 traversal 攻击
-fn resolve_workspace_path(
-    input: &str,
-    base_dir: &Path,
-    intent: PathIntent,
-) -> Result<PathBuf, String> {
-    // 1. 拒绝显式 traversal
-    if input.contains("..") {
-        return Err("路径包含非法 traversal: ..".to_string());
-    }
-
-    // 2. 解析输入路径
-    let input_path = Path::new(input);
-    let resolved = if input_path.is_absolute() {
-        input_path.to_path_buf()
-    } else {
-        base_dir.join(input_path)
-    };
-
-    // 3. canonicalize base_dir（必须存在）
-    let canonical_base = base_dir
-        .canonicalize()
-        .map_err(|e| format!("无法解析工作目录: {}", e))?;
-
-    // 4. 根据 intent 决定 canonicalize 策略
-    let canonical = match intent {
-        PathIntent::ExistingFile | PathIntent::ExistingDir | PathIntent::AnyExisting => {
-            // existing 路径必须 canonicalize 目标本身
-            resolved
-                .canonicalize()
-                .map_err(|e| format!("无法解析目标路径: {}", e))?
-        }
-        PathIntent::NewFile | PathIntent::NewDir => {
-            // new 路径只 canonicalize 父目录
-            let parent = resolved
-                .parent()
-                .ok_or_else(|| "无法获取父目录".to_string())?;
-            if !parent.exists() {
-                return Err(format!("父目录不存在: {}", parent.display()));
-            }
-            let canonical_parent = parent
-                .canonicalize()
-                .map_err(|e| format!("无法解析父目录: {}", e))?;
-            // 拼接 leaf name
-            canonical_parent.join(
-                resolved
-                    .file_name()
-                    .ok_or_else(|| "无法获取文件名".to_string())?,
-            )
-        }
-    };
-
-    // 5. 确认在 workspace 内
-    if !canonical.starts_with(&canonical_base) {
-        return Err("路径越界: 目标不在当前工作目录内".to_string());
-    }
-
-    match intent {
-        PathIntent::ExistingFile if !canonical.is_file() => {
-            return Err(format!("目标不是文件: {}", canonical.display()));
-        }
-        PathIntent::ExistingDir if !canonical.is_dir() => {
-            return Err(format!("目标不是目录: {}", canonical.display()));
-        }
-        _ => {}
-    }
-
-    Ok(canonical)
-}
-
-#[tauri::command]
-fn read_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::ExistingFile)?;
-    std::fs::read_to_string(&safe_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn write_file(path: &str, content: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::NewFile)?;
-    // 确保父目录存在
-    if let Some(parent) = safe_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&safe_path, content).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn list_dir(path: &str, app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::ExistingDir)?;
-    let entries = std::fs::read_dir(&safe_path)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .collect();
-    Ok(entries)
-}
-
-fn create_workspace_dir(safe_path: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(safe_path).map_err(|e| e.to_string())
-}
-
-fn rename_workspace_path(safe_old: &Path, safe_new: &Path) -> Result<(), String> {
-    std::fs::rename(safe_old, safe_new).map_err(|e| e.to_string())
-}
-
-fn remove_workspace_path(safe_path: &Path, recursive: bool) -> Result<(), String> {
-    if safe_path.is_dir() {
-        if recursive {
-            std::fs::remove_dir_all(safe_path).map_err(|e| e.to_string())
-        } else {
-            std::fs::remove_dir(safe_path).map_err(|e| e.to_string())
-        }
-    } else if safe_path.is_file() {
-        std::fs::remove_file(safe_path).map_err(|e| e.to_string())
-    } else {
-        Err(format!("目标不是文件或目录: {}", safe_path.display()))
-    }
-}
-
-#[tauri::command]
-fn create_dir(path: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::NewDir)?;
-    create_workspace_dir(&safe_path)
-}
-
-#[tauri::command]
-fn rename_path(old_path: &str, new_path: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    // 源路径必须存在
-    let safe_old = resolve_workspace_path(old_path, &base_dir, PathIntent::AnyExisting)?;
-    // 目标路径的父目录必须在 workspace 内
-    let safe_new = resolve_workspace_path(new_path, &base_dir, PathIntent::NewFile)?;
-    rename_workspace_path(&safe_old, &safe_new)
-}
-
-#[tauri::command]
-fn delete_path(path: &str, recursive: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::AnyExisting)?;
-    remove_workspace_path(&safe_path, recursive)
-}
 
 // ------------------------------------------------------------------
 // Tool-system commands
 // ------------------------------------------------------------------
 #[derive(Serialize, Clone)]
-struct ToolInfo {
-    name: String,
-    description: String,
+pub struct ToolInfo {
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
-struct ToolResult {
-    stdout: String,
-    stderr: String,
-    exit_code: Option<i32>,
+pub struct ToolResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
 }
 
 impl From<ToolOutput> for ToolResult {
@@ -785,7 +500,7 @@ impl From<ToolOutput> for ToolResult {
     }
 }
 
-fn tool_requires_confirmation(permissions: &ToolPermissions) -> bool {
+pub(crate) fn tool_requires_confirmation(permissions: &ToolPermissions) -> bool {
     permissions.requires_confirmation || permissions.default_level == PermissionLevel::Ask
 }
 
@@ -793,7 +508,7 @@ fn canonical_tool_args(args: &Value) -> String {
     serde_json::to_string(args).unwrap_or_else(|_| "null".to_string())
 }
 
-fn summarize_tool_args(args: &Value) -> String {
+pub(crate) fn summarize_tool_args(args: &Value) -> String {
     const MAX_SUMMARY_CHARS: usize = 1400;
     let raw = canonical_tool_args(args);
     if raw.chars().count() <= MAX_SUMMARY_CHARS {
@@ -805,12 +520,12 @@ fn summarize_tool_args(args: &Value) -> String {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum ToolAuthorization {
+pub(crate) enum ToolAuthorization {
     Allow,
     RequireNativeConfirmation,
 }
 
-fn enforce_tool_permissions(
+pub(crate) fn enforce_tool_permissions(
     permissions: &ToolPermissions,
     tool_name: &str,
     _args: &Value,
@@ -826,7 +541,7 @@ fn enforce_tool_permissions(
     }
 }
 
-fn confirm_tool_native(
+pub(crate) fn confirm_tool_native(
     app_handle: &tauri::AppHandle,
     tool_name: &str,
     args: &Value,
@@ -848,58 +563,21 @@ fn confirm_tool_native(
     Ok(approved)
 }
 
-#[tauri::command]
-async fn list_tools(state: tauri::State<'_, AppState>) -> Result<Vec<ToolInfo>, String> {
-    let registry = state.registry.lock().await;
-    Ok(registry
-        .list()
-        .into_iter()
-        .filter_map(|name| {
-            registry.get(name).map(|t| ToolInfo {
-                name: name.to_string(),
-                description: t.description().to_string(),
-            })
-        })
-        .collect())
-}
 
-#[tauri::command]
-async fn execute_tool(
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-    name: String,
-    args: Value,
-) -> Result<ToolResult, String> {
-    let tool = {
-        let registry = state.registry.lock().await;
-        registry
-            .get(&name)
-            .ok_or_else(|| format!("tool '{}' not found", name))?
-    };
-    let permissions = tool.permissions();
-    if enforce_tool_permissions(&permissions, &name, &args)?
-        == ToolAuthorization::RequireNativeConfirmation
-    {
-        let approved = confirm_tool_native(&app_handle, &name, &args)?;
-        if !approved {
-            return Err(format!("tool '{}' denied by user", name));
-        }
-    }
-    let output = tool.execute(args).await.map_err(|e| e.message)?;
-    Ok(output.into())
-}
+// list_tools and execute_tool moved to commands::tool
+
 
 // ------------------------------------------------------------------
 // LLM commands
 // ------------------------------------------------------------------
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct StreamEvent {
-    chunk: String,
-    done: bool,
-    error: Option<String>,
-    prompt_tokens: Option<u64>,
-    completion_tokens: Option<u64>,
+pub struct StreamEvent {
+    pub chunk: String,
+    pub done: bool,
+    pub error: Option<String>,
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -923,12 +601,12 @@ fn stream_diag_path() -> PathBuf {
 }
 
 #[cfg(feature = "stream-diagnostics")]
-fn preview_for_diagnostic(text: &str) -> String {
+pub(crate) fn preview_for_diagnostic(text: &str) -> String {
     text.chars().take(120).collect()
 }
 
 #[cfg(feature = "stream-diagnostics")]
-fn write_stream_diagnostic(stage: &str, session_id: Option<&str>, data: Value) {
+pub(crate) fn write_stream_diagnostic(stage: &str, session_id: Option<&str>, data: Value) {
     use std::io::Write;
 
     let path = stream_diag_path();
@@ -951,32 +629,17 @@ fn write_stream_diagnostic(stage: &str, session_id: Option<&str>, data: Value) {
 }
 
 #[cfg(not(feature = "stream-diagnostics"))]
-fn write_stream_diagnostic(_stage: &str, _session_id: Option<&str>, _data: Value) {}
+pub(crate) fn write_stream_diagnostic(_stage: &str, _session_id: Option<&str>, _data: Value) {}
 
-#[tauri::command]
-fn record_stream_diagnostic(event: StreamDiagnosticEvent) -> Result<(), String> {
-    write_stream_diagnostic(&event.stage, event.session_id.as_deref(), event.data);
-    Ok(())
-}
 
-#[tauri::command]
-fn get_stream_diagnostic_info() -> Value {
-    #[cfg(feature = "stream-diagnostics")]
-    let path = Some(stream_diag_path().display().to_string());
-    #[cfg(not(feature = "stream-diagnostics"))]
-    let path: Option<String> = None;
+// record_stream_diagnostic and get_stream_diagnostic_info moved to commands::info
 
-    json!({
-        "enabled": cfg!(feature = "stream-diagnostics"),
-        "path": path,
-    })
-}
 
 #[derive(Serialize, Clone)]
-struct ProviderInfo {
-    name: String,
-    available: bool,
-    default_model: String,
+pub struct ProviderInfo {
+    pub name: String,
+    pub available: bool,
+    pub default_model: String,
 }
 
 // ------------------------------------------------------------------
@@ -984,62 +647,62 @@ struct ProviderInfo {
 // ------------------------------------------------------------------
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ProviderConfig {
-    id: String,
-    name: String,
-    provider_type: String,
+pub struct ProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
     #[serde(skip_serializing, default)]
-    api_key: String,
-    base_url: String,
-    model: String,
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
     #[serde(default)]
-    system_prompt: Option<String>,
+    pub system_prompt: Option<String>,
     #[serde(default)]
     #[deprecated(since = "3.9.0", note = "Use max_context_tokens instead")]
-    context_threshold: Option<usize>,
+    pub context_threshold: Option<usize>,
     #[serde(default)]
-    max_context_tokens: Option<usize>,
+    pub max_context_tokens: Option<usize>,
     #[serde(default)]
-    max_output_tokens: Option<usize>,
+    pub max_output_tokens: Option<usize>,
     #[serde(default)]
-    reserve_output_tokens: Option<usize>,
+    pub reserve_output_tokens: Option<usize>,
     #[serde(default)]
-    safety_margin_tokens: Option<usize>,
+    pub safety_margin_tokens: Option<usize>,
     #[serde(default)]
-    retrieval_budget_tokens: Option<usize>,
+    pub retrieval_budget_tokens: Option<usize>,
     #[serde(default)]
-    long_context_mode: Option<bool>,
+    pub long_context_mode: Option<bool>,
 }
 
 impl ProviderConfig {
     #[allow(deprecated)]
-    fn get_normalized_max_context_tokens(&self) -> Option<usize> {
+    pub fn get_normalized_max_context_tokens(&self) -> Option<usize> {
         self.max_context_tokens.or(self.context_threshold)
     }
 }
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ProviderConfigView {
-    id: String,
-    name: String,
-    provider_type: String,
-    base_url: String,
-    model: String,
-    system_prompt: Option<String>,
-    context_threshold: Option<usize>,
-    max_context_tokens: Option<usize>,
-    max_output_tokens: Option<usize>,
-    reserve_output_tokens: Option<usize>,
-    safety_margin_tokens: Option<usize>,
-    retrieval_budget_tokens: Option<usize>,
-    long_context_mode: Option<bool>,
-    has_api_key: bool,
+pub struct ProviderConfigView {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    pub model: String,
+    pub system_prompt: Option<String>,
+    pub context_threshold: Option<usize>,
+    pub max_context_tokens: Option<usize>,
+    pub max_output_tokens: Option<usize>,
+    pub reserve_output_tokens: Option<usize>,
+    pub safety_margin_tokens: Option<usize>,
+    pub retrieval_budget_tokens: Option<usize>,
+    pub long_context_mode: Option<bool>,
+    pub has_api_key: bool,
 }
 
 impl ProviderConfigView {
     #[allow(deprecated)]
-    fn from_config(config: ProviderConfig, has_api_key: bool) -> Self {
+    pub fn from_config(config: ProviderConfig, has_api_key: bool) -> Self {
         Self {
             id: config.id,
             name: config.name,
@@ -1079,7 +742,7 @@ impl std::fmt::Debug for ProviderConfig {
     }
 }
 
-fn provider_config_path() -> PathBuf {
+pub(crate) fn provider_config_path() -> PathBuf {
     if cfg!(target_os = "windows") {
         PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
             .join("Hajimi")
@@ -1094,11 +757,11 @@ fn provider_config_path() -> PathBuf {
 }
 
 // Workspace-level config lives in <workspace>/.hajimi/providers.json
-fn workspace_config_path(workspace: &Path) -> PathBuf {
+pub(crate) fn workspace_config_path(workspace: &Path) -> PathBuf {
     workspace.join(".hajimi").join("providers.json")
 }
 
-fn trusted_workspace_path(
+pub(crate) fn trusted_workspace_path(
     workspace_path: Option<&str>,
     app_handle: &tauri::AppHandle,
 ) -> Result<Option<PathBuf>, String> {
@@ -1106,7 +769,7 @@ fn trusted_workspace_path(
     trusted_workspace_path_for_current(workspace_path, &current)
 }
 
-fn trusted_workspace_path_for_current(
+pub(crate) fn trusted_workspace_path_for_current(
     workspace_path: Option<&str>,
     current: &Path,
 ) -> Result<Option<PathBuf>, String> {
@@ -1126,7 +789,7 @@ fn trusted_workspace_path_for_current(
     Ok(Some(canonical_current))
 }
 
-fn trusted_workspace_config_path_for_current(
+pub(crate) fn trusted_workspace_config_path_for_current(
     workspace_path: Option<&str>,
     current: &Path,
 ) -> Result<PathBuf, String> {
@@ -1135,7 +798,7 @@ fn trusted_workspace_config_path_for_current(
     Ok(workspace_config_path(&workspace))
 }
 
-fn add_workspace_provider_config_for_current(
+pub(crate) fn add_workspace_provider_config_for_current(
     config: ProviderConfig,
     workspace_path: Option<&str>,
     current: &Path,
@@ -1149,7 +812,7 @@ fn add_workspace_provider_config_for_current(
     write_configs_to_path(&path, &configs)
 }
 
-fn update_workspace_provider_config_for_current(
+pub(crate) fn update_workspace_provider_config_for_current(
     config: ProviderConfig,
     workspace_path: Option<&str>,
     current: &Path,
@@ -1164,7 +827,7 @@ fn update_workspace_provider_config_for_current(
     write_configs_to_path(&path, &configs)
 }
 
-fn delete_workspace_provider_config_for_current(
+pub(crate) fn delete_workspace_provider_config_for_current(
     id: &str,
     workspace_path: Option<&str>,
     current: &Path,
@@ -1181,7 +844,7 @@ fn delete_workspace_provider_config_for_current(
 }
 
 // Profile-level config lives in profiles/{name}/providers.json (B-05/01)
-fn profile_config_path(name: &str) -> PathBuf {
+pub(crate) fn profile_config_path(name: &str) -> PathBuf {
     if cfg!(target_os = "windows") {
         PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
             .join("Hajimi")
@@ -1201,7 +864,7 @@ fn profile_config_path(name: &str) -> PathBuf {
     }
 }
 
-fn sanitize_profile_name(name: &str) -> Result<String, String> {
+pub(crate) fn sanitize_profile_name(name: &str) -> Result<String, String> {
     if name.is_empty() {
         return Err("Profile name cannot be empty".to_string());
     }
@@ -1211,7 +874,7 @@ fn sanitize_profile_name(name: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 
-fn read_configs_at(path: &std::path::Path) -> Vec<ProviderConfig> {
+pub(crate) fn read_configs_at(path: &std::path::Path) -> Vec<ProviderConfig> {
     if !path.exists() {
         return Vec::new();
     }
@@ -1219,7 +882,7 @@ fn read_configs_at(path: &std::path::Path) -> Vec<ProviderConfig> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-fn read_merged_configs(workspace: Option<&Path>, profile: Option<&str>) -> Vec<ProviderConfig> {
+pub(crate) fn read_merged_configs(workspace: Option<&Path>, profile: Option<&str>) -> Vec<ProviderConfig> {
     let global = read_provider_configs_with_profile(profile);
     let mut map: HashMap<String, ProviderConfig> =
         global.into_iter().map(|c| (c.id.clone(), c)).collect();
@@ -1245,7 +908,7 @@ fn is_masked_api_key_placeholder(api_key: &str) -> bool {
     trimmed.contains('•') || trimmed.contains("re-enter to update")
 }
 
-fn submitted_api_key(api_key: &str) -> Option<&str> {
+pub(crate) fn submitted_api_key(api_key: &str) -> Option<&str> {
     let trimmed = api_key.trim();
     if trimmed.is_empty() || is_masked_api_key_placeholder(trimmed) {
         None
@@ -1254,7 +917,7 @@ fn submitted_api_key(api_key: &str) -> Option<&str> {
     }
 }
 
-fn provider_config_has_api_key(config: &ProviderConfig, profile: Option<&str>) -> bool {
+pub(crate) fn provider_config_has_api_key(config: &ProviderConfig, profile: Option<&str>) -> bool {
     submitted_api_key(&config.api_key).is_some()
         || get_api_key_with_profile(&config.id, profile).is_ok()
 }
@@ -1264,7 +927,7 @@ fn save_api_key(id: &str, api_key: &str) -> Result<(), String> {
     save_api_key_with_profile(id, api_key, None)
 }
 
-fn save_api_key_with_profile(id: &str, api_key: &str, profile: Option<&str>) -> Result<(), String> {
+pub(crate) fn save_api_key_with_profile(id: &str, api_key: &str, profile: Option<&str>) -> Result<(), String> {
     let Some(api_key) = submitted_api_key(api_key) else {
         return Ok(());
     };
@@ -1287,7 +950,7 @@ fn get_api_key(id: &str) -> Result<String, String> {
     get_api_key_with_profile(id, None)
 }
 
-fn get_api_key_with_profile(id: &str, profile: Option<&str>) -> Result<String, String> {
+pub(crate) fn get_api_key_with_profile(id: &str, profile: Option<&str>) -> Result<String, String> {
     let entry = Entry::new("hajimi", &keyring_entry_id(id, profile))
         .map_err(|e| format!("keyring entry failed: {}", e))?;
     entry
@@ -1300,7 +963,7 @@ fn delete_api_key(id: &str) -> Result<(), String> {
     delete_api_key_with_profile(id, None)
 }
 
-fn delete_api_key_with_profile(id: &str, profile: Option<&str>) -> Result<(), String> {
+pub(crate) fn delete_api_key_with_profile(id: &str, profile: Option<&str>) -> Result<(), String> {
     let entry = Entry::new("hajimi", &keyring_entry_id(id, profile))
         .map_err(|e| format!("无法访问密钥存储: {}", e))?;
     match entry.delete_credential() {
@@ -1335,7 +998,7 @@ fn read_provider_configs() -> Vec<ProviderConfig> {
     read_provider_configs_with_profile(None)
 }
 
-fn read_provider_configs_with_profile(profile: Option<&str>) -> Vec<ProviderConfig> {
+pub(crate) fn read_provider_configs_with_profile(profile: Option<&str>) -> Vec<ProviderConfig> {
     let path = match profile {
         None | Some("default") | Some("") => provider_config_path(),
         Some(p) => profile_config_path(p),
@@ -1362,7 +1025,7 @@ fn write_provider_configs(configs: &[ProviderConfig]) -> Result<(), String> {
     write_provider_configs_with_profile(None, configs)
 }
 
-fn write_provider_configs_with_profile(
+pub(crate) fn write_provider_configs_with_profile(
     profile: Option<&str>,
     configs: &[ProviderConfig],
 ) -> Result<(), String> {
@@ -1373,7 +1036,7 @@ fn write_provider_configs_with_profile(
     write_configs_to_path(&path, configs)
 }
 
-fn write_configs_to_path(path: &std::path::Path, configs: &[ProviderConfig]) -> Result<(), String> {
+pub(crate) fn write_configs_to_path(path: &std::path::Path, configs: &[ProviderConfig]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -1412,6 +1075,7 @@ fn write_configs_to_path(path: &std::path::Path, configs: &[ProviderConfig]) -> 
     Ok(())
 }
 
+
 // Backup encryption helpers (B-04/02)
 fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
     let mut key = [0u8; 32];
@@ -1419,7 +1083,7 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
     key
 }
 
-fn encrypt_backup(plaintext: &str, password: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn encrypt_backup(plaintext: &str, password: &str) -> Result<Vec<u8>, String> {
     let salt: [u8; 16] = rand::random();
     let key = derive_key(password, &salt);
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
@@ -1435,7 +1099,7 @@ fn encrypt_backup(plaintext: &str, password: &str) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
-fn decrypt_backup(data: &[u8], password: &str) -> Result<String, String> {
+pub(crate) fn decrypt_backup(data: &[u8], password: &str) -> Result<String, String> {
     if data.len() < 28 {
         return Err("invalid backup file".to_string());
     }
@@ -1451,297 +1115,20 @@ fn decrypt_backup(data: &[u8], password: &str) -> Result<String, String> {
     String::from_utf8(plaintext).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn get_provider_configs(
-    workspace_path: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<ProviderConfigView>, String> {
-    // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
-    Ok(
-        read_merged_configs(trusted_workspace.as_deref(), profile.as_deref())
-            .into_iter()
-            .map(|config| {
-                let has_api_key = provider_config_has_api_key(&config, profile.as_deref());
-                ProviderConfigView::from_config(config, has_api_key)
-            })
-            .collect(),
-    )
-}
+// get_provider_configs moved to commands::provider
 
-#[tauri::command]
-fn add_provider_config(
-    mut config: ProviderConfig,
-    workspace_path: Option<String>,
-    save_target: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    // SAFETY: Mutex held only for config read; poison unlikely in single-threaded Tauri command context
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let target = save_target.as_deref().unwrap_or("global");
-    if target == "workspace" {
-        let current = get_workspace_dir(&app_handle)?;
-        trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
-        if let Some(api_key) = submitted_api_key(&config.api_key) {
-            save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
-        }
-        config.api_key.clear();
-        return add_workspace_provider_config_for_current(
-            config,
-            workspace_path.as_deref(),
-            &current,
-        );
-    }
-    if let Some(api_key) = submitted_api_key(&config.api_key) {
-        save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
-    }
-    config.api_key.clear();
-    let mut configs = read_provider_configs_with_profile(profile.as_deref());
-    if configs.iter().any(|c| c.id == config.id) {
-        return Err(format!("Provider '{}' already exists", config.id));
-    }
-    configs.push(config);
-    write_provider_configs_with_profile(profile.as_deref(), &configs)
-}
+// add_provider_config moved to commands::provider
 
-#[tauri::command]
-fn update_provider_config(
-    mut config: ProviderConfig,
-    workspace_path: Option<String>,
-    save_target: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let target = save_target.as_deref().unwrap_or("global");
-    if target == "workspace" {
-        let current = get_workspace_dir(&app_handle)?;
-        trusted_workspace_config_path_for_current(workspace_path.as_deref(), &current)?;
-        if let Some(api_key) = submitted_api_key(&config.api_key) {
-            save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
-        }
-        config.api_key.clear();
-        return update_workspace_provider_config_for_current(
-            config,
-            workspace_path.as_deref(),
-            &current,
-        );
-    }
-    if let Some(api_key) = submitted_api_key(&config.api_key) {
-        save_api_key_with_profile(&config.id, api_key, profile.as_deref())?;
-    }
-    config.api_key.clear();
-    let mut configs = read_provider_configs_with_profile(profile.as_deref());
-    let idx = configs
-        .iter()
-        .position(|c| c.id == config.id)
-        .ok_or_else(|| format!("Provider '{}' not found", config.id))?;
-    configs[idx] = config;
-    write_provider_configs_with_profile(profile.as_deref(), &configs)
-}
+// update_provider_config moved to commands::provider
 
-#[tauri::command]
-fn delete_provider_config(
-    id: String,
-    workspace_path: Option<String>,
-    delete_target: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let target = delete_target.as_deref().unwrap_or("global");
-    if target == "workspace" {
-        let current = get_workspace_dir(&app_handle)?;
-        let result =
-            delete_workspace_provider_config_for_current(&id, workspace_path.as_deref(), &current);
-        if result.is_ok() {
-            let _ = delete_api_key_with_profile(&id, profile.as_deref());
-        }
-        return result;
-    }
-    let _ = delete_api_key_with_profile(&id, profile.as_deref());
-    let mut configs = read_provider_configs_with_profile(profile.as_deref());
-    configs.retain(|c| c.id != id);
-    write_provider_configs_with_profile(profile.as_deref(), &configs)
-}
+// delete_provider_config moved to commands::provider
 
-#[tauri::command]
-fn get_providers(
-    workspace_path: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<ProviderInfo>, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let mut providers = vec![ProviderInfo {
-        name: "ollama".into(),
-        available: true,
-        default_model: "llama3".into(),
-    }];
+// get_providers moved to commands::provider
 
-    // Official providers now unified with config + keyring fallback to env (P0-2)
-    let anthropic_key_ok = std::env::var("ANTHROPIC_API_KEY").is_ok()
-        || get_api_key_with_profile("anthropic", profile.as_deref()).is_ok();
-    providers.push(ProviderInfo {
-        name: "anthropic".into(),
-        available: anthropic_key_ok,
-        default_model: "claude-3-5-sonnet-20241022".into(),
-    });
+// get_current_workspace and validate_provider moved to commands::provider
 
-    let openai_key_ok = std::env::var("OPENAI_API_KEY").is_ok()
-        || get_api_key_with_profile("openai", profile.as_deref()).is_ok();
-    providers.push(ProviderInfo {
-        name: "openai".into(),
-        available: openai_key_ok,
-        default_model: "gpt-4o".into(),
-    });
 
-    // Append custom providers from config (keys secured in keyring), with workspace overlay
-    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
-    for cfg in read_merged_configs(trusted_workspace.as_deref(), profile.as_deref()) {
-        let is_official = cfg.id == "anthropic"
-            || cfg.id == "openai"
-            || cfg.name.to_lowercase() == "anthropic"
-            || cfg.name.to_lowercase() == "openai";
-        if !is_official {
-            let available = get_api_key_with_profile(&cfg.id, profile.as_deref()).is_ok()
-                || submitted_api_key(&cfg.api_key).is_some();
-            providers.push(ProviderInfo {
-                name: cfg.id.clone(),
-                available,
-                default_model: cfg.model.clone(),
-            });
-        }
-    }
-    Ok(providers)
-}
-
-#[tauri::command]
-fn get_current_workspace(app_handle: tauri::AppHandle) -> Option<String> {
-    get_workspace_dir(&app_handle)
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
-}
-
-/// # Safety: API key from OS keyring, response validated via real HTTP before UI green status
-#[tauri::command]
-async fn validate_provider(
-    config: ProviderConfig,
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let key = if let Some(api_key) = submitted_api_key(&config.api_key) {
-        api_key.to_string()
-    } else {
-        get_api_key_with_profile(&config.id, profile.as_deref())?
-    };
-    if key.trim().is_empty() {
-        return Err("No API key available in keyring or config".to_string());
-    }
-    // Real HTTP validation (5s timeout) with fallback to format check
-    let client = Client::new();
-    let base = if config.base_url.is_empty() {
-        if config.provider_type.contains("anthropic") {
-            "https://api.anthropic.com".to_string()
-        } else if config.provider_type.contains("openai") {
-            "https://api.openai.com".to_string()
-        } else {
-            return Err(format!(
-                "Provider '{}' requires a base_url for type '{}'",
-                config.name, config.provider_type
-            ));
-        }
-    } else {
-        config.base_url.clone()
-    };
-    let chat_url = openai_chat_completions_url(&base);
-    let test_payload = serde_json::json!({
-        "model": config.model.as_str(),
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 1
-    });
-    let req = client
-        .post(&chat_url)
-        .timeout(std::time::Duration::from_secs(8))
-        .header("User-Agent", "hajimi/3.8.0")
-        .json(&test_payload);
-    let req = if config.provider_type.contains("anthropic") {
-        req.header("x-api-key", &key)
-            .header("anthropic-version", "2023-06-01")
-    } else {
-        req.header("Authorization", format!("Bearer {}", key))
-    };
-    match req.send().await {
-        Ok(r) => {
-            let status = r.status();
-            if status.is_success() {
-                Ok(format!("✅ {} 连接测试通过", config.name))
-            } else if status.as_u16() == 401 || status.as_u16() == 403 {
-                Err(format!("API Key 认证失败 (HTTP {})，请检查 Key 是否正确，以及 Key 和 Base URL 是否属于同一平台", status))
-            } else if status.as_u16() == 404 {
-                Err(format!(
-                    "API 端点不存在 (HTTP 404)，请检查 Base URL 是否正确。当前请求地址: {}",
-                    chat_url
-                ))
-            } else if status.as_u16() == 429 {
-                Err("请求过于频繁 (HTTP 429)，请稍后再试".to_string())
-            } else if status.as_u16() == 400 {
-                // 400 usually means auth passed but model name or params invalid
-                Ok(format!(
-                    "✅ {} 认证通过 (模型名或参数可能需要调整)",
-                    config.name
-                ))
-            } else {
-                Err(format!(
-                    "测试失败: HTTP {} - {}",
-                    status,
-                    r.text()
-                        .await
-                        .unwrap_or_default()
-                        .chars()
-                        .take(200)
-                        .collect::<String>()
-                ))
-            }
-        }
-        Err(e) => {
-            // fallback to format check
-            if key.starts_with("sk-") || key.len() > 15 {
-                Ok(format!("⚠️ {} 网络无法到达，Key 格式检查通过", config.name))
-            } else {
-                Err(format!("连接失败: {}", e))
-            }
-        }
-    }
-}
-
-fn create_llm_client(
+pub(crate) fn create_llm_client(
     provider: &str,
     profile: Option<&str>,
     config: Option<ProviderConfig>,
@@ -1785,567 +1172,27 @@ fn create_llm_client(
     }
 }
 
-#[tauri::command]
-async fn stream_chat(
-    provider: String,
-    prompt: String,
-    messages: Option<Vec<ChatMessage>>,
-    config: Option<ProviderConfig>,
-    on_event: Channel<StreamEvent>,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
-    let system_prompt = config.as_ref().and_then(|c| c.system_prompt.clone());
-    let diagnostic_session_id = format!(
-        "stream:{}:{}",
-        provider,
-        chrono::Utc::now().timestamp_millis()
-    );
+// stream_chat moved to commands::agent
 
-    let msg_count = messages.as_ref().map(|m| m.len()).unwrap_or(1);
-    write_stream_diagnostic(
-        "backend_command_start",
-        Some(&diagnostic_session_id),
-        json!({
-            "provider": provider.clone(),
-            "model": model.clone(),
-            "messageCount": msg_count,
-            "hasConfig": config.is_some(),
-            "baseUrl": config.as_ref().map(|c| c.base_url.clone()),
-        }),
-    );
 
-    let chat_result = async {
-        let client = create_llm_client(&provider, profile.as_deref(), config)?;
+// compact_context and optimize_context moved to commands::tool
 
-        let msgs = if let Some(msgs) = messages.filter(|m| !m.is_empty()) {
-            msgs
-        } else {
-            vec![ChatMessage {
-                role: "user".into(),
-                content: prompt,
-                timestamp: None,
-            }]
-        };
-        let msgs_for_opt = msgs.clone();
 
-        let gateway = state.memory_gateway.clone();
-        let token_tracker = state.token_tracker.clone();
-        let session_key = format!("chat:{}:{}", provider, chrono::Utc::now().timestamp());
-        let ctx_json = serde_json::to_string(&msgs).map_err(|e| e.to_string())?;
-
-        // SAFETY: MemoryGateway uses Arc<RwLock> internally; concurrent access is safe across Tauri commands
-        let _ = gateway.working().put(session_key.clone(), ctx_json).await;
-
-        let stats_before = gateway.stats().await;
-        let token_before = stats_before.working_tokens as u64;
-        let precise_prompt_start = client
-            .count_tokens(msgs_for_opt.clone(), &model)
-            .ok()
-            .map(|n| n as u64);
-
-        // Audit: stream started (B-05/03)
-        let _ = audit::log_usage(&audit::KeyUsageRecord {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            provider_name: provider.clone(),
-            model: model.clone(),
-            status: "started".into(),
-            estimated_tokens: Some(msg_count as u64 * 50),
-            precise_prompt: precise_prompt_start,
-            precise_completion: None,
-            token_before: Some(token_before),
-            token_after: None,
-        });
-
-        let mut stream = client
-            .stream_chat_with_context(msgs, system_prompt)
-            .await
-            .map_err(|e| format!("stream start failed: {}", e))?;
-
-        write_stream_diagnostic(
-            "backend_stream_started",
-            Some(&diagnostic_session_id),
-            json!({ "provider": provider.clone(), "model": model.clone() }),
-        );
-
-        let mut output_events = 0_u64;
-        let mut output_chars = 0_u64;
-        let mut done_events = 0_u64;
-        let mut error_events = 0_u64;
-        let mut channel_send_events = 0_u64;
-        let mut channel_send_errors = 0_u64;
-        #[cfg(feature = "stream-diagnostics")]
-        let mut first_output_preview: Option<String> = None;
-        #[cfg(not(feature = "stream-diagnostics"))]
-        let first_output_preview: Option<String> = None;
-
-        while let Some(chunk) = stream.next().await {
-            let (text, is_done, is_error) = match chunk {
-                engine_llm_core::StreamChunk::Output(t) => (t, false, false),
-                engine_llm_core::StreamChunk::Error(e) => (e, false, true),
-                engine_llm_core::StreamChunk::Done => (String::new(), true, false),
-                _ => (String::new(), false, false),
-            };
-            if is_done {
-                done_events += 1;
-            } else if is_error {
-                error_events += 1;
-            } else {
-                output_events += 1;
-                output_chars += text.chars().count() as u64;
-                #[cfg(feature = "stream-diagnostics")]
-                if first_output_preview.is_none() && !text.is_empty() {
-                    first_output_preview = Some(preview_for_diagnostic(&text));
-                }
-            }
-            let usage = if is_done { client.last_usage() } else { None };
-            channel_send_events += 1;
-            let send_result = on_event.send(StreamEvent {
-                chunk: text,
-                done: is_done,
-                error: if is_error {
-                    Some("LLM error".into())
-                } else {
-                    None
-                },
-                prompt_tokens: usage.as_ref().map(|u| u.prompt_tokens),
-                completion_tokens: usage.as_ref().map(|u| u.completion_tokens),
-            });
-            if let Err(e) = send_result {
-                channel_send_errors += 1;
-                write_stream_diagnostic(
-                    "backend_channel_send_error",
-                    Some(&diagnostic_session_id),
-                    json!({
-                        "error": e.to_string(),
-                        "outputEvents": output_events,
-                        "outputChars": output_chars,
-                        "doneEvents": done_events,
-                        "errorEvents": error_events,
-                        "channelSendEvents": channel_send_events,
-                        "channelSendErrors": channel_send_errors,
-                    }),
-                );
-                return Err(e.to_string());
-            }
-            if is_done {
-                break;
-            }
-        }
-
-        let usage = client.last_usage();
-        write_stream_diagnostic(
-            "backend_stream_summary",
-            Some(&diagnostic_session_id),
-            json!({
-                "outputEvents": output_events,
-                "outputChars": output_chars,
-                "doneEvents": done_events,
-                "errorEvents": error_events,
-                "channelSendEvents": channel_send_events,
-                "channelSendErrors": channel_send_errors,
-                "firstOutputPreview": first_output_preview,
-                "promptTokens": usage.as_ref().map(|u| u.prompt_tokens),
-                "completionTokens": usage.as_ref().map(|u| u.completion_tokens),
-            }),
-        );
-
-        // Record token usage for persistent cumulative tracking (P1-02/05)
-        if let Some(ref u) = usage {
-            token_tracker
-                .record_usage(
-                    &session_key,
-                    &provider,
-                    u.prompt_tokens,
-                    u.completion_tokens,
-                )
-                .await;
-        }
-
-        // Trigger compression via LLM-driven summary
-        write_stream_diagnostic(
-            "backend_optimize_start",
-            Some(&diagnostic_session_id),
-            json!({ "messageCount": msgs_for_opt.len() }),
-        );
-        let _ = gateway.optimize(msgs_for_opt, client.as_ref()).await;
-        write_stream_diagnostic(
-            "backend_optimize_done",
-            Some(&diagnostic_session_id),
-            json!({}),
-        );
-        let stats_after = gateway.stats().await;
-        let token_after = stats_after.working_tokens as u64;
-
-        // Verify context is retrievable
-        let _retrieved = gateway.working().get(&session_key).await;
-
-        Ok((token_before, token_after, usage))
-    }
-    .await;
-
-    let (chat_result, token_before_val, token_after_val, usage_val) = match chat_result {
-        Ok((tb, ta, u)) => (Ok(()), tb, ta, u),
-        Err(e) => (Err(e), 0, 0, None),
-    };
-
-    let (precise_prompt_end, precise_completion_end) = if let Some(u) = usage_val {
-        (Some(u.prompt_tokens), Some(u.completion_tokens))
-    } else {
-        (None, None)
-    };
-
-    write_stream_diagnostic(
-        "backend_command_result",
-        Some(&diagnostic_session_id),
-        json!({
-            "ok": chat_result.is_ok(),
-            "error": chat_result.as_ref().err(),
-            "tokenBefore": token_before_val,
-            "tokenAfter": token_after_val,
-            "promptTokens": precise_prompt_end,
-            "completionTokens": precise_completion_end,
-        }),
-    );
-
-    // Audit: completed or failed (B-05/03)
-    let _ = audit::log_usage(&audit::KeyUsageRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        provider_name: provider,
-        model,
-        status: if chat_result.is_ok() {
-            "completed".into()
-        } else {
-            "failed".into()
-        },
-        estimated_tokens: Some(msg_count as u64 * 50),
-        precise_prompt: precise_prompt_end,
-        precise_completion: precise_completion_end,
-        token_before: Some(token_before_val),
-        token_after: Some(token_after_val),
-    });
-
-    chat_result
-}
-
-#[tauri::command]
-async fn compact_context(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let gateway = state.memory_gateway.clone();
-    gateway.working().compact().await;
-    let stats = gateway.stats().await;
-    Ok(format!(
-        "工作内存: {} 条目, {} tokens",
-        stats.working_entries, stats.working_tokens
-    ))
-}
-
-#[tauri::command]
-async fn optimize_context(
-    messages: Vec<ChatMessage>,
-    provider: String,
-    config: Option<ProviderConfig>,
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let client = create_llm_client(&provider, profile.as_deref(), config)?;
-    let gateway = state.memory_gateway.clone();
-    gateway.optimize(messages, client.as_ref()).await
-}
-
-#[tauri::command]
-#[allow(deprecated)]
-fn export_provider_backup(
-    password: String,
-    workspace_path: Option<String>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<String, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let trusted_workspace = trusted_workspace_path(workspace_path.as_deref(), &app_handle)?;
-    let configs = read_merged_configs(trusted_workspace.as_deref(), profile.as_deref());
-    let mut export_data = Vec::new();
-    for cfg in configs {
-        let key = get_api_key_with_profile(&cfg.id, profile.as_deref()).unwrap_or_default();
-        export_data.push(json!({
-            "id": cfg.id,
-            "name": cfg.name,
-            "provider_type": cfg.provider_type,
-            "base_url": cfg.base_url,
-            "model": cfg.model,
-            "api_key": key,
-            "system_prompt": cfg.system_prompt,
-            "contextThreshold": cfg.context_threshold,
-            "maxContextTokens": cfg.max_context_tokens,
-            "maxOutputTokens": cfg.max_output_tokens,
-            "reserveOutputTokens": cfg.reserve_output_tokens,
-            "safetyMarginTokens": cfg.safety_margin_tokens,
-            "retrievalBudgetTokens": cfg.retrieval_budget_tokens,
-            "longContextMode": cfg.long_context_mode,
-        }));
-    }
-    let plaintext = serde_json::to_string(&export_data).map_err(|e| e.to_string())?;
-    let encrypted = encrypt_backup(&plaintext, &password)?;
-    let path = provider_config_path().with_extension("hajimi-backup");
-    std::fs::write(&path, encrypted).map_err(|e| e.to_string())?;
-    Ok(path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-#[allow(deprecated)]
-fn import_provider_backup(
-    password: String,
-    file_path: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<usize, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let encrypted = std::fs::read(&file_path).map_err(|e| e.to_string())?;
-    let plaintext = decrypt_backup(&encrypted, &password)?;
-    let items: Vec<serde_json::Value> =
-        serde_json::from_str(&plaintext).map_err(|e| e.to_string())?;
-    let mut count = 0;
-    for item in items {
-        let cfg = ProviderConfig {
-            id: item["id"].as_str().unwrap_or("").to_string(),
-            name: item["name"].as_str().unwrap_or("").to_string(),
-            provider_type: item["provider_type"]
-                .as_str()
-                .unwrap_or("openai-compatible")
-                .to_string(),
-            base_url: item["base_url"].as_str().unwrap_or("").to_string(),
-            model: item["model"].as_str().unwrap_or("").to_string(),
-            api_key: item["api_key"].as_str().unwrap_or("").to_string(),
-            system_prompt: item
-                .get("system_prompt")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            context_threshold: item
-                .get("context_threshold")
-                .or_else(|| item.get("contextThreshold"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            max_context_tokens: item
-                .get("max_context_tokens")
-                .or_else(|| item.get("maxContextTokens"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            max_output_tokens: item
-                .get("max_output_tokens")
-                .or_else(|| item.get("maxOutputTokens"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            reserve_output_tokens: item
-                .get("reserve_output_tokens")
-                .or_else(|| item.get("reserveOutputTokens"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            safety_margin_tokens: item
-                .get("safety_margin_tokens")
-                .or_else(|| item.get("safetyMarginTokens"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            retrieval_budget_tokens: item
-                .get("retrieval_budget_tokens")
-                .or_else(|| item.get("retrievalBudgetTokens"))
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize),
-            long_context_mode: item
-                .get("long_context_mode")
-                .or_else(|| item.get("longContextMode"))
-                .and_then(|v| v.as_bool()),
-        };
-        if let Some(api_key) = submitted_api_key(&cfg.api_key) {
-            save_api_key_with_profile(&cfg.id, api_key, profile.as_deref())?;
-        }
-        let mut sanitized = cfg.clone();
-        sanitized.api_key.clear();
-        let mut existing = read_provider_configs_with_profile(profile.as_deref());
-        if let Some(idx) = existing.iter().position(|c| c.id == sanitized.id) {
-            existing[idx] = sanitized;
-        } else {
-            existing.push(sanitized);
-        }
-        write_provider_configs_with_profile(profile.as_deref(), &existing)?;
-        count += 1;
-    }
-    Ok(count)
-}
+// export_provider_backup and import_provider_backup moved to commands::provider
 
 // ------------------------------------------------------------------
 // Profile commands (B-05/01)
 // ------------------------------------------------------------------
-#[tauri::command]
-fn list_profiles() -> Result<Vec<String>, String> {
-    let dir = if cfg!(target_os = "windows") {
-        PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
-            .join("Hajimi")
-            .join("profiles")
-    } else if cfg!(target_os = "macos") {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default())
-            .join("Library/Application Support/Hajimi/profiles")
-    } else {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/hajimi/profiles")
-    };
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let mut names = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            names.push(entry.file_name().to_string_lossy().to_string());
-        }
-    }
-    Ok(names)
-}
+// Profile commands moved to commands::profile
 
-#[tauri::command]
-fn get_active_profile(state: tauri::State<'_, AppState>) -> Option<String> {
-    state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-}
-
-#[tauri::command]
-fn set_active_profile(
-    name: Option<String>,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let mut profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    *profile = name;
-    Ok(())
-}
-
-#[tauri::command]
-fn create_profile(name: String) -> Result<(), String> {
-    let name = sanitize_profile_name(&name)?;
-    let path = profile_config_path(&name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    if !path.exists() {
-        std::fs::write(&path, "[]").map_err(|e| e.to_string())?;
-    }
-    write_configs_to_path(&path, &[])?;
-    Ok(())
-}
-
-#[tauri::command]
-fn delete_profile(name: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let name = sanitize_profile_name(&name)?;
-    // Clear active profile if deleting current
-    {
-        let mut active = state
-            .active_profile
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if active.as_deref() == Some(&name) {
-            *active = None;
-        }
-    }
-    let path = profile_config_path(&name);
-    if path.exists() {
-        // Delete config file
-        let _ = std::fs::remove_file(&path);
-        // Delete profile directory
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::remove_dir(parent);
-        }
-    }
-    // Clean up keyring entries for this profile (best effort), format: provider:{profile}:{id}
-    let configs = read_provider_configs_with_profile(Some(&name));
-    for cfg in configs {
-        let _ = delete_api_key_with_profile(&cfg.id, Some(&name));
-    }
-    Ok(())
-}
 
 // ------------------------------------------------------------------
 // Agent provider commands (B-05/02)
 // ------------------------------------------------------------------
-#[tauri::command]
-fn get_agent_providers(
-    state: tauri::State<'_, AppState>,
-) -> Result<HashMap<String, String>, String> {
-    // SAFETY: Mutex held only for HashMap clone; poison unlikely in single-threaded Tauri command context
-    let map = state
-        .agent_providers
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    Ok(map)
-}
 
-#[tauri::command]
-async fn set_agent_provider(
-    agent_id: String,
-    provider_id: Option<String>,
-    state: tauri::State<'_, AppState>,
-    agent_loop: tauri::State<'_, std::sync::Arc<agent_core::agent_loop::AgentLoop>>,
-) -> Result<(), String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
-
-    // Update agent provider map
-    {
-        let mut map = state
-            .agent_providers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(ref pid) = provider_id {
-            map.insert(agent_id.clone(), pid.clone());
-        } else {
-            map.remove(&agent_id);
-        }
-    }
-
-    // Load provider config for custom providers
-    let config = if provider == "ollama" || provider == "anthropic" || provider == "openai" {
-        None
-    } else {
-        let configs = read_merged_configs(None, profile.as_deref());
-        configs.into_iter().find(|c| c.id == provider)
-    };
-
-    // Write capability fields to blackboard for context budget resolution
-    write_provider_caps_to_blackboard(
-        agent_loop.blackboard(),
-        &agent_id,
-        &provider,
-        config.as_ref(),
-    )
-    .await;
-
-    Ok(())
-}
 
 #[allow(deprecated)]
-async fn write_provider_caps_to_blackboard(
+pub(crate) async fn write_provider_caps_to_blackboard(
     bb: &agent_core::blackboard::Blackboard,
     agent_id: &str,
     provider: &str,
@@ -2402,713 +1249,17 @@ async fn write_provider_caps_to_blackboard(
     }
 }
 
-#[tauri::command]
-async fn create_agent_with_provider(
-    agent_id: String,
-    goal: String,
-    provider_id: Option<String>,
-    state: tauri::State<'_, AppState>,
-    agent_loop: tauri::State<'_, std::sync::Arc<agent_core::agent_loop::AgentLoop>>,
-) -> Result<String, String> {
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
 
-    // Store agent-provider mapping
-    {
-        let mut map = state
-            .agent_providers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(pid) = provider_id.clone() {
-            map.insert(agent_id.clone(), pid);
-        } else {
-            map.remove(&agent_id);
-        }
-    }
 
-    // Load provider config for custom providers
-    let config = if provider == "ollama" || provider == "anthropic" || provider == "openai" {
-        None
-    } else {
-        let configs = read_merged_configs(None, profile.as_deref());
-        configs.into_iter().find(|c| c.id == provider)
-    };
 
-    // Write capability fields to blackboard for context budget resolution
-    write_provider_caps_to_blackboard(
-        agent_loop.blackboard(),
-        &agent_id,
-        &provider,
-        config.as_ref(),
-    )
-    .await;
 
-    // Audit: stream started (B-05/03)
-    let model = config.as_ref().map(|c| c.model.clone()).unwrap_or_default();
 
-    // Execute via LLM client (B-05/FIX-02: per-agent provider client switching)
-    let result = async {
-        let client = create_llm_client(&provider, profile.as_deref(), config)?;
-        let precise_prompt_start = client
-            .count_tokens(
-                vec![ChatMessage {
-                    role: "user".into(),
-                    content: goal.clone(),
-                    timestamp: None,
-                }],
-                &model,
-            )
-            .ok()
-            .map(|n| n as u64);
 
-        let _ = audit::log_usage(&audit::KeyUsageRecord {
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            provider_name: provider.clone(),
-            model: model.clone(),
-            status: "started".into(),
-            estimated_tokens: None,
-            precise_prompt: precise_prompt_start,
-            precise_completion: None,
-            token_before: None,
-            token_after: None,
-        });
 
-        let mut stream = client
-            .stream_chat(goal)
-            .await
-            .map_err(|e| format!("stream start failed: {}", e))?;
 
-        let mut output = String::new();
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                engine_llm_core::StreamChunk::Output(text) => output.push_str(&text),
-                engine_llm_core::StreamChunk::Error(e) => return Err(format!("LLM error: {}", e)),
-                engine_llm_core::StreamChunk::Done => break,
-                _ => {}
-            }
-        }
-        let usage = client.last_usage();
-        Ok((output, usage))
-    }
-    .await;
 
-    let (_output_val, usage_val) = match &result {
-        Ok((out, usage)) => (Some(out.clone()), *usage),
-        Err(_) => (None, None),
-    };
 
-    let (precise_prompt_end, precise_completion_end) = if let Some(u) = usage_val {
-        (Some(u.prompt_tokens), Some(u.completion_tokens))
-    } else {
-        (None, None)
-    };
 
-    // Audit: completed or failed (B-05/03)
-    let _ = audit::log_usage(&audit::KeyUsageRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        provider_name: provider,
-        model,
-        status: if result.is_ok() {
-            "completed".into()
-        } else {
-            "failed".into()
-        },
-        estimated_tokens: None,
-        precise_prompt: precise_prompt_end,
-        precise_completion: precise_completion_end,
-        token_before: None,
-        token_after: None,
-    });
-
-    match result {
-        Ok((output, _)) => Ok(format!("Agent {} completed. Output:\n{}", agent_id, output)),
-        Err(e) => Err(e),
-    }
-}
-
-// Phase 4 Day 2: Event structure for backend agent execution monitoring.
-#[derive(Serialize, Clone, Debug)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum AgentUiEvent {
-    Status {
-        message: String,
-    },
-    Result {
-        output: String,
-    },
-    Done,
-    Error {
-        message: String,
-    },
-    Trace {
-        event: agent_core::agent_loop::TraceEvent,
-    },
-}
-
-fn agent_outcome_output(outcome: agent_core::agent_loop::LoopOutcome) -> String {
-    match outcome {
-        agent_core::agent_loop::LoopOutcome::SuccessWithMessage(message) => message,
-        other => format!("{:?}", other),
-    }
-}
-
-/// 启动并运行 Proactive Agent 核心任务循环
-#[tauri::command]
-async fn run_agent_task(
-    agent_id: String,
-    goal: String,
-    provider_id: Option<String>,
-    on_event: Channel<AgentUiEvent>,
-    state: tauri::State<'_, AppState>,
-    agent_loop: tauri::State<'_, std::sync::Arc<agent_core::agent_loop::AgentLoop>>,
-) -> Result<(), String> {
-    let trimmed_goal = goal.trim();
-    if trimmed_goal.is_empty() {
-        return Err("goal cannot be empty".to_string());
-    }
-
-    let profile = state
-        .active_profile
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let provider = provider_id.clone().unwrap_or_else(|| "openai".to_string());
-
-    // Load provider config for custom providers
-    let config = if provider == "ollama" || provider == "anthropic" || provider == "openai" {
-        None
-    } else {
-        let configs = read_merged_configs(None, profile.as_deref());
-        configs.into_iter().find(|c| c.id == provider)
-    };
-
-    // Write capability fields to blackboard for context budget resolution
-    write_provider_caps_to_blackboard(
-        agent_loop.blackboard(),
-        &agent_id,
-        &provider,
-        config.as_ref(),
-    )
-    .await;
-
-    // P0-DRIVER-INJECTION-2026-05-30: Create LlmClient for the user's current provider
-    // and write it to the shared slot so DesktopAgentTurnDriver picks it up at run_turn time.
-    let client_box = create_llm_client(&provider, profile.as_deref(), config.clone())
-        .map_err(|e| format!("Failed to create LLM client for agent: {}", e))?;
-    let client_arc: Arc<dyn engine_llm_core::LlmClient> = Arc::from(client_box);
-    *state.agent_llm_client.write().await = Some(client_arc);
-
-    // Send initial status event
-    let _ = on_event.send(AgentUiEvent::Status {
-        message: format!("Agent task started with goal: {}", trimmed_goal),
-    });
-
-    // Subscribe to real-time TraceEvent stream from the AgentLoop
-    if let Some(mut rx) = agent_loop.subscribe_trace() {
-        let on_event_trace = on_event.clone();
-        tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(event) => {
-                        if on_event_trace.send(AgentUiEvent::Trace { event }).is_err() {
-                            break;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        break;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        continue;
-                    }
-                }
-            }
-        });
-    }
-
-    match agent_loop.execute_goal(agent_id, trimmed_goal).await {
-        Ok(outcome) => {
-            let output = agent_outcome_output(outcome);
-            let _ = on_event.send(AgentUiEvent::Result { output });
-            let _ = on_event.send(AgentUiEvent::Done);
-        }
-        Err(e) => {
-            let _ = on_event.send(AgentUiEvent::Error {
-                message: format!("Agent loop execution failed: {}", e),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-// ------------------------------------------------------------------
-// Audit log commands (B-05/03)
-// ------------------------------------------------------------------
-#[tauri::command]
-fn get_audit_logs(
-    limit: Option<usize>,
-    offset: Option<usize>,
-) -> Result<Vec<audit::KeyUsageRecord>, String> {
-    audit::get_logs(limit.unwrap_or(100), offset.unwrap_or(0))
-}
-
-#[tauri::command]
-async fn subscribe_agent_trace(
-    on_event: Channel<TraceEvent>,
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
-    // SAFETY: Mutex held only for Option clone; poison unlikely in single-threaded Tauri command context
-    let tx = state
-        .trace_tx
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    let Some(tx) = tx else {
-        // AgentLoop trace channel not yet injected; client will retry or use Tauri Event listener
-        return Ok(());
-    };
-    let mut rx = tx.subscribe();
-    let history_clone = state.edit_history.clone();
-    let app_clone = app.clone();
-    tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            // Phase 4 Day 5: Record edit events for history timeline
-            if matches!(
-                event.step_type,
-                TraceStepType::EditProposed
-                    | TraceStepType::EditApplied
-                    | TraceStepType::EditRejected
-            ) {
-                let checkpoint = checkpoint_record_from_trace(&event);
-                if let Err(e) = write_checkpoint_record(&app_clone, &checkpoint) {
-                    eprintln!("checkpoint write failed: {}", e);
-                }
-                let mut hist = history_clone.lock().await;
-                let entry = EditHistoryEntry {
-                    id: format!("edit_{}_{}", event.iteration, hist.len()),
-                    timestamp: event.timestamp.to_rfc3339(),
-                    step_type: format!("{:?}", event.step_type),
-                    summary: event.details.clone(),
-                    confidence: event.confidence_score,
-                    token_before: None,
-                    token_after: None,
-                    checkpoint_id: Some(checkpoint.id),
-                };
-                hist.push(entry);
-                if hist.len() > 200 {
-                    hist.remove(0);
-                }
-            } else if is_checkpoint_store_trace(&event) {
-                let checkpoint = checkpoint_record_from_trace(&event);
-                if let Err(e) = write_checkpoint_record(&app_clone, &checkpoint) {
-                    eprintln!("checkpoint write failed: {}", e);
-                }
-            }
-            let _ = on_event.send(event.clone());
-            let _ = app_clone.emit("agent:trace", &event);
-        }
-    });
-    Ok(())
-}
-
-#[tauri::command]
-fn pause_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // SAFETY: Mutex held only for bool write; poison unlikely in single-threaded Tauri command context
-    *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = true;
-    Ok(())
-}
-
-#[tauri::command]
-fn resume_loop(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // SAFETY: Mutex held only for bool write; poison unlikely in single-threaded Tauri command context
-    *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = false;
-    Ok(())
-}
-
-#[tauri::command]
-fn set_approval_level(level: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let valid = ["Auto", "Advisory", "Required", "Critical", "Override"];
-    if !valid.contains(&level.as_str()) {
-        return Err("Invalid approval level".to_string());
-    }
-    *state
-        .approval_level
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = level;
-    Ok(())
-}
-
-#[tauri::command]
-fn inject_memory(_key: String, _value: String) -> Result<(), String> {
-    Ok(())
-}
-
-#[tauri::command]
-fn update_plan(_plan: String) -> Result<(), String> {
-    Ok(())
-}
-
-#[tauri::command]
-fn list_checkpoints(app_handle: tauri::AppHandle) -> Result<Vec<CheckpointRecord>, String> {
-    read_checkpoint_records(&app_handle)
-}
-
-#[tauri::command]
-fn get_edit_history(state: tauri::State<'_, AppState>) -> Result<Vec<EditHistoryEntry>, String> {
-    Ok(state.edit_history.blocking_lock().clone())
-}
-
-#[tauri::command]
-fn restore_checkpoint(
-    id: String,
-    confirm_restore: bool,
-    dry_run: Option<bool>,
-    app_handle: tauri::AppHandle,
-) -> Result<RestoreResult, String> {
-    let dry_run = dry_run.unwrap_or(false);
-    validate_restore_confirmation(confirm_restore, dry_run)?;
-
-    let records = read_checkpoint_records(&app_handle)?;
-    let record = find_checkpoint_record(&records, &id)?;
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let backup_dir = restore_backup_dir(&app_handle, &record.id)?;
-    let mut plan = build_restore_plan(&record, &base_dir, &backup_dir)?;
-
-    if dry_run {
-        return Ok(plan);
-    }
-
-    if !plan.warnings.is_empty() {
-        return Err(format!(
-            "restore refused: {}; run dry-run and create content snapshots before write restore",
-            plan.warnings.join("; ")
-        ));
-    }
-
-    backup_restore_targets(&plan, &base_dir, &backup_dir)?;
-    apply_restore_plan(&record, &plan, &base_dir)?;
-    plan.dry_run = false;
-    plan.restored_at = chrono::Utc::now().to_rfc3339();
-    Ok(plan)
-}
-
-#[tauri::command]
-fn compare_checkpoints(
-    id_a: String,
-    id_b: String,
-    app_handle: tauri::AppHandle,
-) -> Result<CheckpointCompareResult, String> {
-    let records = read_checkpoint_records(&app_handle)?;
-    let before = find_checkpoint_record(&records, &id_a)?;
-    let after = find_checkpoint_record(&records, &id_b)?;
-    Ok(compare_checkpoint_records(&before, &after))
-}
-
-#[tauri::command]
-fn export_checkpoint(id: String, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let records = read_checkpoint_records(&app_handle)?;
-    if id == "all" {
-        let workspace = get_workspace_dir(&app_handle)?;
-        let bundle = CheckpointExportBundle {
-            schema_version: 1,
-            exported_at: chrono::Utc::now().to_rfc3339(),
-            workspace: workspace.to_string_lossy().to_string(),
-            checkpoints: records,
-        };
-        return serde_json::to_string_pretty(&bundle)
-            .map_err(|e| format!("checkpoint export serialize failed: {}", e));
-    }
-
-    let record = find_checkpoint_record(&records, &id)?;
-    serde_json::to_string_pretty(&record)
-        .map_err(|e| format!("checkpoint export serialize failed: {}", e))
-}
-
-#[tauri::command]
-fn get_resource_metrics(state: tauri::State<'_, AppState>) -> Result<Value, String> {
-    let hist = state.edit_history.blocking_lock();
-    let edit_count = hist.len();
-    let applied_count = hist.iter().filter(|e| e.step_type == "EditApplied").count();
-    let rejected_count = hist
-        .iter()
-        .filter(|e| e.step_type == "EditRejected")
-        .count();
-    Ok(json!({
-        "iteration_count": 0,
-        "blackboard_size": 0,
-        "failure_rate_percent": 0.0,
-        "callback_latency_ms": 0,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "edit_count": edit_count,
-        "applied_count": applied_count,
-        "rejected_count": rejected_count,
-    }))
-}
-
-// Phase 4 Day 5: Agent Command Palette dispatcher
-#[tauri::command]
-async fn run_agent_command(
-    cmd: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let trimmed = cmd.trim();
-    if trimmed.starts_with("@agent refactor ") {
-        let target = trimmed
-            .strip_prefix("@agent refactor ")
-            .unwrap_or("")
-            .to_string();
-        // Inject as a plan update
-        return Ok(format!("Refactor request queued for: {}", target));
-    }
-    if trimmed.starts_with("@agent review-pr") {
-        return Ok("PR review mode activated".to_string());
-    }
-    if trimmed.starts_with("@agent continue-background") {
-        *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = false;
-        return Ok("Agent resumed in background".to_string());
-    }
-    if trimmed.starts_with("@agent pause") {
-        *state.paused.lock().unwrap_or_else(|e| e.into_inner()) = true;
-        return Ok("Agent paused".to_string());
-    }
-    if trimmed.starts_with("@agent status") {
-        let paused = *state.paused.lock().unwrap_or_else(|e| e.into_inner());
-        let level = state
-            .approval_level
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        return Ok(format!(
-            "Agent status: paused={}, approval_level={}",
-            paused, level
-        ));
-    }
-    Err(format!("Unknown agent command: {}", cmd))
-}
-
-#[tauri::command]
-async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<(), String> {
-    on_event
-        .send(TraceEvent {
-            step: agent_core::LoopState::Idle,
-            details: "Resource alerts subscription started".to_string(),
-            iteration: 0,
-            timestamp: chrono::Utc::now(),
-            step_type: TraceStepType::Other,
-            plan_summary: None,
-            reflection_key_points: vec![],
-            confidence_score: None,
-            edit_payload: None,
-            operation_summary: None,
-            thinking_content: None,
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ------------------------------------------------------------------
-// Phase 4 Day 3: Inline Editing Commands
-// ------------------------------------------------------------------
-#[derive(Deserialize)]
-struct EditHunkPayload {
-    path: String,
-    old_string: String,
-    new_string: String,
-}
-
-#[tauri::command]
-async fn apply_edits(
-    edits: Vec<EditHunkPayload>,
-    state: tauri::State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<ToolResult>, String> {
-    let base_dir = get_workspace_dir(&app_handle)?;
-    let registry = state.registry.lock().await;
-    apply_edits_with_base_dir(edits, &registry, &base_dir).await
-}
-
-async fn apply_edits_with_base_dir(
-    edits: Vec<EditHunkPayload>,
-    registry: &ToolRegistry,
-    base_dir: &Path,
-) -> Result<Vec<ToolResult>, String> {
-    let mut results = Vec::new();
-    for edit in edits {
-        if edit.old_string.is_empty() {
-            return Err("old_string cannot be empty".to_string());
-        }
-        let safe_path = resolve_workspace_path(&edit.path, base_dir, PathIntent::ExistingFile)?;
-        let tool = registry
-            .get("edit_file")
-            .ok_or_else(|| "edit_file tool not found".to_string())?;
-        let args = serde_json::json!({
-            "path": safe_path,
-            "old_string": edit.old_string,
-            "new_string": edit.new_string,
-        });
-        let output = tool.execute(args).await.map_err(|e| e.message)?;
-        results.push(output.into());
-    }
-    Ok(results)
-}
-
-#[tauri::command]
-fn preview_edit(
-    path: String,
-    old_string: String,
-    new_string: String,
-    app_handle: tauri::AppHandle,
-) -> Result<String, String> {
-    if old_string.is_empty() {
-        return Err("old_string cannot be empty".to_string());
-    }
-    let base_dir = get_workspace_dir(&app_handle)?;
-    preview_edit_with_base_dir(path, old_string, new_string, &base_dir)
-}
-
-fn preview_edit_with_base_dir(
-    path: String,
-    old_string: String,
-    new_string: String,
-    base_dir: &Path,
-) -> Result<String, String> {
-    if old_string.is_empty() {
-        return Err("old_string cannot be empty".to_string());
-    }
-    let safe_path = resolve_workspace_path(&path, base_dir, PathIntent::ExistingFile)?;
-    preview_edit_for_path(&safe_path, &path, &old_string, &new_string)
-}
-
-fn preview_edit_for_path(
-    safe_path: &Path,
-    display_path: &str,
-    old_string: &str,
-    new_string: &str,
-) -> Result<String, String> {
-    if old_string.is_empty() {
-        return Err("old_string cannot be empty".to_string());
-    }
-    let metadata = std::fs::metadata(safe_path).map_err(|e| e.to_string())?;
-    if metadata.len() > PREVIEW_EDIT_MAX_BYTES {
-        return Err(format!(
-            "file too large for preview: {} bytes",
-            metadata.len()
-        ));
-    }
-    let content = std::fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
-    if !content.contains(old_string) {
-        return Err("Old string not found in file".to_string());
-    }
-    let lines: Vec<&str> = content.lines().collect();
-    let old_lines: Vec<&str> = old_string.lines().collect();
-    let mut diff = format!("--- {}\n+++ {}\n", display_path, display_path);
-    // Find approximate line number of old_string
-    let mut line_no = 1usize;
-    for (i, window) in lines.windows(old_lines.len()).enumerate() {
-        if window == old_lines.as_slice() {
-            line_no = i + 1;
-            break;
-        }
-    }
-    diff.push_str(&format!(
-        "@@ -{},{} +{},{} @@\n",
-        line_no,
-        old_lines.len(),
-        line_no,
-        new_string.lines().count()
-    ));
-    for line in old_string.lines() {
-        diff.push_str(&format!("-{}\n", line));
-    }
-    for line in new_string.lines() {
-        diff.push_str(&format!("+{}\n", line));
-    }
-    Ok(diff)
-}
-
-#[tauri::command]
-async fn get_ast_context(symbol_name: String) -> Result<String, String> {
-    use engine_tool_system::lsp_integration::LspContextProvider;
-    let provider = LspContextProvider::new();
-    if let Ok(current_dir) = std::env::current_dir() {
-        let _ = provider
-            .index_project(current_dir.to_string_lossy().as_ref())
-            .await;
-    }
-    match provider.get_symbol_context(&symbol_name, None).await {
-        Ok(ctx) => Ok(format!(
-            "{} '{}' at {}:{}",
-            ctx.symbol.kind, ctx.symbol.name, ctx.symbol.file_path, ctx.symbol.line
-        )),
-        Err(e) => Err(e),
-    }
-}
-
-#[tauri::command]
-async fn get_cumulative_stats(
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let stats = state.token_tracker.get_global_stats().await;
-
-    let mut by_provider = serde_json::Map::new();
-    for (k, v) in &stats.by_provider {
-        by_provider.insert(
-            k.clone(),
-            serde_json::json!({
-                "prompt_tokens": v.prompt_tokens,
-                "completion_tokens": v.completion_tokens,
-                "total_tokens": v.total_tokens,
-                "request_count": v.request_count
-            }),
-        );
-    }
-
-    let mut by_day = serde_json::Map::new();
-    for (k, v) in &stats.by_day {
-        by_day.insert(
-            k.clone(),
-            serde_json::json!({
-                "prompt_tokens": v.prompt_tokens,
-                "completion_tokens": v.completion_tokens,
-                "total_tokens": v.total_tokens,
-                "request_count": v.request_count
-            }),
-        );
-    }
-
-    Ok(serde_json::json!({
-        "total": {
-            "prompt_tokens": stats.total.prompt_tokens,
-            "completion_tokens": stats.total.completion_tokens,
-            "total_tokens": stats.total.total_tokens,
-            "request_count": stats.total.request_count
-        },
-        "by_provider": by_provider,
-        "by_day": by_day
-    }))
-}
-
-// sanitize_description, DesktopAgentTurnDriver, UiBridgeGovernance moved to startup.rs
-
-#[tauri::command]
-async fn resolve_agent_approval(
-    request_id: String,
-    approved: bool,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let mut map = state.pending_approvals.lock().await;
-    if let Some(tx) = map.remove(&request_id) {
-        let _ = tx.send(approved);
-        Ok(())
-    } else {
-        Err("No pending approval found for this request_id".to_string())
-    }
-}
 
 // ------------------------------------------------------------------
 // Main
@@ -3201,71 +1352,71 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::info::greet,
-            read_file,
-            write_file,
-            list_dir,
-            create_dir,
-            rename_path,
-            delete_path,
-            list_tools,
-            execute_tool,
-            get_providers,
-            get_provider_configs,
-            add_provider_config,
-            update_provider_config,
-            delete_provider_config,
-            validate_provider,
-            get_current_workspace,
-            export_provider_backup,
-            import_provider_backup,
-            record_stream_diagnostic,
-            get_stream_diagnostic_info,
-            stream_chat,
-            compact_context,
-            optimize_context,
+            commands::fs::read_file,
+            commands::fs::write_file,
+            commands::fs::list_dir,
+            commands::fs::create_dir,
+            commands::fs::rename_path,
+            commands::fs::delete_path,
+            commands::tool::list_tools,
+            commands::tool::execute_tool,
+            commands::provider::get_providers,
+            commands::provider::get_provider_configs,
+            commands::provider::add_provider_config,
+            commands::provider::update_provider_config,
+            commands::provider::delete_provider_config,
+            commands::provider::validate_provider,
+            commands::info::get_current_workspace,
+            commands::provider::export_provider_backup,
+            commands::provider::import_provider_backup,
+            commands::info::record_stream_diagnostic,
+            commands::info::get_stream_diagnostic_info,
+            commands::agent::stream_chat,
+            commands::tool::compact_context,
+            commands::tool::optimize_context,
             // B-05/01 Profile
-            list_profiles,
-            get_active_profile,
-            set_active_profile,
-            create_profile,
-            delete_profile,
+            commands::profile::list_profiles,
+            commands::profile::get_active_profile,
+            commands::profile::set_active_profile,
+            commands::profile::create_profile,
+            commands::profile::delete_profile,
             // B-05/02 Agent provider
-            get_agent_providers,
-            set_agent_provider,
-            create_agent_with_provider,
-            run_agent_task,
+            commands::agent::get_agent_providers,
+            commands::agent::set_agent_provider,
+            commands::agent::create_agent_with_provider,
+            commands::agent::run_agent_task,
             // B-05/03 Audit
-            get_audit_logs,
+            commands::info::get_audit_logs,
             // B-02/06 Trace
-            subscribe_agent_trace,
+            commands::agent::subscribe_agent_trace,
             // B-03/06 Governance
-            pause_loop,
-            resume_loop,
-            set_approval_level,
-            inject_memory,
-            update_plan,
+            commands::governance::pause_loop,
+            commands::governance::resume_loop,
+            commands::governance::set_approval_level,
+            commands::governance::inject_memory,
+            commands::governance::update_plan,
             // B-04/06 Checkpoint
-            list_checkpoints,
-            restore_checkpoint,
-            compare_checkpoints,
-            export_checkpoint,
+            commands::checkpoint::list_checkpoints,
+            commands::checkpoint::restore_checkpoint,
+            commands::checkpoint::compare_checkpoints,
+            commands::checkpoint::export_checkpoint,
             // B-05/06 Resource
-            get_resource_metrics,
-            subscribe_resource_alerts,
+            commands::info::get_resource_metrics,
+            commands::agent::subscribe_resource_alerts,
             // Phase 4 Day 3: Inline Editing
-            apply_edits,
-            preview_edit,
-            get_ast_context,
+            commands::tool::apply_edits,
+            commands::tool::preview_edit,
+            commands::tool::get_ast_context,
             // Phase 4 Day 5: Command Palette & Observability
-            get_edit_history,
-            run_agent_command,
+            commands::info::get_edit_history,
+            commands::agent::run_agent_command,
             // P1-03/05: Token cumulative stats
-            get_cumulative_stats,
+            commands::info::get_cumulative_stats,
             // Day 12: Context capacity probe
-            probe_provider_context_capacity,
-            get_probe_result,
+            commands::tool::probe_provider_context_capacity,
+            commands::tool::get_probe_result,
             commands::info::get_latest_receipt,
-            resolve_agent_approval,
+            commands::governance::resolve_agent_approval,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -3276,6 +1427,9 @@ mod tests {
     #![allow(deprecated)]
 
     use super::*;
+    use crate::commands::tool::{apply_edits_with_base_dir, EditHunkPayload, preview_edit_for_path, preview_edit_with_base_dir};
+    use crate::state::{PendingApprovalMap, await_ui_approval_response};
+    use crate::commands::agent::AgentUiEvent;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -3334,7 +1488,7 @@ mod tests {
 
     #[test]
     fn agent_outcome_output_returns_success_message() {
-        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::SuccessWithMessage(
+        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::SuccessWithMessage(
             "a\nb\nc".to_string(),
         ));
 
@@ -3343,14 +1497,14 @@ mod tests {
 
     #[test]
     fn agent_outcome_output_keeps_legacy_success() {
-        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::Success);
+        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::Success);
 
         assert_eq!(output, "Success");
     }
 
     #[test]
     fn agent_outcome_output_keeps_failure_debug_shape() {
-        let output = agent_outcome_output(agent_core::agent_loop::LoopOutcome::ActFailed(
+        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::ActFailed(
             "boom".into(),
         ));
 
