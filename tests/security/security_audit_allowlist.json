@@ -40,5 +40,19 @@
     "pattern": "innerHTML",
     "reason": "Extracted Right Inspector rendering logic inherits legacy innerHTML rendering debt.",
     "expires_at": "2026-08-21"
+  },
+  {
+    "rule_id": "DOM-HTML-001",
+    "path": "src/interface/web/views/command-palette-view.js",
+    "pattern": "innerHTML",
+    "reason": "Extracted command palette view inherits legacy innerHTML rendering debt.",
+    "expires_at": "2026-08-21"
+  },
+  {
+    "rule_id": "DOM-HTML-001",
+    "path": "src/interface/web/views/session-list-view.js",
+    "pattern": "innerHTML",
+    "reason": "Extracted session list view inherits legacy innerHTML rendering debt.",
+    "expires_at": "2026-08-21"
   }
 ]

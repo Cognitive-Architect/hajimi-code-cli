@@ -72,14 +72,13 @@ const coreDomIds = [
   'contextReceiptBody',
   'fileTree',
   'modelSelectBtn',
-];
-
-const expectedUncoveredIds = new Set([
   'commandPalette',
   'commandInput',
   'commandList',
   'sessionList',
-]);
+];
+
+const expectedUncoveredIds = new Set([]);
 
 function read(relPath) {
   return fs.readFileSync(path.join(root, relPath), 'utf8');
@@ -90,12 +89,23 @@ function lineOf(text, index) {
 }
 
 function listJsFiles() {
-  const moduleFiles = fs
-    .readdirSync(path.join(root, paths.modulesDir))
-    .filter((name) => name.endsWith('.js'))
-    .sort()
-    .map((name) => path.join(paths.modulesDir, name).replace(/\\/g, '/'));
-  return [paths.app, ...moduleFiles];
+  const dirs = [
+    'src/interface/web/modules',
+    'src/interface/web/controllers',
+    'src/interface/web/services',
+    'src/interface/web/views',
+  ];
+  let files = [paths.app];
+  for (const dir of dirs) {
+    const fullDir = path.join(root, dir);
+    if (fs.existsSync(fullDir)) {
+      const dirFiles = fs.readdirSync(fullDir)
+        .filter((name) => name.endsWith('.js'))
+        .map((name) => path.join(dir, name).replace(/\\/g, '/'));
+      files = files.concat(dirFiles);
+    }
+  }
+  return files.sort();
 }
 
 function listTestFiles() {
@@ -278,7 +288,14 @@ function buildIdRows(htmlIds, jsIdRefs, cssIdRefs, coverageFor) {
 
 function main() {
   const html = read(paths.html);
-  const css = read(paths.css);
+  let css = read(paths.css);
+  const stylesDir = 'src/interface/web/styles';
+  if (fs.existsSync(path.join(root, stylesDir))) {
+    const cssFiles = fs.readdirSync(path.join(root, stylesDir))
+      .filter((name) => name.endsWith('.css'))
+      .map((name) => fs.readFileSync(path.join(root, stylesDir, name), 'utf8'));
+    css += '\n' + cssFiles.join('\n');
+  }
   const jsFiles = listJsFiles();
   const testFiles = listTestFiles();
 

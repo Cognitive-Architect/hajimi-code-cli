@@ -3,20 +3,35 @@
 > **ID**: `DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN`
 > **Priority**: **P1**
 > **Date**: 2026-06-01
-> **Status**: `FIXED-CANDIDATE / NEEDS-RECHECK`
-> **Scope**: Desktop `/agent`, LLM-Native multi-turn loop, repeated tool calls, token budget meltdown
+> **Last Updated**: 2026-06-01
+> **Status**: `FIXED-CANDIDATE / REAL-WEBVIEW-SMOKE-PASSED / NEEDS-RECHECK`
+> **Scope**: Desktop `/agent`, LLM-Native multi-turn loop, repeated read-only tool calls, token budget meltdown
+> **Fix Commits**: `50681745`, `8c776e7e`, `8dcb52ea`, `54e47c21`
+> **Validation Commit**: `15a64acf`
 
 ---
 
-## 1. Problem Summary
+## 1. Current Conclusion
 
-After the `/agent` final-message propagation and Thinking UI leak fixes were packaged, a real desktop smoke test shows a new failure mode:
+This debt is no longer an open implementation blocker.
+
+The Day 1-3 code pass fixed the observed LLM-Native loop meltdown path, and the Day 4 validation pass recorded both automated regression evidence and one real desktop WebView smoke pass.
+
+Current status is still **not marked fully closed** because the project keeps real GUI validation conservative. The debt should remain visible until a later QA pass confirms the same smoke on a clean release/install path and records durable evidence.
+
+Plain-language read: the kitchen fire was put out, and one cooked meal came out correctly. We are not deleting the fire report yet; we are keeping it on the clipboard until another person checks the stove once more.
+
+---
+
+## 2. Original Failure
+
+The failure was first observed with this real desktop prompt:
 
 ```text
 /agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。
 ```
 
-Observed UI result:
+Observed UI result before the fix:
 
 ```text
 智能体在执行动作时失败:
@@ -24,7 +39,7 @@ Observed UI result:
 Preserving execution state. Total tokens: 8611" (ActFailed)
 ```
 
-Observed Agent Trace:
+Observed Agent Trace before the fix:
 
 ```text
 LLM-Native driver completed with failure:
@@ -38,268 +53,253 @@ ToolExecutionStarted: Tool 'list_directory' execution started.
 GovernanceApproved: Tool 'list_directory' approval granted.
 ```
 
-Technical read: LLM-Native successfully reaches model/tool execution, but the multi-turn loop repeats `list_directory` and crosses the 8192 token meltdown threshold before producing a successful final answer.
+Technical read: LLM-Native successfully reached model/tool execution, but the multi-turn loop repeated the same directory-listing work and crossed the 8192 token meltdown threshold before producing a successful final answer.
 
-Plain-language read: the agent is no longer stuck at the door, and it can enter the kitchen. But it keeps checking the same ingredient shelf again and again. The shopping list grows too thick, so the safety meter trips before dinner is served.
-
----
-
-## 2. Evidence Collected
-
-### 2.1 Real WebView evidence
-
-The 2026-06-01 desktop screenshot shows:
-
-- The app is running the newly packaged release.
-- `/agent` command starts successfully.
-- Agent Trace reaches `LLM step 3`.
-- `list_directory` is executed successfully more than once.
-- Final result is `ActFailed` with `Budget Exceeded`.
-- The recorded total token count is `8611`, above the current hard threshold of `8192`.
-
-This proves the active failure is not:
-
-- DeepSeek schema 400.
-- Missing LLM call.
-- Tool approval hang.
-- Frontend Thinking UI leakage.
-- Final result dropped as only `Success`.
-
-The active failure is a backend LLM-Native loop/budget convergence issue.
-
-### 2.2 Code-path evidence
-
-Relevant code:
-
-- `src/intelligence/agent-core/llm_native/turn.rs`
-  - `history.push(next_msg.clone())` happens before token-budget checking.
-  - `token_tracker.total_tokens() >= 8192` returns a failure immediately.
-  - `match next_msg` that checks whether the assistant has final content happens after the meltdown check.
-
-Risky ordering:
-
-```text
-model step returns
--> append assistant message to history
--> add token usage
--> if total >= 8192: return Budget Exceeded failure
--> only then inspect whether next_msg was final answer or tool call
-```
-
-This means a model step that already returned final content can still be discarded if the budget check fires first.
-
-- `src/intelligence/agent-core/llm_native/driver.rs`
-  - Every step maps all previous history to chat messages.
-  - Every step appends the raw user intent again at the end.
-  - Every step calls `stream_chat_with_tools(..., ToolChoiceMode::Auto)`.
-
-Risky prompt shape:
-
-```text
-history so far
-+ original user request again
-+ all 40 model-visible tools again
-+ tool_choice = auto
-```
-
-This can encourage repeated tool calls because the model sees the same user request after tool results.
-
-- `src/engine/tool-system/src/directory.rs`
-  - `list_directory` returns JSON for directory entries.
-  - Even non-recursive output includes full paths, size, modified, and type fields.
-
-Risky output shape:
-
-```text
-The user only asked for 10 names.
-The tool may return richer JSON than needed.
-The rich JSON is fed back into model history.
-Repeated calls multiply token usage.
-```
-
-Plain-language read: each loop asks the assistant again with the full instruction book, then pastes the full receipt back into the chat. If it does that two or three times, even a small task can overflow the budget drawer.
+Plain-language read: the agent could enter the kitchen, but it kept checking the same shelf again and again. The shopping receipt became too thick, so the safety meter tripped before dinner was served.
 
 ---
 
-## 3. User-Visible Impact
+## 3. Root Cause
 
-- A simple read-only `/agent` task fails even though tool execution itself succeeds.
-- The UI shows an alarming `ActFailed` result for a task that should be easy.
-- DeepSeek usage can increase without producing a user-visible answer.
-- Users may mistake the issue for provider failure, but the trace shows the provider and tool are working.
-- The test route becomes noisy because the agent can fail from budget meltdown before validating newer frontend fixes.
+The failure was a backend LLM-Native convergence issue, not a provider-schema or frontend-rendering issue.
 
----
+Main causes:
 
-## 4. Relationship To Existing Debts
+1. **Final answer checked too late**
+   - In `src/intelligence/agent-core/llm_native/turn.rs`, token meltdown checking happened before final assistant content was inspected.
+   - A model step that already returned usable final content could still be discarded if accumulated token usage crossed the threshold first.
 
-This debt is related to but distinct from:
+2. **Current user intent was re-appended too often**
+   - In `src/intelligence/agent-core/llm_native/driver.rs`, each model step could see the same raw user request appended again after prior tool results.
+   - This made the model more likely to repeat the same read-only tool call instead of answering from the existing result.
 
-```text
-DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG
-DEBT-AGENT-LLM-NATIVE-SUCCESS-RESULT-DROPPED
-DEBT-AGENT-LLM-NATIVE-THINKING-LEAK
-```
+3. **Duplicate read-only tool calls had no local guard**
+   - The same read-only tool with the same arguments could be approved and executed repeatedly inside one LLM-Native turn.
+   - For `list_directory`, that multiplied tool-result history and token usage.
 
-Those debts targeted:
+4. **Tool results were too easy to re-feed in large form**
+   - Even a simple directory listing can become expensive when repeated across model turns.
 
-- Tool schema and provider 400 errors.
-- Read-only tool approval hang.
-- Successful result message propagation.
-- Removing `<thinking>...</thinking>` from the final answer body.
-
-This debt targets:
-
-- LLM-Native multi-turn convergence.
-- Repeated same-tool same-argument calls.
-- Token meltdown threshold handling.
-- Prompt/history shape after tool results.
-
-Do not reopen the old debts solely because this smoke failed. The current symptom is later in the pipeline: execution reaches repeated model/tool turns and then trips the budget guard.
+Plain-language read: the assistant was handed the same grocery list more than once, bought the same vegetables more than once, and then the receipt got copied back into the notebook until the notebook overflowed.
 
 ---
 
-## 5. Working Hypothesis
+## 4. Implemented Fix
 
-Most likely chain:
+### 4.1 Day 1 Baseline Coverage
 
-```text
-User asks for first 10 root entries
--> model calls list_directory
--> tool returns directory JSON
--> next LLM step sees tool result plus original user request again
--> model calls list_directory again instead of answering
--> history grows with repeated tool results and repeated 40-tool manifests
--> step 3 pushes total usage to 8611
--> token meltdown guard returns ActFailed before a usable final answer is emitted
-```
-
-Secondary hypothesis:
+Commit:
 
 ```text
-The model may have returned final answer content in step 3,
-but the current token check executes before `match next_msg`,
-so final content could be discarded when total tokens exceed 8192.
+50681745 test(agent): cover llm-native budget meltdown baseline
 ```
 
-This needs code-level instrumentation or a targeted test to confirm.
+Purpose:
 
-Plain-language read: the agent may already have the answer in hand, but the budget alarm rings before the answer is allowed onto the screen.
+- Add regression coverage around the meltdown pattern before changing behavior.
+- Make the failure shape testable in `llm_native`.
+
+### 4.2 Day 2 Final Answer And Intent Handling
+
+Commit:
+
+```text
+8c776e7e fix(agent): preserve llm-native final answers and dedupe current intent
+```
+
+Implemented behavior:
+
+- `turn.rs` now checks final assistant content before hard token meltdown failure.
+- A non-empty assistant answer with no tool calls is preserved as success even if the final step pushes token accounting past the warning line.
+- `driver.rs` now builds chat messages through `build_chat_messages_for_step`.
+- The current `intent.text` is added exactly once when not already present.
+- Existing unrelated user history is preserved without losing the current task.
+
+### 4.3 Day 2 Empty Final Message Guard
+
+Commit:
+
+```text
+8dcb52ea fix(agent): reject empty or whitespace assistant message without tool calls
+```
+
+Implemented behavior:
+
+- Empty or whitespace-only assistant content is not treated as a successful final answer.
+- The loop returns a clear handoff message instead of silently marking success.
+
+### 4.4 Day 3 Duplicate Read-Only Tool Suppression
+
+Commit:
+
+```text
+54e47c21 feat(intelligence/agent-core): duplicate read-only tool suppression in llm-native turn
+```
+
+Implemented behavior:
+
+- `turn.rs` tracks canonical `(tool_name, arguments)` keys for read-only tools during a single turn.
+- If the same read-only tool call repeats with the same arguments, it is suppressed before governance approval and before physical tool execution.
+- The model receives a compact tool result telling it to use the previous result.
+- Failed read-only tool calls are not recorded into the suppression set, so transient failures can still retry.
+- Multibyte truncation uses `chars().take(200).collect()` to avoid slicing Chinese or emoji text in the middle of a character.
+
+Plain-language read: if the assistant already bought tomatoes from the same market with the same list, the cashier says, "you already have this receipt, use it," instead of charging again. If the first purchase failed because the card reader blinked, a retry is still allowed.
 
 ---
 
-## 6. Proposed Fix Direction
+## 5. Validation Evidence
 
-Recommended fix order:
+### 5.1 Automated Regression Checks
 
-1. **Reorder final-answer handling before hard budget failure**
-   - Inspect `next_msg` first.
-   - If it is an assistant message with no tool calls and non-empty content, preserve it as a success, even if the accumulated token counter crossed the warning line on that final step.
-   - Keep budget failure for cases that still request tools or have no final answer.
-
-2. **Avoid re-appending raw user intent every step after tool results**
-   - The original request should appear once as the user message.
-   - Tool follow-up steps should rely on existing history and tool result messages.
-   - If a reminder is needed, use a compact system/developer hint rather than duplicating the full user request.
-
-3. **Add repeated tool-call guard**
-   - Track `(tool_name, arguments)` during a single turn.
-   - If the same read-only tool with the same arguments is requested again, do not execute it again.
-   - Feed the model a compact message such as:
+Day 4 validation commit:
 
 ```text
-Tool result already exists for this request. Use the previous result to answer.
+15a64acf docs(agent): record llm-native budget meltdown validation
 ```
 
-4. **Compact `list_directory` result for model-facing history**
-   - For non-recursive directory listing, consider returning only the fields needed by the model.
-   - At minimum, cap large tool outputs before placing them in LLM history.
+Recorded automated checks:
 
-5. **Make token threshold configurable or context-aware**
-   - The hard `8192` threshold is useful as a safety guard.
-   - It may be too low for a provider/model path that repeatedly sends 40 tools.
-   - Do not simply raise it as the first fix; reduce repeated work first.
+```text
+cargo fmt -- --check
+cargo test -p intelligence-agent-core --lib llm_native
+node tests/frontend/agent_result_rendering_smoke.js
+node tests/frontend/agent_thinking_leak_smoke.js
+node --check src/interface/web/app.js
+cargo check -p hajimi-desktop
+```
 
-Plain-language read: first let a finished answer through the door, then stop asking the same worker to buy the same vegetables twice, then make the grocery receipt shorter.
+Important observed result:
 
----
+```text
+cargo test -p intelligence-agent-core --lib llm_native
+running 49 tests
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 305 filtered out
+```
 
-## 7. Candidate File Modification List
+The targeted test suite covers:
 
-Likely files:
+- Final answer preserved when token usage crosses the warning threshold on the final step.
+- Token meltdown still fails when the model asks for more tools instead of answering.
+- Current user intent seeded exactly once.
+- Unrelated older user history does not suppress the current task.
+- Empty and whitespace-only assistant final messages are rejected.
+- Duplicate read-only tool calls with identical args are suppressed.
+- Same read-only tool with different args is not suppressed.
+- Duplicate write tools are not suppressed by the read-only guard.
+- Existing repeated write safety remains active.
+- Failed read-only calls are not suppressed on later retry.
+- Multibyte result truncation does not panic.
 
-- `src/intelligence/agent-core/llm_native/turn.rs`
-  - Reorder final-content detection relative to token meltdown checks.
-  - Add repeated tool-call guard for same `(tool_name, arguments)`.
-  - Add trace event for duplicate tool-call suppression.
+### 5.2 Real WebView Smoke
 
-- `src/intelligence/agent-core/llm_native/driver.rs`
-  - Stop appending `intent.text` as a new user message on every step, or gate it to the first step only.
-  - Consider adding a compact follow-up instruction after tool results.
-
-- `src/engine/tool-system/src/directory.rs`
-  - Optional later optimization: produce or expose a compact directory-list output for model consumption.
-
-Likely tests:
-
-- `cargo test -p intelligence-agent-core llm_native --lib`
-  - Existing suite must remain green.
-
-- New unit test:
-  - Final assistant content is preserved even if the final step pushes token usage above 8192.
-
-- New unit test:
-  - Repeated `list_directory` with identical args in the same turn is not executed repeatedly.
-
-- New unit test:
-  - Tool-result follow-up does not append raw user intent again on every step.
-
-- Real WebView smoke:
+Day 4 recorded a real desktop smoke using:
 
 ```text
 /agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。
 ```
 
-Expected:
+Expected and observed high-level outcome:
 
 ```text
 Task completes in 1-2 model steps.
-`list_directory` executes at most once for identical args.
-No `Budget Exceeded`.
-Final answer contains the first 10 names.
-No raw `<thinking>` tags in final answer body.
+Directory listing tool executes once for the useful result path.
+No BudgetExceeded.
+Final answer lists the first 10 names.
+No raw <thinking> tags in the final answer body.
+```
+
+Recorded Agent Trace pattern:
+
+```text
+ModelStepStarted: LLM step 1 started
+ToolExecutionSuccess: Tool 'list_dir' executed successfully
+ModelStepStarted: LLM step 2 started
+LLM-Native driver completed successfully after 2 iteration(s)
+```
+
+Recorded release artifact:
+
+```text
+EXE: F:\hajimi-code-cli\target\release\hajimi-desktop.exe
+LastWriteTime: 2026/06/01 17:34:00
+SHA256: 9E9F49CA15FB414E9342460AD9594F2AD576995FC49D0C00B004C5A171DAB9A3
 ```
 
 ---
 
-## 8. Stop Conditions
+## 6. Current Source Files
 
-Stop and record a follow-up debt if any of these happen:
+Primary implementation files:
 
-1. The model repeatedly calls different tools, not the same tool, and the guard does not apply.
-2. The final answer is empty after duplicate tool-call suppression.
-3. Removing repeated raw user intent causes the model to forget the original task.
-4. Token usage still crosses 8192 in one step before any tool result exists.
-5. Raising the token threshold is required before tool repetition and prompt duplication are fixed.
+- `src/intelligence/agent-core/llm_native/turn.rs`
+  - Final answer detection before token meltdown handoff.
+  - Empty assistant response guard.
+  - Duplicate read-only tool suppression.
+  - Compact repeated result handoff.
+  - Multibyte-safe truncation.
+
+- `src/intelligence/agent-core/llm_native/driver.rs`
+  - `build_chat_messages_for_step`.
+  - Current intent deduplication.
+  - Unrelated history preservation.
+
+No Day 4 production-code changes were made. Day 4 only recorded validation and updated debt state.
 
 ---
 
-## 9. Current Conclusion
+## 7. Remaining Risk
 
-The current evidence supports this diagnosis:
+This debt is kept as `FIXED-CANDIDATE` rather than fully closed for these reasons:
+
+1. The real WebView smoke was recorded, but a later clean-install or fresh-workspace QA pass should repeat it.
+2. The guard only suppresses duplicate read-only calls with identical canonical arguments. If the model loops through different tools or slightly different arguments, a separate convergence guard may still be needed.
+3. The model-visible tool list still contains roughly 40 tools. That cost is acceptable for the current smoke, but broader tool-manifest compaction may be useful later.
+4. `list_directory` output compaction was not deeply redesigned. The fix avoided the observed repetition first, which is the correct lower-risk move.
+
+Plain-language read: we stopped the repeated same receipt problem. If the assistant starts visiting ten different stores instead, that is a different problem and should get a new debt note.
+
+---
+
+## 8. Recheck Recipe
+
+Use this exact prompt in the release desktop app:
 
 ```text
-/agent can now reach LLM/tool execution and render failures honestly.
-The active blocker is LLM-Native loop convergence and token budget handling.
+/agent 查看当前工作区根目录下有哪些文件和文件夹，只列出前 10 个名字，不要读取文件内容，不要修改任何文件。
 ```
 
-The next implementation pass should focus on:
+Pass criteria:
+
+- UI reaches task complete, not `ActFailed`.
+- Final answer contains a concise list of root entries.
+- No raw `<thinking>` or `</thinking>` appears in the answer body.
+- Agent Trace shows no `Budget Exceeded`.
+- Same read-only directory call is not physically executed repeatedly with identical arguments.
+- Typical flow finishes in 1-2 model steps.
+
+Fail criteria:
+
+- `Budget Exceeded` returns for the same simple read-only prompt.
+- The model repeatedly executes the same read-only tool with identical args.
+- Final answer is empty or only says `Success`.
+- Raw thinking tags leak into the visible final answer.
+
+If fail criteria reproduce, reopen this debt and attach the trace event sequence.
+
+---
+
+## 9. Closure Rule
+
+This debt can be moved from `FIXED-CANDIDATE` to `CLOSED` only after a follow-up QA pass records:
 
 ```text
-1. preserve final content before budget meltdown failure,
-2. avoid repeated raw user-intent injection,
-3. suppress duplicate read-only tool calls,
-4. compact model-facing tool results.
+1. release or installer path used,
+2. exact prompt used,
+3. final answer screenshot or transcript,
+4. Agent Trace showing no BudgetExceeded,
+5. evidence that duplicate read-only calls are suppressed or absent,
+6. confirmation that no raw thinking tags are visible.
 ```
 
-This is a backend agent-loop debt, not a frontend Thinking UI debt.
+Do not close this debt from unit tests alone.

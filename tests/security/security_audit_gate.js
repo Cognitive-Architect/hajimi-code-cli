@@ -22,6 +22,22 @@ function readText(repoPath) {
   return fs.readFileSync(path.join(repoRoot, repoPath), 'utf8');
 }
 
+function readDesktopCombined() {
+  let text = "";
+  if (fs.existsSync(path.join(repoRoot, 'src/interface/desktop/src/registry.rs'))) {
+    text += '\n' + readText('src/interface/desktop/src/registry.rs');
+  }
+  const commandsDir = path.join(repoRoot, 'src/interface/desktop/src/commands');
+  if (fs.existsSync(commandsDir)) {
+    const files = fs.readdirSync(commandsDir).filter(f => f.endsWith('.rs'));
+    for (const file of files) {
+      text += '\n' + fs.readFileSync(path.join(commandsDir, file), 'utf8');
+    }
+  }
+  text += '\n' + readText('src/interface/desktop/src/main.rs');
+  return text;
+}
+
 function readSnippet(file, line) {
   if (!file || !line) return '';
   const fullPath = path.join(repoRoot, file);
@@ -207,7 +223,7 @@ function scanShellAllowList() {
 }
 
 function scanDesktopCommandAllowList() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   const block = raw.match(/const\s+ALLOWED_COMMANDS:[\s\S]*?=\s*&\[(?<body>[\s\S]*?)\];/);
   if (!block) {
     return;
@@ -223,7 +239,7 @@ function scanDesktopCommandAllowList() {
 }
 
 function scanRunCommandExposure() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   if (/fn\s+run_command\s*\(/.test(raw)) {
     addFailure('SHELL-ALLOW-001', desktopMainPath, findLine(raw, 'fn run_command'), 'legacy run_command must not be exposed as a naked Tauri command', {
       severity: 'critical',
@@ -237,7 +253,7 @@ function scanRunCommandExposure() {
 }
 
 function scanConfirmationTokenNotPublicMint() {
-  const desktopRaw = readText(desktopMainPath);
+  const desktopRaw = readDesktopCombined();
   if (desktopRaw.includes('create_tool_confirmation_token')) {
     addFailure('confirmation-token-not-public-mint', desktopMainPath, findLine(desktopRaw, 'create_tool_confirmation_token'), 'frontend-mintable confirmation token command must not exist');
   }
@@ -267,7 +283,7 @@ function scanTauriGlobalApiUsage(files) {
 }
 
 function scanDesktopToolGate() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   const executeToolIndex = raw.indexOf('async fn execute_tool');
   if (executeToolIndex < 0) {
     addFailure('desktop-execute-tool-missing', desktopMainPath, 1, 'execute_tool command not found');
@@ -285,7 +301,7 @@ function scanDesktopToolGate() {
 }
 
 function scanWorkspaceBoundFileTools() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   const required = [
     'ReadFileTool::with_allowed_paths',
     'WriteFileTool::with_allowed_paths',
@@ -300,7 +316,7 @@ function scanWorkspaceBoundFileTools() {
 }
 
 function scanInlineEditWorkspaceResolver() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   for (const command of ['async fn apply_edits', 'fn preview_edit']) {
     const index = raw.indexOf(command);
     if (index < 0) {
@@ -328,7 +344,7 @@ function scanFileOpsBypass(files) {
 }
 
 function scanProviderWorkspaceConfigSecurity() {
-  const raw = readText(desktopMainPath);
+  const raw = readDesktopCombined();
   const commands = [
     'fn get_provider_configs',
     'fn add_provider_config',

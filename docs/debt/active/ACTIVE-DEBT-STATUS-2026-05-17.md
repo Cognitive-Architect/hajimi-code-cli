@@ -2,12 +2,12 @@
 
 > Revision Date: 2026-06-01
 > Branch: `feature/toolfix-deepseek-schema`
-> HEAD: `54e47c21`
+> HEAD: `15a64acf`
 > Scope: `docs/debt` debt triage after DebtFix V5 Day 1-11 milestones (P0 Security, Thinking UI, Long Context, Frontend modularization).
 > Archive target: `archive/05/debt-history`
 
 > [!NOTE]
-> **日期口径说明**: 本文档基础快照日期维持在 `2026-05-17` 以保持历史基线口径一致性。本次修订于 `2026-05-25` 注入，作为 **DebtFix V5** 全量收卷阶段的技术债务最新状态更新。
+> **日期口径说明**: 本文档基础快照日期维持在 `2026-05-17` 以保持历史基线口径一致性。本次修订于 `2026-06-01` 注入，作为 `/agent` LLM-Native 修复与 Day 4 验证后的技术债务最新状态更新。
 
 ## 1. Conclusion
 
@@ -26,6 +26,7 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 - `AD-005`: Thinking UI stream parser is completed under TDD mode for the current fixture matrix (tested against SSE split-chunks and malformed tokens); checkpoint management is integrated; remaining trace/checkpoint depth is ready for WebView verification.
 - `AD-006`: Agent Prompt productization is improved but not fully productized.
 - `AD-008`: Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green.
+- `AD-011`: Required/Critical Agent approval UI is confirmed broken in real packaged WebView for `write_file`: backend emits/waits/times out, but no user-facing approve/reject surface appears.
 
 ## 2. Verification Performed
 
@@ -52,12 +53,12 @@ Excluding manual real-machine verification debt, the still-unhandled active debt
 | AD-008 SecurityAuditTool quality | `IMPLEMENTED/GATED` | P2 | archived B16 receipt; `tests/security/security_audit_gate.js` | Security Audit Gate V1 has been hardened with anti-regression gates for inline edits, command execution, and workspace sandboxes, passing green. Remaining work is AST-level syntax scanning, narrower allowlist precision, and broader sink coverage. |
 | AD-009 Agent Skills V0 integration | `PARTIAL` | P2 | `docs/debt/DEBT-AGENT-SKILLS-V0.md` | Agent Skills V0 is partially integrated: V0a (manifest, registry, router, planner/reflector injection, output evaluation) and V0b (constrained runtime permissions) are complete. V0c (Blackboard receipts and templates) is partially completed; Graph memory, Cloud sync, and Interface list-validate are deferred. |
 | AD-010 Agent UI integration | `CLOSED (CODE-LEVEL AUTOMATION PASS / PENDING-UI-SMOKE)` | **P0** | `docs/debt/DEBT-AGENT-UI-INTEGRATION.md`; `docs/debt/DEBT-AGENT-UI-REMEDIATION.md` | CLOSED at code and automation level. /agent command bridged to agent_loop, trace parser parses SSE dynamic events, Right Inspector renders Observe->Decide progression, Operation Summary, E2E oneshot approval dialog, checkpoint badges dynamically match. Residual UI smoke remains. |
-| AD-011 Agent Governance UI waiting | `IMPLEMENTED/PENDING-UI-SMOKE` | P1 | `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Agent Governance UI approval bridge requires user intervention (Required/Critical levels); blocks tokio thread via oneshot channels; UI modal is dynamic glassmorphism; pending physical WebView smoke verification. |
+| AD-011 Agent Governance UI waiting | `CONFIRMED-FAILED-REAL-WEBVIEW-SMOKE / APPROVAL-UI-NOT-REACHABLE` | **P0** | `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Real packaged desktop `/agent` write-file smoke proved the backend correctly classifies `write_file` as Critical, emits/waits for approval, and times out safely after 30s, but the user sees no approval modal or queue. Likely seam: frontend `setupGovernance()` listens through `window.__TAURI__.event.listen` while `tauri.conf.json` has `withGlobalTauri: false`; the centralized `window.HajimiTauri` bridge currently lacks event listening. |
 | AD-012 Agent Checkpoint Diff Preview UI | `EXPLORED/PARTIAL-UI` | P1 | `docs/debt/DEBT-AGENT-CHECKPOINT-DIFF-UI.md` | Agent execution trace events do not contain granular raw file diff details or physical content snapshots, resulting in empty restore/compare states for trace-driven checkpoints; mitigated via premium checkpoint ID badge linking and honest user warnings. |
 | AD-013 Agent Loop LLM No-Op | CLOSED (CODE-LEVEL AUTOMATION PASS / PENDING-UI-SMOKE) | **P0** | `docs/debt/DEBT-AGENT-LOOP-LLM-NO-OP.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-MIGRATION.md` | CLOSED at code and automation level. Arc-Mutex ToolRegistry desktop main injection (Day 4) and LLM Bootstrap mechanism (Day 5) are 100% active and verified. Real Goal->Plan->ToolCall->LLM->Execution->Reflect chain is live. |
-| AD-015 Agent LLM-Native Approval Hang | `CODE-LEVEL FIXED + RELEASE PACKAGED / PENDING-REAL-WEBVIEW-SMOKE` | **P0** | `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md`; `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Code now classifies read-only tools such as `list_directory` as low-risk, forwards native tool/governance events to Agent Trace, removes the duplicate tool-executor approval wait, and times out stale WebView approval requests after 30s with pending cleanup. A Tauri release package has been rebuilt; full closure still requires a real WebView `/agent` smoke. |
-| AD-016 Agent LLM-Native Thinking Leak | `OPEN / DIAGNOSED` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md`; `docs/debt/DEBT-THINKING-UI.md` | Real WebView `/agent` smoke now displays final content, but raw `<thinking>...</thinking>` tags leak into the final answer body. The likely gap is the `/agent` result branch in `app.js` not reusing the existing Thinking UI parser before rendering successful result output. |
-| AD-017 Agent LLM-Native Budget Meltdown | `FIXED-CANDIDATE / PENDING-REAL-WEBVIEW-SMOKE` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md` | Code-level fixed via: 1) reordering final assistant answer detection before token warning meltdown checks; 2) deduplicating active user intent seeding to run exactly once; 3) introducing recursive sorting and pre-governance suppression for duplicate read-only tool calls. Only real WebView verification is pending. |
+| AD-015 Agent LLM-Native Approval Hang | `CODE-LEVEL FIXED + RELEASE PACKAGED / READ-ONLY WEBVIEW-SMOKE-PASSED / WRITE-APPROVAL-UI-BLOCKED` | **P0** | `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md`; `docs/debt/DEBT-AGENT-GOVERNANCE-UI-WAITING.md` | Read-only `/agent` directory-list smoke now completes without BudgetExceeded and without raw thinking leakage. The remaining approval-path blocker is AD-011: mutating tools such as `write_file` correctly wait and time out, but the packaged frontend does not expose an approval UI. |
+| AD-016 Agent LLM-Native Thinking Leak | `CODE-LEVEL FIXED / SMOKE-CONFIRMED-IN-AGENT-DIRECTORY-CASE` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-THINKING-LEAK.md`; `docs/debt/DEBT-THINKING-UI.md` | The `/agent` result path now strips/parses raw `<thinking>...</thinking>` before rendering final content. Day 4 directory-list WebView smoke observed no raw thinking tags in the final answer. Broader Thinking UI/checkpoint closure remains tracked under `DEBT-THINKING-UI.md`. |
+| AD-017 Agent LLM-Native Budget Meltdown | `FIXED-CANDIDATE / REAL-WEBVIEW-SMOKE-PASSED / NEEDS-RECHECK` | **P1** | `docs/debt/DEBT-AGENT-LLM-NATIVE-BUDGET-MELTDOWN.md`; `docs/debt/DEBT-AGENT-LLM-NATIVE-APPROVAL-HANG.md` | Day 1-3 code-level fixed via: 1) final assistant answer detection before token warning meltdown checks; 2) current user-intent seeding exactly once; 3) empty/whitespace assistant final-message rejection; 4) pre-governance suppression for duplicate read-only tool calls with identical canonical arguments. Day 4 automated checks passed, release `hajimi-desktop.exe` was rebuilt, and one real WebView `/agent` directory-list smoke passed with no `Budget Exceeded`. Keep as fixed-candidate until a follow-up clean-release QA recheck records durable evidence. |
 
 ## 4. Manual Verification Debt
 
