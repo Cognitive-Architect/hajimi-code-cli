@@ -13,7 +13,11 @@ const files = [
 ];
 
 const dirs = [
+  'controllers',
   'modules',
+  'services',
+  'styles',
+  'views',
 ];
 
 function copyFile(relativePath) {
