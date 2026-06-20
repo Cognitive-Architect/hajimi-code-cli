@@ -3,117 +3,11 @@
 // ============================================================
 
 window.app = {
-  // State
-  tabs: [],
-  activeTab: null,
-  sidebarView: 'ai-chat',
-  panelView: 'terminal',
-  panelCollapsed: false,
-  isProcessing: false,
-  commands: [],
-  providerConfigs: [],
-  activeProviderId: null,
-  editingProviderId: null,
-  currentWorkspace: null,
-  fileTree: null,
-  commandHistory: [],
-  commandHistoryIndex: -1,
-  slashPalette: null,
-  settings: {
-    theme: 'dark',
-    fontSize: 14,
-    wordWrap: true,
-    autoSave: 'off',
-  },
-  chatContextFiles: [],
-  chatMessages: [],
-  chatSessions: [],
-  activeSessionId: null,
-  autoCompact: true,
-  isAutoCompacting: false,
-  tokenStats: { promptTokens: 0, completionTokens: 0, estimatedTokens: 0 },
-  cumulativeStats: { promptTokens: 0, completionTokens: 0, requestCount: 0 },
-  showCumulative: false,
-  mcpServers: [],
-  traceEvents: [],
-  tracePaused: false,
-  traceChannel: null,
-  extensions: [
-    { id: 'rust', name: 'Rust', desc: 'Rust 语言支持', version: '1.0.0', publisher: 'rust-lang', icon: 'R', iconColor: 'var(--fg-cyan)', installed: true },
-    { id: 'hajimi-agent', name: 'Hajimi 智能体', desc: 'AI 助手集成', version: '0.3.0', publisher: 'hajimi', icon: 'H', iconColor: 'var(--fg-magenta)', installed: true },
-    { id: 'toml', name: 'TOML', desc: 'TOML 语言支持', version: '0.1.0', publisher: '应用市场', icon: 'T', iconColor: 'var(--fg-green)', installed: false },
-    { id: 'python', name: 'Python', desc: 'Python 语言支持', version: '1.2.0', publisher: 'microsoft', icon: 'P', iconColor: 'var(--fg-cyan)', installed: false },
-    { id: 'go', name: 'Go', desc: 'Go 语言支持', version: '0.5.0', publisher: 'golang', icon: 'G', iconColor: 'var(--fg-cyan)', installed: false },
-    { id: 'docker', name: 'Docker', desc: 'Dockerfile 和 Compose 支持', version: '1.0.0', publisher: 'microsoft', icon: 'D', iconColor: 'var(--fg-cyan)', installed: false },
-  ],
-  installedExtensions: [],
-
   init() {
-    this.setupDialogTrace();
-    this.setupActivityBar();
-    this.setupChat();
-    this.setupCommandPalette();
-    this.setupKeyboardShortcuts();
-    this.setupStatusBar();
-    this.setupTraceTabs();
-    this.setupSessionReplay();
-    this.setupFileTreeToolbar();
-    this.setupAgentTrace();
-    this.loadSettings();
-    this.setupSystemThemeListener();
-    this.loadLayoutSizes();
-    this.initWorkspace().then(() => {
-      this.loadFileTree();
-    });
-    this.loadChatSessions();
-    this.loadProviders();
-    this.setupModelPicker();
-    this.setupProviderSettings();
-    this.loadProfiles();
-    this.setupProfileSettings();
-    this.setupAuditLog();
-    this.loadCumulativeFromBackend();
-    this.setupAgentProvider();
-    this.setupMcpSettings();
-    this.setupGovernance();
-    this.setupSessionBrowser();
-    this.setupResourceDashboard();
-    this.setupInspector();
-    this.setupSettingsTabs();
-    this.setupMoreMenus();
-    this.setupLiveShellControls();
-    this.setupReceiptPanel(); // Day 13: wire Context Receipt inspector tab
-    this.renderLiveShellState('就绪');
-    this.updateGitBranch();
-
-    // Build command list
-    const commandCatalogFactory = window.HajimiCommandPaletteCatalog?.createCommandPaletteCatalog;
-    this.commands = commandCatalogFactory ? commandCatalogFactory(this) : [
-      { id: 'file.open', label: '文件: 打开文件', key: 'Ctrl+O', action: () => this.openFilePrompt() },
-      { id: 'file.openFolder', label: '文件: 打开文件夹', key: 'Ctrl+K Ctrl+O', action: () => this.openFolder() },
-      { id: 'view.chat-sessions', label: '视图: 显示会话列表', key: 'Ctrl+Shift+C', action: () => this.showSidebar('chat-sessions') },
-      { id: 'view.explorer', label: '视图: 显示文件', key: 'Ctrl+Shift+E', action: () => this.showSidebar('explorer') },
-      { id: 'view.providers', label: '视图: 显示模型设置', key: 'Ctrl+Shift+M', action: () => { this.showSidebar('settings'); this.switchSettingsTab('providers'); } },
-      { id: 'view.governance', label: '视图: 显示治理控制', key: 'Ctrl+Shift+G', action: () => { this.showSidebar('settings'); this.switchSettingsTab('governance'); } },
-      { id: 'view.audit', label: '视图: 显示审计日志', key: 'Ctrl+Shift+Y', action: () => { this.showSidebar('settings'); this.switchSettingsTab('audit'); } },
-      { id: 'view.settings', label: '视图: 显示设置', key: 'Ctrl+Shift+S', action: () => this.showSidebar('settings') },
-      { id: 'palette', label: '命令面板', key: 'Ctrl+Shift+P', action: () => this.showCommandPalette() },
-      { id: 'chat.new', label: '对话: 新会话', key: '', action: () => this.newChatSession() },
-      { id: 'git.commit', label: 'Git: 提交', key: '', action: () => this.gitCommit() },
-      { id: 'providers.refresh', label: '模型: 刷新提供商列表', key: '', action: () => this.loadProviders() },
-      { id: 'audit.log', label: '系统: 刷新审计日志', key: '', action: () => this.loadAuditLogs() },
-      { id: 'system.resources', label: '系统: 打开资源监控', key: '', action: () => { this.showSidebar('settings'); this.switchSettingsTab('audit'); } },
-      { id: 'session.export', label: '会话: 导出所有检查点', key: '', action: () => this.exportAllCheckpoints() },
-      { id: 'trace.clear', label: 'Trace: 清空', key: '', action: () => this.clearTraceCards() },
-      { id: 'trace.pause', label: 'Trace: 暂停/继续', key: '', action: () => this.toggleTracePause() },
-      // Phase 4 Day 5: Agent Command Palette commands
-      { id: 'agent.refactor', label: '@agent refactor — 重构选中代码', key: '', action: () => this.runAgentCommand('@agent refactor selection') },
-      { id: 'agent.review-pr', label: '@agent review-pr — 审查 PR', key: '', action: () => this.runAgentCommand('@agent review-pr') },
-      { id: 'agent.continue', label: '@agent continue-background — 后台继续', key: '', action: () => this.runAgentCommand('@agent continue-background') },
-      { id: 'agent.pause', label: '@agent pause — 暂停 Agent', key: '', action: () => this.runAgentCommand('@agent pause') },
-      { id: 'agent.status', label: '@agent status — Agent 状态', key: '', action: () => this.runAgentCommand('@agent status') },
-      { id: 'edit.history', label: '编辑: 显示编辑历史', key: '', action: () => this.showEditHistoryTab() },
-    ];
+    if (!window.HajimiAppBootstrap || typeof window.HajimiAppBootstrap.runAppBootstrap !== 'function') {
+      throw new Error('HajimiAppBootstrap is required before app.init()');
+    }
+    return window.HajimiAppBootstrap.runAppBootstrap(this);
   },
 
   setupDialogTrace() {
@@ -5565,4 +5459,32 @@ window.app = {
     document.getElementById('gitCommitBtn')?.addEventListener('click', () => app.gitCommit());
   };
   bindZombieBtns(); // one-time bind post-init
-  app.init(); // Initialize the app
+
+  const loadHajimiAppDependency = (globalName, src) => {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.defer = true;
+      script.addEventListener('load', () => {
+        if (window[globalName]) {
+          resolve(window[globalName]);
+        } else {
+          reject(new Error(`${globalName} did not attach`));
+        }
+      });
+      script.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)));
+      document.head.appendChild(script);
+    });
+  };
+
+  Promise.all([
+    loadHajimiAppDependency('HajimiAppState', 'app/app-state.js'),
+    loadHajimiAppDependency('HajimiAppBootstrap', 'app/bootstrap.js'),
+  ]).then(() => {
+    window.HajimiAppState.applyDefaultAppState(app);
+    app.init(); // Initialize the app
+  }).catch((error) => {
+    console.error('[hajimi] app bootstrap failed', error);
+    if (app.showErrorToast) app.showErrorToast(`App bootstrap failed: ${error.message || error}`);
+  });
