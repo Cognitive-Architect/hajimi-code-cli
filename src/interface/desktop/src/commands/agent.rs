@@ -1,6 +1,6 @@
 use crate::state::{AppState, EditHistoryEntry};
-use crate::StreamEvent;
 use crate::ProviderConfig;
+use crate::StreamEvent;
 use agent_core::agent_loop::{TraceEvent, TraceStepType};
 use codex_twist::memory::MemoryTier;
 use engine_llm_core::ChatMessage;
@@ -269,7 +269,6 @@ pub async fn stream_chat(
 
     chat_result
 }
-
 
 pub(crate) fn agent_outcome_output(outcome: agent_core::agent_loop::LoopOutcome) -> String {
     match outcome {
@@ -653,5 +652,3 @@ pub async fn subscribe_resource_alerts(on_event: Channel<TraceEvent>) -> Result<
         .map_err(|e| e.to_string())?;
     Ok(())
 }
-
-

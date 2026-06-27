@@ -144,7 +144,11 @@ pub fn create_dir(path: &str, app_handle: tauri::AppHandle) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn rename_path(old_path: &str, new_path: &str, app_handle: tauri::AppHandle) -> Result<(), String> {
+pub fn rename_path(
+    old_path: &str,
+    new_path: &str,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
     let base_dir = crate::get_workspace_dir(&app_handle)?;
     // 源路径必须存在
     let safe_old = resolve_workspace_path(old_path, &base_dir, PathIntent::AnyExisting)?;
@@ -154,7 +158,11 @@ pub fn rename_path(old_path: &str, new_path: &str, app_handle: tauri::AppHandle)
 }
 
 #[tauri::command]
-pub fn delete_path(path: &str, recursive: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
+pub fn delete_path(
+    path: &str,
+    recursive: bool,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
     let base_dir = crate::get_workspace_dir(&app_handle)?;
     let safe_path = resolve_workspace_path(path, &base_dir, PathIntent::AnyExisting)?;
     remove_workspace_path(&safe_path, recursive)

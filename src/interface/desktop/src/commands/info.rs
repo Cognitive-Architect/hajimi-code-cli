@@ -94,7 +94,9 @@ pub fn get_current_workspace(app_handle: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn get_edit_history(state: tauri::State<'_, AppState>) -> Result<Vec<EditHistoryEntry>, String> {
+pub fn get_edit_history(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<EditHistoryEntry>, String> {
     Ok(state.edit_history.blocking_lock().clone())
 }
 
@@ -170,4 +172,3 @@ pub fn get_audit_logs(
 ) -> Result<Vec<crate::audit::KeyUsageRecord>, String> {
     crate::audit::get_logs(limit.unwrap_or(100), offset.unwrap_or(0))
 }
-

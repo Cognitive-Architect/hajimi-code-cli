@@ -1,9 +1,9 @@
 use crate::state::AppState;
+use crate::ToolAuthorization;
 use crate::ToolInfo;
 use crate::ToolResult;
-use crate::ToolAuthorization;
-use engine_tool_system::ToolRegistry;
 use engine_llm_core::ChatMessage;
+use engine_tool_system::ToolRegistry;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -170,8 +170,8 @@ pub fn preview_edit_for_path(
 
 #[tauri::command]
 pub async fn get_ast_context(symbol_name: String) -> Result<String, String> {
-    use engine_tool_system::lsp_integration::LspContextProvider;
     use agent_core::ASTContextProvider;
+    use engine_tool_system::lsp_integration::LspContextProvider;
     let provider = LspContextProvider::new();
     if let Ok(current_dir) = std::env::current_dir() {
         let _ = provider
@@ -344,4 +344,3 @@ pub async fn get_probe_result(provider_id: String, model: String) -> Result<Valu
         Err(_) => Ok(Value::Null),
     }
 }
-
