@@ -1,7 +1,5 @@
 use crate::state::AppState;
-use crate::{
-    ProviderConfig, ProviderConfigView, ProviderInfo,
-};
+use crate::{ProviderConfig, ProviderConfigView, ProviderInfo};
 use engine_llm_core::{openai_chat_completions_url, Client};
 
 #[tauri::command]
@@ -122,8 +120,11 @@ pub fn delete_provider_config(
     let target = delete_target.as_deref().unwrap_or("global");
     if target == "workspace" {
         let current = crate::get_workspace_dir(&app_handle)?;
-        let result =
-            crate::delete_workspace_provider_config_for_current(&id, workspace_path.as_deref(), &current);
+        let result = crate::delete_workspace_provider_config_for_current(
+            &id,
+            workspace_path.as_deref(),
+            &current,
+        );
         if result.is_ok() {
             let _ = crate::delete_api_key_with_profile(&id, profile.as_deref());
         }

@@ -1,8 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 
+use crate::commands::fs::{
+    create_workspace_dir, remove_workspace_path, rename_workspace_path, resolve_workspace_path,
+    PathIntent,
+};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use agent_core::agent_loop::TraceStepType;
@@ -28,9 +32,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-use crate::commands::fs::{
-    resolve_workspace_path, PathIntent, create_workspace_dir, rename_workspace_path, remove_workspace_path
-};
 
 mod audit;
 
@@ -473,7 +474,6 @@ fn apply_restore_plan(
 
 // PathIntent, resolve_workspace_path, and fs commands moved to commands::fs
 
-
 // ------------------------------------------------------------------
 // Tool-system commands
 // ------------------------------------------------------------------
@@ -563,9 +563,7 @@ pub(crate) fn confirm_tool_native(
     Ok(approved)
 }
 
-
 // list_tools and execute_tool moved to commands::tool
-
 
 // ------------------------------------------------------------------
 // LLM commands
@@ -631,9 +629,7 @@ pub(crate) fn write_stream_diagnostic(stage: &str, session_id: Option<&str>, dat
 #[cfg(not(feature = "stream-diagnostics"))]
 pub(crate) fn write_stream_diagnostic(_stage: &str, _session_id: Option<&str>, _data: Value) {}
 
-
 // record_stream_diagnostic and get_stream_diagnostic_info moved to commands::info
-
 
 #[derive(Serialize, Clone)]
 pub struct ProviderInfo {
@@ -882,7 +878,10 @@ pub(crate) fn read_configs_at(path: &std::path::Path) -> Vec<ProviderConfig> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-pub(crate) fn read_merged_configs(workspace: Option<&Path>, profile: Option<&str>) -> Vec<ProviderConfig> {
+pub(crate) fn read_merged_configs(
+    workspace: Option<&Path>,
+    profile: Option<&str>,
+) -> Vec<ProviderConfig> {
     let global = read_provider_configs_with_profile(profile);
     let mut map: HashMap<String, ProviderConfig> =
         global.into_iter().map(|c| (c.id.clone(), c)).collect();
@@ -927,7 +926,11 @@ fn save_api_key(id: &str, api_key: &str) -> Result<(), String> {
     save_api_key_with_profile(id, api_key, None)
 }
 
-pub(crate) fn save_api_key_with_profile(id: &str, api_key: &str, profile: Option<&str>) -> Result<(), String> {
+pub(crate) fn save_api_key_with_profile(
+    id: &str,
+    api_key: &str,
+    profile: Option<&str>,
+) -> Result<(), String> {
     let Some(api_key) = submitted_api_key(api_key) else {
         return Ok(());
     };
@@ -1036,7 +1039,10 @@ pub(crate) fn write_provider_configs_with_profile(
     write_configs_to_path(&path, configs)
 }
 
-pub(crate) fn write_configs_to_path(path: &std::path::Path, configs: &[ProviderConfig]) -> Result<(), String> {
+pub(crate) fn write_configs_to_path(
+    path: &std::path::Path,
+    configs: &[ProviderConfig],
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -1074,7 +1080,6 @@ pub(crate) fn write_configs_to_path(path: &std::path::Path, configs: &[ProviderC
     }
     Ok(())
 }
-
 
 // Backup encryption helpers (B-04/02)
 fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
@@ -1127,7 +1132,6 @@ pub(crate) fn decrypt_backup(data: &[u8], password: &str) -> Result<String, Stri
 
 // get_current_workspace and validate_provider moved to commands::provider
 
-
 pub(crate) fn create_llm_client(
     provider: &str,
     profile: Option<&str>,
@@ -1174,9 +1178,7 @@ pub(crate) fn create_llm_client(
 
 // stream_chat moved to commands::agent
 
-
 // compact_context and optimize_context moved to commands::tool
-
 
 // export_provider_backup and import_provider_backup moved to commands::provider
 
@@ -1185,11 +1187,9 @@ pub(crate) fn create_llm_client(
 // ------------------------------------------------------------------
 // Profile commands moved to commands::profile
 
-
 // ------------------------------------------------------------------
 // Agent provider commands (B-05/02)
 // ------------------------------------------------------------------
-
 
 #[allow(deprecated)]
 pub(crate) async fn write_provider_caps_to_blackboard(
@@ -1248,18 +1248,6 @@ pub(crate) async fn write_provider_caps_to_blackboard(
         bb.write("__hajimi_context_threshold", "", agent_id).await;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ------------------------------------------------------------------
 // Main
@@ -1427,9 +1415,12 @@ mod tests {
     #![allow(deprecated)]
 
     use super::*;
-    use crate::commands::tool::{apply_edits_with_base_dir, EditHunkPayload, preview_edit_for_path, preview_edit_with_base_dir};
-    use crate::state::{PendingApprovalMap, await_ui_approval_response};
     use crate::commands::agent::AgentUiEvent;
+    use crate::commands::tool::{
+        apply_edits_with_base_dir, preview_edit_for_path, preview_edit_with_base_dir,
+        EditHunkPayload,
+    };
+    use crate::state::{await_ui_approval_response, PendingApprovalMap};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1488,25 +1479,27 @@ mod tests {
 
     #[test]
     fn agent_outcome_output_returns_success_message() {
-        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::SuccessWithMessage(
-            "a\nb\nc".to_string(),
-        ));
+        let output = crate::commands::agent::agent_outcome_output(
+            agent_core::agent_loop::LoopOutcome::SuccessWithMessage("a\nb\nc".to_string()),
+        );
 
         assert_eq!(output, "a\nb\nc");
     }
 
     #[test]
     fn agent_outcome_output_keeps_legacy_success() {
-        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::Success);
+        let output = crate::commands::agent::agent_outcome_output(
+            agent_core::agent_loop::LoopOutcome::Success,
+        );
 
         assert_eq!(output, "Success");
     }
 
     #[test]
     fn agent_outcome_output_keeps_failure_debug_shape() {
-        let output = crate::commands::agent::agent_outcome_output(agent_core::agent_loop::LoopOutcome::ActFailed(
-            "boom".into(),
-        ));
+        let output = crate::commands::agent::agent_outcome_output(
+            agent_core::agent_loop::LoopOutcome::ActFailed("boom".into()),
+        );
 
         assert_eq!(output, "ActFailed(\"boom\")");
     }
